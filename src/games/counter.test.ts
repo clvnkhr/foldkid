@@ -5,6 +5,7 @@ import * as Counter from './counter'
 const resolveClick = [{ name: 'PlayClick' }, Counter.SoundPlayed()] as const
 const resolveSwoosh = [{ name: 'PlaySwoosh' }, Counter.SoundPlayed()] as const
 const resolveSpeak = [{ name: 'Speak' }, Counter.SoundPlayed()] as const
+const resolveBalls = [{ name: 'counterBalls' }, Counter.SoundPlayed()] as const
 
 describe('Counter', () => {
   it('init state', () => {
@@ -80,6 +81,7 @@ describe('Counter', () => {
       Scene.expect(Scene.text('+1')).toExist(),
       Scene.expect(Scene.text('Reset')).toExist(),
       Scene.expect(Scene.text('⚙')).toExist(),
+      Scene.Mount.resolveAll(resolveBalls),
       Scene.Command.expectNone(),
     )
   })
@@ -88,6 +90,7 @@ describe('Counter', () => {
     Scene.scene(
       { update: Counter.update, view: Counter.view },
       Scene.with(Counter.init),
+      Scene.Mount.resolveAll(resolveBalls),
       Scene.pointerDown(Scene.text('+1')),
       Scene.pointerUp(Scene.text('+1')),
       Scene.expect(Scene.text('1')).toExist(),
