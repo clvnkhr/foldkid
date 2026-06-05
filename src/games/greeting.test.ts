@@ -65,4 +65,26 @@ describe('Greeting', () => {
       Scene.Command.expectNone(),
     )
   })
+
+  it('shows Reset button after greeting', () => {
+    Scene.scene(
+      { update: Greeting.update, view: Greeting.view },
+      Scene.with({ message: 'Hello from foldkid!', count: 1 }),
+      Scene.expect(Scene.text('Reset')).toExist(),
+      Scene.Command.expectNone(),
+    )
+  })
+
+  it('SoundPlayed leaves model unchanged', () => {
+    const model = { message: 'Hello from foldkid!', count: 3 }
+    Story.story(
+      Greeting.update,
+      Story.with(model),
+      Story.message(Greeting.SoundPlayed()),
+      Story.model((m) => {
+        expect(m).toStrictEqual(model)
+      }),
+      Story.Command.expectNone(),
+    )
+  })
 })

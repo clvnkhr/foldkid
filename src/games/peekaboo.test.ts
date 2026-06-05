@@ -115,4 +115,31 @@ describe('Peekaboo', () => {
       Scene.Command.expectNone(),
     )
   })
+
+  it('clicking cell after win does nothing', () => {
+    const game = { ...Peekaboo.init(), won: true }
+    Story.story(
+      Peekaboo.update,
+      Story.with(game),
+      Story.message(Peekaboo.ClickedCell({ id: 0 })),
+      Story.model((model) => {
+        expect(model.won).toBe(true)
+        expect(model.count).toBe(0)
+      }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('SoundPlayed leaves model unchanged', () => {
+    const game = Peekaboo.init()
+    Story.story(
+      Peekaboo.update,
+      Story.with(game),
+      Story.message(Peekaboo.SoundPlayed()),
+      Story.model((model) => {
+        expect(model).toStrictEqual(game)
+      }),
+      Story.Command.expectNone(),
+    )
+  })
 })

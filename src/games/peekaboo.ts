@@ -93,9 +93,9 @@ export const view = (model: Model) => {
               ['New Game'],
             ),
         ]),
-        h.div([h.Class('display-area')], [
-          model.won
-            ? h.div(
+        model.won
+          ? h.div([h.Class('display-area')], [
+            h.div(
               [h.Class('peekaboo-win'), h.Key('win-' + model.count)],
               [
                 h.div([h.Class('win-emoji')], [model.target]),
@@ -104,25 +104,25 @@ export const view = (model: Model) => {
                   `Found ${model.count} time${model.count === 1 ? '' : 's'}!`,
                 ]),
               ],
-            )
-            : h.div([], [
-              h.div([h.Class('emoji-grid')], [
-                ...model.grid.map((cell) =>
-                  h.div(
-                    [
-                      h.Class(model.shaking === cell.id ? 'emoji-cell shaking' : 'emoji-cell'),
-                      h.OnClick(ClickedCell({ id: cell.id })),
-                      h.Key(cell.id.toString() + (model.shaking === cell.id ? 's' + model.shakeTick : '')),
-                    ],
-                    [cell.emoji],
-                  ),
+            ),
+          ])
+          : h.div([h.Class('peekaboo-game-area')], [
+            h.div([h.Class('emoji-grid')], [
+              ...model.grid.map((cell) =>
+                h.div(
+                  [
+                    h.Class(model.shaking === cell.id ? 'emoji-cell shaking' : 'emoji-cell'),
+                    h.OnClick(ClickedCell({ id: cell.id })),
+                    h.Key(cell.id.toString() + (model.shaking === cell.id ? 's' + model.shakeTick : '')),
+                  ],
+                  [cell.emoji],
                 ),
-              ]),
-              h.p([h.Class('peekaboo-count')], [
-                `Found ${model.count} time${model.count === 1 ? '' : 's'}!`,
-              ]),
+              ),
             ]),
-        ]),
+            h.p([h.Class('peekaboo-count')], [
+              `Found ${model.count} time${model.count === 1 ? '' : 's'}!`,
+            ]),
+          ]),
       ]),
     ],
   )

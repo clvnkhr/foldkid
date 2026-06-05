@@ -78,33 +78,36 @@ const updateGreeting = (
   model: Model,
   message: Greeting.Message,
 ): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
-  const [next, _cmds] = Greeting.update(model.greeting, message)
-  return [{ ...model, greeting: next }, _cmds]
+  const [next, cmds] = Greeting.update(model.greeting, message)
+  return [{ ...model, greeting: next }, cmds]
 }
 
 const updateCounter = (
   model: Model,
   message: Counter.Message,
 ): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
-  const [next, _cmds] = Counter.update(model.counter, message)
-  return [{ ...model, counter: next }, _cmds]
+  const [next, cmds] = Counter.update(model.counter, message)
+  return [{ ...model, counter: next }, cmds]
 }
 
 const updatePeekaboo = (
   model: Model,
   message: Peekaboo.Message,
 ): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
-  const [next, _cmds] = Peekaboo.update(model.peekaboo, message)
-  return [{ ...model, peekaboo: next }, _cmds]
+  const [next, cmds] = Peekaboo.update(model.peekaboo, message)
+  return [{ ...model, peekaboo: next }, cmds]
 }
 
 const updateBubbles = (
   model: Model,
   message: Bubbles.Message,
 ): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
-  const [next, _cmds] = Bubbles.update(model.bubbles, message)
-  return [{ ...model, bubbles: next }, _cmds]
+  const [next, cmds] = Bubbles.update(model.bubbles, message)
+  return [{ ...model, bubbles: next }, cmds]
 }
+
+const cycleDarkMode = (current: string): string =>
+  current === 'auto' ? 'light' : current === 'light' ? 'dark' : 'auto'
 
 export const update = (
   model: Model,
@@ -117,7 +120,7 @@ export const update = (
     M.tagsExhaustive({
       ClickedLanding: () => [{ ...model, page: PageLanding() }, []],
       ClickedDarkMode: () => [
-        { ...model, darkMode: model.darkMode === 'auto' ? 'light' : model.darkMode === 'light' ? 'dark' : 'auto' },
+        { ...model, darkMode: cycleDarkMode(model.darkMode) },
         [],
       ],
       SystemDarkModeChanged: () => [{ ...model }, []],
@@ -125,27 +128,27 @@ export const update = (
       ClickedCounter: () => [{ ...model, page: PageCounter() }, []],
       ClickedPeekaboo: () => [{ ...model, page: PagePeekaboo() }, []],
       ClickedBubbles: () => [{ ...model, page: PageBubbles() }, []],
-      GreetingClickedGreet: (message: Greeting.Message) => updateGreeting(model, message),
-      GreetingClickedReset: (message: Greeting.Message) => updateGreeting(model, message),
-      CounterPointerDown: (message: Counter.Message) => updateCounter(model, message),
-      CounterPressedIncrement: (message: Counter.Message) => updateCounter(model, message),
-      CounterPressedDecrement: (message: Counter.Message) => updateCounter(model, message),
-      CounterClickedReset: (message: Counter.Message) => updateCounter(model, message),
-      CounterClickedSettings: (message: Counter.Message) => updateCounter(model, message),
-      CounterDismissSettings: (message: Counter.Message) => updateCounter(model, message),
-      CounterSetRate: (message: Counter.Message) => updateCounter(model, message),
-      CounterSetPitch: (message: Counter.Message) => updateCounter(model, message),
-      CounterSetLanguage: (message: Counter.Message) => updateCounter(model, message),
-      PeekabooClickedCell: (message: Peekaboo.Message) => updatePeekaboo(model, message),
-      PeekabooClickedNext: (message: Peekaboo.Message) => updatePeekaboo(model, message),
-      PeekabooClickedReset: (message: Peekaboo.Message) => updatePeekaboo(model, message),
-      BubblesClickedPop: (message: Bubbles.Message) => updateBubbles(model, message),
-      BubblesClickedAdd: (message: Bubbles.Message) => updateBubbles(model, message),
-      BubblesClickedReset: (message: Bubbles.Message) => updateBubbles(model, message),
-      GreetingSoundPlayed: (message: Greeting.Message) => updateGreeting(model, message),
-      CounterSoundPlayed: (message: Counter.Message) => updateCounter(model, message),
-      PeekabooSoundPlayed: (message: Peekaboo.Message) => updatePeekaboo(model, message),
-      BubblesSoundPlayed: (message: Bubbles.Message) => updateBubbles(model, message),
+      GreetingClickedGreet: (msg) => updateGreeting(model, msg),
+      GreetingClickedReset: (msg) => updateGreeting(model, msg),
+      CounterPointerDown: (msg) => updateCounter(model, msg),
+      CounterPressedIncrement: (msg) => updateCounter(model, msg),
+      CounterPressedDecrement: (msg) => updateCounter(model, msg),
+      CounterClickedReset: (msg) => updateCounter(model, msg),
+      CounterClickedSettings: (msg) => updateCounter(model, msg),
+      CounterDismissSettings: (msg) => updateCounter(model, msg),
+      CounterSetRate: (msg) => updateCounter(model, msg),
+      CounterSetPitch: (msg) => updateCounter(model, msg),
+      CounterSetLanguage: (msg) => updateCounter(model, msg),
+      PeekabooClickedCell: (msg) => updatePeekaboo(model, msg),
+      PeekabooClickedNext: (msg) => updatePeekaboo(model, msg),
+      PeekabooClickedReset: (msg) => updatePeekaboo(model, msg),
+      BubblesClickedPop: (msg) => updateBubbles(model, msg),
+      BubblesClickedAdd: (msg) => updateBubbles(model, msg),
+      BubblesClickedReset: (msg) => updateBubbles(model, msg),
+      GreetingSoundPlayed: (msg) => updateGreeting(model, msg),
+      CounterSoundPlayed: (msg) => updateCounter(model, msg),
+      PeekabooSoundPlayed: (msg) => updatePeekaboo(model, msg),
+      BubblesSoundPlayed: (msg) => updateBubbles(model, msg),
     }),
   )
 

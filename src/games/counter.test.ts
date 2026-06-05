@@ -98,4 +98,62 @@ describe('Counter', () => {
       Scene.Command.expectNone(),
     )
   })
+
+  it('SoundPlayed leaves model unchanged', () => {
+    Story.story(
+      Counter.update,
+      Story.with({ ...Counter.init, count: 5 }),
+      Story.message(Counter.SoundPlayed()),
+      Story.model((model) => {
+        expect(model.count).toBe(5)
+      }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('settings toggle shows and hides panel', () => {
+    Story.story(
+      Counter.update,
+      Story.with(Counter.init),
+      Story.message(Counter.ClickedSettings()),
+      Story.model((model) => {
+        expect(model.showSettings).toBe(true)
+      }),
+      Story.Command.expectNone(),
+    )
+
+    Story.story(
+      Counter.update,
+      Story.with({ ...Counter.init, showSettings: true }),
+      Story.message(Counter.ClickedSettings()),
+      Story.model((model) => {
+        expect(model.showSettings).toBe(false)
+      }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('dismiss settings hides panel', () => {
+    Story.story(
+      Counter.update,
+      Story.with({ ...Counter.init, showSettings: true }),
+      Story.message(Counter.DismissSettings()),
+      Story.model((model) => {
+        expect(model.showSettings).toBe(false)
+      }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('pointer down sets holding', () => {
+    Story.story(
+      Counter.update,
+      Story.with(Counter.init),
+      Story.message(Counter.PointerDown()),
+      Story.model((model) => {
+        expect(model.holding).toBe(true)
+      }),
+      Story.Command.expectNone(),
+    )
+  })
 })

@@ -11,7 +11,7 @@ const COLORS = ['#FF6B6B', '#4ECDC4', '#FFE66D', '#A8E6CF', '#FF8B94', '#95E1D3'
 
 const randomColor = (): string => COLORS[Math.floor(Math.random() * COLORS.length)] as string
 
-export const Model = S.Struct({ bubbles: S.Array(Bubble), score: S.Number })
+export const Model = S.Struct({ bubbles: S.Array(Bubble), score: S.Number, nextId: S.Number })
 export type Model = typeof Model.Type
 
 export const ClickedPop = m('BubblesClickedPop', { id: S.Number })
@@ -22,9 +22,7 @@ export const SoundPlayed = m('BubblesSoundPlayed')
 export const Message = S.Union([ClickedPop, ClickedAdd, ClickedReset, SoundPlayed])
 export type Message = typeof Message.Type
 
-let nextId = 0
-
-export const init: Model = { bubbles: [], score: 0 }
+export const init: Model = { bubbles: [], score: 0, nextId: 0 }
 
 export const update = (
   model: Model,
@@ -50,13 +48,14 @@ export const update = (
           ...model,
           bubbles: [
             ...model.bubbles,
-            { id: nextId++, color: randomColor(), popped: false },
+            { id: model.nextId, color: randomColor(), popped: false },
           ],
+          nextId: model.nextId + 1,
         },
         [chime(SoundPlayed())],
       ],
       BubblesClickedReset: () => [
-        { bubbles: [], score: 0 },
+        { bubbles: [], score: 0, nextId: model.nextId },
         [swoosh(SoundPlayed())],
       ],
       BubblesSoundPlayed: () => [model, []],
