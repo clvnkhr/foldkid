@@ -22,7 +22,7 @@ export const view = () => {
           [h.OnClick(ClickedGreeting()), h.Class('game-card')],
           [
             h.div([h.Class('game-emoji')], ['👋']),
-            h.h2([h.Class('game-name')], ['Say Hello']),
+            h.h2([h.Class('game-name')], ['Say Hello!']),
             h.p([h.Class('game-desc')], ['A friendly hello greets you every time']),
           ],
         ),
