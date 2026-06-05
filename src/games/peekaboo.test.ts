@@ -86,7 +86,6 @@ describe('Peekaboo', () => {
       { update: Peekaboo.update, view: Peekaboo.view },
       Scene.with(game),
       Scene.expect(Scene.text(`Where is ${game.target}?`)).toExist(),
-      Scene.expect(Scene.text('New Game')).toExist(),
       Scene.Command.expectNone(),
     )
   })

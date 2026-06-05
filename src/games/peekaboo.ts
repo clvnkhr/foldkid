@@ -4,12 +4,20 @@ import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
 import { boing, swoosh } from '../audio'
 
-const EMOJI_POOL = ['🎈', '🎉', '🎊', '🎁', '🧸', '🍭', '🍬', '🎂', '🌈', '🦄', '🐱', '🐶', '🐰', '🦋', '🌸', '⭐']
+const EMOJI_POOL = [
+  '🎈', '🎉', '🎊', '🎁', '🧸', '🍭', '🍬', '🎂', '🌈', '🌸', '⭐', '🍕', '🍔', '🌮', '🍩', '🧁',
+  '0️⃣', '1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣',
+  '🐱', '🐶', '🐰', '🦋', '🦄', '🐻', '🐼', '🐨', '🦁', '🐯', '🐸', '🐵', '🦊', '🐴', '🦝', '🐮', '🐷', '🐙',
+  '🐧', '🐦', '🦅', '🦉', '🐥', '🦆',
+  '🐢', '🐍', '🦎', '🐊',
+  '🐳', '🐬', '🦈', '🐠', '🐡',
+  '🐝', '🐞', '🦗', '🐜',
+]
 
 const EmojiCell = S.Struct({ id: S.Number, emoji: S.String })
 type EmojiCell = typeof EmojiCell.Type
 
-export const Model = S.Struct({ grid: S.Array(EmojiCell), target: S.String, count: S.Number, shaking: S.Number, shakeTick: S.Number, won: S.Boolean })
+export const Model = S.Struct({ grid: S.Array(EmojiCell), target: S.String, count: S.Number, shaking: S.Number, shakeTick: S.Number, won: S.Boolean, found: S.Array(S.String) })
 export type Model = typeof Model.Type
 
 export const ClickedCell = m('PeekabooClickedCell', { id: S.Number })
@@ -29,11 +37,11 @@ const shuffle = <T>(arr: T[]): T[] => {
   return a
 }
 
-const generateGame = (): Model => {
+const generateGame = (found?: string[]): Model => {
   const shuffled = shuffle(EMOJI_POOL).slice(0, 9)
   const grid = shuffled.map((emoji, i) => ({ id: i, emoji }))
   const target = grid[Math.floor(Math.random() * grid.length)]!.emoji
-  return { grid, target, count: 0, shaking: -1, shakeTick: 0, won: false }
+  return { grid, target, count: 0, shaking: -1, shakeTick: 0, won: false, found: found ?? [] }
 }
 
 export const init = (): Model => generateGame()
@@ -49,8 +57,11 @@ export const update = (
         if (model.won) return [model, []]
         const cell = model.grid.find(c => c.id === msg.id)
         if (cell && cell.emoji === model.target) {
+          const next = model.found.includes(model.target)
+            ? model.found
+            : [...model.found, model.target]
           return [
-            { ...model, won: true },
+            { ...model, won: true, found: next },
             [boing(SoundPlayed())],
           ]
         }
@@ -60,7 +71,7 @@ export const update = (
         ]
       },
       PeekabooClickedNext: () => [
-        { ...generateGame(), count: model.count + 1 },
+        { ...generateGame([...model.found]), count: model.count + 1 },
         [],
       ],
       PeekabooClickedReset: () => [
@@ -78,35 +89,9 @@ export const view = (model: Model) => {
     [h.Class('page')],
     [
       h.div([h.Class('card')], [
-        h.h1([h.Class('title')], ['Peek-a-Boo']),
-        model.won
-          ? null
-          : h.p([h.Class('peekaboo-prompt')], [`Where is ${model.target}?`]),
-        h.div([h.Class('buttons')], [
-          model.won
-            ? h.button(
-              [h.OnClick(ClickedNext()), h.Class('btn btn-primary')],
-              ['Next ➡'],
-            )
-            : h.button(
-              [h.OnClick(ClickedReset()), h.Class('btn btn-secondary')],
-              ['New Game'],
-            ),
-        ]),
-        model.won
-          ? h.div([h.Class('display-area')], [
-            h.div(
-              [h.Class('peekaboo-win'), h.Key('win-' + model.count)],
-              [
-                h.div([h.Class('win-emoji')], [model.target]),
-                h.h2([h.Class('win-title')], ['YOU WIN!!!']),
-                h.p([h.Class('peekaboo-count')], [
-                  `Found ${model.count} time${model.count === 1 ? '' : 's'}!`,
-                ]),
-              ],
-            ),
-          ])
-          : h.div([h.Class('peekaboo-game-area')], [
+        h.div([h.Class('peekaboo-main')], [
+          h.p([h.Class('peekaboo-prompt')], [`Where is ${model.target}?`]),
+          h.div([h.Class('peekaboo-game-area')], [
             h.div([h.Class('emoji-grid')], [
               ...model.grid.map((cell) =>
                 h.div(
@@ -122,7 +107,31 @@ export const view = (model: Model) => {
             h.p([h.Class('peekaboo-count')], [
               `Found ${model.count} time${model.count === 1 ? '' : 's'}!`,
             ]),
+            model.won
+              ? h.div([h.Class('peekaboo-overlay'), h.Key('win-' + model.count)], [
+                h.div([h.Class('peekaboo-win')], [
+                  h.div([h.Class('win-emoji')], [model.target]),
+                  h.h2([h.Class('win-title')], ['YOU WIN!!!']),
+                  h.p([h.Class('peekaboo-count')], [
+                    `Found ${model.count} time${model.count === 1 ? '' : 's'}!`,
+                  ]),
+                  h.button(
+                    [h.OnClick(ClickedNext()), h.Class('btn btn-primary')],
+                    ['Next ➡'],
+                  ),
+                ]),
+              ])
+              : null,
           ]),
+          h.div([h.Class('collection-box')], [
+            h.p([h.Class('collection-label')], ['Collection']),
+            h.div([h.Class('collection-grid')], [
+              ...model.found.map((e) =>
+                h.span([h.Class('collection-emoji'), h.Key(e)], [e]),
+              ),
+            ]),
+          ]),
+        ]),
       ]),
     ],
   )

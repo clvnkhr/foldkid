@@ -7,6 +7,8 @@ export const ClickedCounter = m('ClickedCounter')
 export const ClickedPeekaboo = m('ClickedPeekaboo')
 export const ClickedBubbles = m('ClickedBubbles')
 export const ClickedDarkMode = m('ClickedDarkMode')
+export const ClickedSettings = m('ClickedSettings')
+export const SetLanguage = m('SetLanguage', { value: S.String })
 export const SystemDarkModeChanged = m('SystemDarkModeChanged')
 
 export const NavigationMessage = S.Union([

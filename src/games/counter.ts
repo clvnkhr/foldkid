@@ -5,24 +5,21 @@ import { m } from 'foldkit/message'
 import { click, swoosh } from '../audio'
 import { speak } from '../speech'
 
-export const Model = S.Struct({ count: S.Number, fontSize: S.Number, holding: S.Boolean, rate: S.Number, pitch: S.Number, language: S.String, showSettings: S.Boolean })
+export const Model = S.Struct({ count: S.Number, fontSize: S.Number, holding: S.Boolean, rate: S.Number, pitch: S.Number })
 export type Model = typeof Model.Type
 
 export const PointerDown = m('CounterPointerDown')
 export const PressedIncrement = m('CounterPressedIncrement', { duration: S.Number })
 export const PressedDecrement = m('CounterPressedDecrement', { duration: S.Number })
 export const ClickedReset = m('CounterClickedReset')
-export const ClickedSettings = m('CounterClickedSettings')
-export const DismissSettings = m('CounterDismissSettings')
 export const SetRate = m('CounterSetRate', { value: S.Number })
 export const SetPitch = m('CounterSetPitch', { value: S.Number })
-export const SetLanguage = m('CounterSetLanguage', { value: S.String })
 export const SoundPlayed = m('CounterSoundPlayed')
 
-export const Message = S.Union([PointerDown, PressedIncrement, PressedDecrement, ClickedReset, ClickedSettings, DismissSettings, SetRate, SetPitch, SetLanguage, SoundPlayed])
+export const Message = S.Union([PointerDown, PressedIncrement, PressedDecrement, ClickedReset, SetRate, SetPitch, SoundPlayed])
 export type Message = typeof Message.Type
 
-export const init: Model = { count: 0, fontSize: 3, holding: false, rate: 0.85, pitch: 1.1, language: 'en', showSettings: false }
+export const init: Model = { count: 0, fontSize: 3, holding: false, rate: 0.85, pitch: 1.1 }
 
 const calcFontSize = (duration: number): number => {
   const s = duration / 1000
@@ -32,6 +29,7 @@ const calcFontSize = (duration: number): number => {
 export const update = (
   model: Model,
   message: Message,
+  language: string = 'en',
 ): readonly [Model, ReadonlyArray<Command.Command<Message>>] =>
   M.value(message).pipe(
     M.withReturnType<
@@ -44,23 +42,15 @@ export const update = (
       ],
       CounterPressedIncrement: (msg) => [
         { ...model, count: model.count + 1, fontSize: calcFontSize(msg.duration), holding: false },
-        [click(SoundPlayed()), speak(`${model.count + 1}`, SoundPlayed(), { rate: model.rate, pitch: model.pitch, lang: model.language })],
+        [click(SoundPlayed()), speak(`${model.count + 1}`, SoundPlayed(), { rate: model.rate, pitch: model.pitch, lang: language })],
       ],
       CounterPressedDecrement: (msg) => [
         { ...model, count: model.count - 1, fontSize: calcFontSize(msg.duration), holding: false },
-        [click(SoundPlayed()), speak(`${model.count - 1}`, SoundPlayed(), { rate: model.rate, pitch: model.pitch, lang: model.language })],
+        [click(SoundPlayed()), speak(`${model.count - 1}`, SoundPlayed(), { rate: model.rate, pitch: model.pitch, lang: language })],
       ],
       CounterClickedReset: () => [
         { ...model, count: 0 },
-        [swoosh(SoundPlayed()), speak('0', SoundPlayed(), { rate: model.rate, pitch: model.pitch, lang: model.language })],
-      ],
-      CounterClickedSettings: () => [
-        { ...model, showSettings: !model.showSettings },
-        [],
-      ],
-      CounterDismissSettings: () => [
-        { ...model, showSettings: false },
-        [],
+        [swoosh(SoundPlayed()), speak('0', SoundPlayed(), { rate: model.rate, pitch: model.pitch, lang: language })],
       ],
       CounterSetRate: (msg) => [
         { ...model, rate: msg.value },
@@ -70,15 +60,9 @@ export const update = (
         { ...model, pitch: msg.value },
         [],
       ],
-      CounterSetLanguage: (msg) => [
-        { ...model, language: msg.value },
-        [],
-      ],
       CounterSoundPlayed: () => [model, []],
     }),
   )
-
-const round = (n: number, d: number = 1): number => +n.toFixed(d)
 
 const numberColor = (n: number): string => {
   const hue = (Math.abs(n) * 137.508) % 360
@@ -106,15 +90,48 @@ const FRICTION = 0.995
 const BALL_BOUNCE = 0.3
 const WALL_FRICTION = 0.85
 
+const poof = (el: HTMLElement): void => {
+  const rect = el.getBoundingClientRect()
+  const cx = rect.left + rect.width / 2
+  const cy = rect.top + rect.height / 2
+  const color = el.style.backgroundColor || '#667eea'
+  const s = rect.width / 16
+  el.remove()
+
+  for (let i = 0; i < 6; i++) {
+    const p = document.createElement('div')
+    const ps = (3 + Math.random() * 5) * s
+    const angle = (Math.PI * 2 * i) / 6 + (Math.random() - 0.5) * 0.6
+    const dist = (25 + Math.random() * 35) * s
+    p.style.cssText = [
+      `position:fixed`,
+      `left:${cx - ps / 2}px`,
+      `top:${cy - ps / 2}px`,
+      `width:${ps}px`,
+      `height:${ps}px`,
+      `border-radius:50%`,
+      `background:${color}`,
+      `pointer-events:none`,
+      `z-index:1000`,
+    ].join(';')
+    document.body.appendChild(p)
+    p.animate([
+      { transform: 'translate(0,0) scale(1)', opacity: 1 },
+      { transform: `translate(${Math.cos(angle) * dist}px,${Math.sin(angle) * dist}px) scale(0.2)`, opacity: 0 },
+    ], { duration: 300 + Math.random() * 100, easing: 'ease-out', fill: 'forwards' })
+      .onfinish = () => p.remove()
+  }
+}
+
 const ballRadius = (fontSize: number): number => fontSize + 8
 
 const GRAVITY_DT = GRAVITY / 60
 const SPAWN_INTERVAL = 6
 
-const makeBall = (r: number, hue: number): Omit<BallState, 'el'> => ({
-  x: r + Math.random() * 200,
+const makeBall = (r: number, hue: number, containerW?: number): Omit<BallState, 'el'> => ({
+  x: containerW ? r + Math.random() * (containerW - r * 2) : r + Math.random() * 200,
   y: -(r * 2 + Math.random() * 100),
-  vx: (Math.random() - 0.5) * 80,
+  vx: (Math.random() - 0.5) * 300,
   vy: 0,
   hue,
   r,
@@ -134,10 +151,10 @@ const tick = (rendered: BallState[], parent: HTMLElement): void => {
   const fs = parseFloat(parent.getAttribute('data-fontsize') ?? '3')
   const r = ballRadius(fs)
 
-  // remove excess immediately
+  // remove excess with particle poof
   while (rendered.length > target) {
     const b = rendered.pop()
-    if (b) b.el.remove()
+    if (b) poof(b.el)
   }
 
   // spawn gradually
@@ -147,7 +164,7 @@ const tick = (rendered: BallState[], parent: HTMLElement): void => {
     parent.setAttribute('data-spawn', next.toString())
     if (next >= SPAWN_INTERVAL) {
       parent.setAttribute('data-spawn', '0')
-      const b = makeBall(r, Date.now() % 360)
+      const b = makeBall(r, Date.now() % 360, w)
       if (negative) {
         b.y = h + b.r + Math.random() * 80
         b.vy = -(Math.random() * 80 + 60)
@@ -270,7 +287,7 @@ export const view = (model: Model) => {
     [
       h.div([h.Class('card')], [
         h.h1([h.Class('title')], ['Counter']),
-        h.div([h.Class('buttons')], [
+        h.div([h.Class('buttons counter-actions')], [
           h.button(
             btnAttrs((d) => PressedDecrement({ duration: d })),
             ['-1'],
@@ -282,10 +299,6 @@ export const view = (model: Model) => {
           h.button(
             btnAttrs((d) => PressedIncrement({ duration: d })),
             ['+1'],
-          ),
-          h.button(
-            [h.OnClick(ClickedSettings()), h.Class('btn btn-secondary')],
-            ['⚙'],
           ),
         ]),
         h.div([h.Class('display-area'), h.Style({ position: 'relative', overflow: 'hidden' })], [
@@ -324,70 +337,6 @@ export const view = (model: Model) => {
           h.p([h.Class(model.holding ? 'number holding' : model.count < 0 ? 'number negative' : 'number'), h.Style({ color: numberColor(model.count), fontSize: `${model.fontSize}rem`, position: 'relative', zIndex: '2' }), h.Key(model.count.toString())], [model.count.toString()]),
         ]),
       ]),
-      ...(model.showSettings
-        ? [
-          h.div([h.Class('settings-panel')], [
-            h.div([h.Class('settings-header')], [
-              h.h2([], ['Speech Settings']),
-              h.button(
-                [h.OnClick(DismissSettings()), h.Class('settings-close')],
-                ['✕'],
-              ),
-            ]),
-            h.div([h.Class('setting-row')], [
-              h.label([], ['Rate']),
-              h.div([h.Class('slider-row')], [
-                h.input([
-                  h.Type('range'),
-                  h.Min('0.2'),
-                  h.Max('3'),
-                  h.Step('0.1'),
-                  h.Value(model.rate.toString()),
-                  h.OnInput((v) => SetRate({ value: parseFloat(v) })),
-                ]),
-                h.span([], [round(model.rate).toString()]),
-              ]),
-            ]),
-            h.div([h.Class('setting-row')], [
-              h.label([], ['Pitch']),
-              h.div([h.Class('slider-row')], [
-                h.input([
-                  h.Type('range'),
-                  h.Min('0.2'),
-                  h.Max('4'),
-                  h.Step('0.1'),
-                  h.Value(model.pitch.toString()),
-                  h.OnInput((v) => SetPitch({ value: parseFloat(v) })),
-                ]),
-                h.span([], [round(model.pitch).toString()]),
-              ]),
-            ]),
-            h.div([h.Class('setting-row')], [
-              h.label([], ['Lang']),
-              h.div([h.Class('lang-buttons')], [
-                ...[
-                  ['en', 'English'] as const,
-                  ['zh', '中文'] as const,
-                  ['fr', 'Français'] as const,
-                  ['de', 'Deutsch'] as const,
-                  ['fa', 'فارسی'] as const,
-                  ['ms', 'Bahasa Malaysia'] as const,
-                  ['zh-HK', '廣東話'] as const,
-                ].map(([val, label]) =>
-                  h.button(
-                    [
-                      h.Class(val === model.language ? 'btn btn-primary' : 'btn btn-secondary'),
-                      h.OnClick(SetLanguage({ value: val })),
-                    ],
-                    [label],
-                  ),
-                ),
-              ]),
-            ]),
-            h.p([h.Class('settings-note')], ['Voice availability depends on your device & browser.']),
-          ]),
-        ]
-        : []),
     ],
   )
 }

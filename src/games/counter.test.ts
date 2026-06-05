@@ -10,7 +10,7 @@ const resolveBalls = [{ name: 'counterBalls' }, Counter.SoundPlayed()] as const
 describe('Counter', () => {
   it('init state', () => {
     expect(Counter.init).toStrictEqual({
-      count: 0, fontSize: 3, holding: false, rate: 0.85, pitch: 1.1, language: 'en', showSettings: false,
+      count: 0, fontSize: 3, holding: false, rate: 0.85, pitch: 1.1,
     })
   })
 
@@ -80,7 +80,6 @@ describe('Counter', () => {
       Scene.expect(Scene.text('-1')).toExist(),
       Scene.expect(Scene.text('+1')).toExist(),
       Scene.expect(Scene.text('Reset')).toExist(),
-      Scene.expect(Scene.text('⚙')).toExist(),
       Scene.Mount.resolveAll(resolveBalls),
       Scene.Command.expectNone(),
     )
@@ -106,40 +105,6 @@ describe('Counter', () => {
       Story.message(Counter.SoundPlayed()),
       Story.model((model) => {
         expect(model.count).toBe(5)
-      }),
-      Story.Command.expectNone(),
-    )
-  })
-
-  it('settings toggle shows and hides panel', () => {
-    Story.story(
-      Counter.update,
-      Story.with(Counter.init),
-      Story.message(Counter.ClickedSettings()),
-      Story.model((model) => {
-        expect(model.showSettings).toBe(true)
-      }),
-      Story.Command.expectNone(),
-    )
-
-    Story.story(
-      Counter.update,
-      Story.with({ ...Counter.init, showSettings: true }),
-      Story.message(Counter.ClickedSettings()),
-      Story.model((model) => {
-        expect(model.showSettings).toBe(false)
-      }),
-      Story.Command.expectNone(),
-    )
-  })
-
-  it('dismiss settings hides panel', () => {
-    Story.story(
-      Counter.update,
-      Story.with({ ...Counter.init, showSettings: true }),
-      Story.message(Counter.DismissSettings()),
-      Story.model((model) => {
-        expect(model.showSettings).toBe(false)
       }),
       Story.Command.expectNone(),
     )

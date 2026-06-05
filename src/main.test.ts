@@ -10,9 +10,10 @@ describe('Main', () => {
     const [model] = Main.init()
     expect(model.page._tag).toBe('PageLanding')
     expect(model.darkMode).toBe('auto')
-    expect(model.greeting).toStrictEqual(Greeting.init)
+    expect(model.language).toBe('en')
+    expect(model.showSettings).toBe(false)
+    expect(model.greeting).toStrictEqual({ status: 'idle', audioUrl: '', playCount: 0 })
     expect(model.counter.count).toBe(0)
-    expect(model.counter.showSettings).toBe(false)
     expect(model.bubbles).toStrictEqual({ bubbles: [], score: 0, nextId: 0 })
   })
 
@@ -113,21 +114,24 @@ describe('Main', () => {
     )
   })
 
-  it('delegates Greeting messages to greeting update', () => {
+  it('delegates GreetingClickedRecord to greeting update', () => {
     Story.story(
       Main.update,
       Story.with(createModel()),
-      Story.message(Greeting.ClickedGreet()),
+      Story.message(Greeting.ClickedRecord()),
       Story.model((model) => {
-        expect(model.greeting.count).toBe(1)
+        expect(model.greeting.status).toBe('recording')
       }),
-      Story.Command.resolveAll([{ name: 'PlayChime' }, Greeting.SoundPlayed()]),
+      Story.Command.resolveAll([{ name: 'Record' }, Greeting.RecordingFailed()]),
       Story.Command.expectNone(),
     )
   })
 })
 
-const createModel = (): Main.Model => ({
-  ...Main.init()[0],
-  peekaboo: { grid: [], target: '🎈', count: 0, shaking: -1, shakeTick: 0, won: false },
-})
+const createModel = (): Main.Model => {
+  const init = Main.init()[0]
+  return {
+    ...init,
+    peekaboo: { grid: [], target: '🎈', count: 0, shaking: -1, shakeTick: 0, won: false, found: [] },
+  }
+}
