@@ -2,7 +2,7 @@ import { Match as M, Schema as S } from 'effect'
 import { Command } from 'foldkit'
 import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
-import { boing, swoosh } from '../audio'
+import { boing } from '../audio'
 
 const EMOJI_POOL = [
   '🎈', '🎉', '🎊', '🎁', '🧸', '🍭', '🍬', '🎂', '🌈', '🌸', '⭐', '🍕', '🍔', '🌮', '🍩', '🧁',
@@ -22,10 +22,9 @@ export type Model = typeof Model.Type
 
 export const ClickedCell = m('PeekabooClickedCell', { id: S.Number })
 export const ClickedNext = m('PeekabooClickedNext')
-export const ClickedReset = m('PeekabooClickedReset')
 export const SoundPlayed = m('PeekabooSoundPlayed')
 
-export const Message = S.Union([ClickedCell, ClickedNext, ClickedReset, SoundPlayed])
+export const Message = S.Union([ClickedCell, ClickedNext, SoundPlayed])
 export type Message = typeof Message.Type
 
 const shuffle = <T>(arr: T[]): T[] => {
@@ -73,10 +72,6 @@ export const update = (
       PeekabooClickedNext: () => [
         { ...generateGame([...model.found]), count: model.count + 1 },
         [],
-      ],
-      PeekabooClickedReset: () => [
-        { ...generateGame(), count: 0 },
-        [swoosh(SoundPlayed())],
       ],
       PeekabooSoundPlayed: () => [model, []],
     }),

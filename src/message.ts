@@ -10,11 +10,3 @@ export const ClickedDarkMode = m('ClickedDarkMode')
 export const ClickedSettings = m('ClickedSettings')
 export const SetLanguage = m('SetLanguage', { value: S.String })
 export const SystemDarkModeChanged = m('SystemDarkModeChanged')
-
-export const NavigationMessage = S.Union([
-  ClickedLanding,
-  ClickedGreeting,
-  ClickedCounter,
-  ClickedPeekaboo,
-  ClickedBubbles,
-])

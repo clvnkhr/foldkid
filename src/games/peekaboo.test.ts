@@ -3,7 +3,6 @@ import { Scene, Story } from 'foldkit/test'
 import * as Peekaboo from './peekaboo'
 
 const resolveBoing = [{ name: 'PlayBoing' }, Peekaboo.SoundPlayed()] as const
-const resolveSwoosh = [{ name: 'PlaySwoosh' }, Peekaboo.SoundPlayed()] as const
 
 describe('Peekaboo', () => {
   it('init creates a valid game', () => {
@@ -59,23 +58,6 @@ describe('Peekaboo', () => {
         expect(model.shaking).toBe(wrong.id)
         expect(model.shakeTick).toBe(1)
       }),
-      Story.Command.expectNone(),
-    )
-  })
-
-  it('reset creates a new game', () => {
-    const game = Peekaboo.init()
-    Story.story(
-      Peekaboo.update,
-      Story.with({ ...game, count: 5 }),
-      Story.message(Peekaboo.ClickedReset()),
-      Story.model((model) => {
-        expect(model.count).toBe(0)
-        expect(model.won).toBe(false)
-        expect(model.shaking).toBe(-1)
-        expect(model.grid).toHaveLength(9)
-      }),
-      Story.Command.resolveAll(resolveSwoosh),
       Story.Command.expectNone(),
     )
   })
