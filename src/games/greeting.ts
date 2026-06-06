@@ -3,6 +3,7 @@ import { Command } from 'foldkit'
 import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
 import { swoosh } from '../audio'
+import { t, tf } from '../i18n'
 
 const MAX_RECORDING_MS = 10_000
 const SILENCE_THRESHOLD = 3
@@ -252,40 +253,40 @@ export const update = (
     }),
   )
 
-export const view = (model: Model) => {
+export const view = (model: Model, language: string = 'en') => {
   const h = html<Message>()
 
   return h.div(
     [h.Class('page')],
     [
       h.div([h.Class('card')], [
-        h.h1([h.Class('title')], ['Say Hello']),
+        h.h1([h.Class('title')], [t('greetingTitle', language)]),
         model.status === 'recording'
-          ? h.p([h.Class('recording-indicator')], ['Recording... speak your name!'])
+          ? h.p([h.Class('recording-indicator')], [t('recording', language)])
           : null,
         h.div([h.Class('buttons')], [
           model.status === 'idle' && model.audioUrl
             ? h.button(
               [h.OnClick(ClickedPlay()), h.Class('btn btn-primary')],
-              ['Say Hello'],
+              [t('sayHello', language)],
             )
             : null,
           model.status === 'idle'
             ? h.button(
               [h.OnClick(ClickedRecord()), h.Class('btn btn-primary')],
-              ['🎤 Record Your Name'],
+              [t('recordName', language)],
             )
             : null,
           model.status === 'ready'
             ? h.button(
               [h.OnClick(ClickedPlay()), h.Class('btn btn-primary')],
-              ['Say Hello'],
+              [t('sayHello', language)],
             )
             : null,
           model.status === 'ready' || model.playCount > 0
             ? h.button(
               [h.OnClick(ClickedReset()), h.Class('btn btn-secondary')],
-              ['Reset'],
+              [t('reset', language)],
             )
             : null,
         ]),
@@ -294,9 +295,7 @@ export const view = (model: Model) => {
             ? h.p([h.Class('recording-animation')], ['⏺'])
             : null,
           model.playCount > 0
-            ? h.p([h.Class('count')], [
-              `You've been greeted ${model.playCount} time${model.playCount === 1 ? '' : 's'}!`,
-            ])
+            ? h.p([h.Class('count')], [tf('greeted', language, model.playCount)])
             : null,
         ]),
       ]),

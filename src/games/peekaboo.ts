@@ -3,6 +3,7 @@ import { Command } from 'foldkit'
 import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
 import { boing } from '../audio'
+import { t, tf } from '../i18n'
 
 const EMOJIS = [
   ['🎈', 'Balloon'], ['🎉', 'Party Popper'], ['🎊', 'Confetti'], ['🎁', 'Gift'],
@@ -88,7 +89,7 @@ export const update = (
     }),
   )
 
-export const view = (model: Model) => {
+export const view = (model: Model, language: string = 'en') => {
   const h = html<Message>()
 
   return h.div(
@@ -96,7 +97,7 @@ export const view = (model: Model) => {
     [
       h.div([h.Class('card')], [
         h.div([h.Class('peekaboo-main')], [
-          h.p([h.Class('peekaboo-prompt')], [`Where is ${model.target}?`]),
+          h.p([h.Class('peekaboo-prompt')], [tf('whereIs', language, model.target)]),
           h.div([h.Class('peekaboo-game-area')], [
             h.div([h.Class('emoji-grid')], [
               ...model.grid.map((cell) =>
@@ -110,27 +111,23 @@ export const view = (model: Model) => {
                 ),
               ),
             ]),
-            h.p([h.Class('peekaboo-count')], [
-              `Found ${model.count} time${model.count === 1 ? '' : 's'}!`,
-            ]),
+            h.p([h.Class('peekaboo-count')], [tf('found', language, model.count)]),
             model.won
               ? h.div([h.Class('peekaboo-overlay'), h.Key('win-' + model.count)], [
                 h.div([h.Class('peekaboo-win')], [
                   h.div([h.Class('win-emoji')], [model.target]),
                   h.h2([h.Class('win-title')], [`${emojiName(model.target)}!`]),
-                  h.p([h.Class('peekaboo-count')], [
-                    `Found ${model.count} time${model.count === 1 ? '' : 's'}!`,
-                  ]),
+                  h.p([h.Class('peekaboo-count')], [tf('found', language, model.count)]),
                   h.button(
                     [h.OnClick(ClickedNext()), h.Class('btn btn-primary')],
-                    ['Next ➡'],
+                    [t('next', language)],
                   ),
                 ]),
               ])
               : null,
           ]),
           h.div([h.Class('collection-box')], [
-            h.p([h.Class('collection-label')], ['Collection']),
+            h.p([h.Class('collection-label')], [t('collection', language)]),
             h.div([h.Class('collection-grid')], [
               ...model.found.map((e) =>
                 h.span([h.Class('collection-emoji'), h.Key(e)], [e]),

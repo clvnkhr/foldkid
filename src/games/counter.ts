@@ -4,6 +4,7 @@ import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
 import { click, swoosh } from '../audio'
 import { speak } from '../speech'
+import { t } from '../i18n'
 import { toCardinal } from 'n2words/en-US'
 import { toCardinal as toCardinalDe } from 'n2words/de-DE'
 import { toCardinal as toCardinalFr } from 'n2words/fr-FR'
@@ -11,6 +12,7 @@ import { toCardinal as toCardinalFa } from 'n2words/fa-IR'
 import { toCardinal as toCardinalMs } from 'n2words/ms-MY'
 import { toCardinal as toCardinalZh } from 'n2words/zh-Hans-CN'
 import { toCardinal as toCardinalZhHant } from 'n2words/zh-Hant-TW'
+import { toCardinal as toCardinalJa } from 'n2words/ja-JP'
 
 const WORD_FN: Record<string, (n: number, opts: Record<string, boolean>) => string> = {
   en: toCardinal,
@@ -20,6 +22,7 @@ const WORD_FN: Record<string, (n: number, opts: Record<string, boolean>) => stri
   ms: toCardinalMs,
   zh: toCardinalZh,
   'zh-HK': toCardinalZhHant,
+  ja: toCardinalJa,
 }
 
 const WORD_OPTS: Record<string, Record<string, boolean>> = {
@@ -180,33 +183,43 @@ const makeBall = (r: number, hue: number, containerW?: number): Omit<BallState, 
   r,
 })
 
-const tick = (rendered: BallState[], parent: HTMLElement): void => {
+interface TickState {
+  rendered: BallState[]
+  running: boolean
+  id: number
+  w: number
+  h: number
+  target: number
+  fontSize: number
+  dirty: boolean
+  spawnCounter: number
+}
+
+const tick = (state: TickState, parent: HTMLElement): void => {
   const dt = 1 / 60
-  const rect = parent.getBoundingClientRect()
-  const w = rect.width
-  const h = rect.height
+  const { rendered } = state
+  const w = state.w
+  const h = state.h
+  const negative = state.target < 0
+  const target = Math.abs(state.target)
+  const r = ballRadius(state.fontSize)
 
-  // read target and sync count gradually
-  const targetStr = parent.getAttribute('data-count')
-  const rawTarget = targetStr ? parseInt(targetStr) : 0
-  const negative = rawTarget < 0
-  const target = Math.abs(rawTarget)
-  const fs = parseFloat(parent.getAttribute('data-fontsize') ?? '3')
-  const r = ballRadius(fs)
+  if (state.dirty) {
+    state.dirty = false
+    const rect = parent.getBoundingClientRect()
+    state.w = rect.width
+    state.h = rect.height
+  }
 
-  // remove excess with particle poof
   while (rendered.length > target) {
     const b = rendered.pop()
     if (b) poof(b.el)
   }
 
-  // spawn gradually
-  const spawnCounter = parseInt(parent.getAttribute('data-spawn') ?? '0')
   if (rendered.length < target) {
-    const next = spawnCounter + 1
-    parent.setAttribute('data-spawn', next.toString())
-    if (next >= SPAWN_INTERVAL) {
-      parent.setAttribute('data-spawn', '0')
+    state.spawnCounter++
+    if (state.spawnCounter >= SPAWN_INTERVAL) {
+      state.spawnCounter = 0
       const b = makeBall(r, Date.now() % 360, w)
       if (negative) {
         b.y = h + b.r + Math.random() * 80
@@ -223,10 +236,9 @@ const tick = (rendered: BallState[], parent: HTMLElement): void => {
       rendered.push({ ...b, el: d })
     }
   } else {
-    parent.setAttribute('data-spawn', '0')
+    state.spawnCounter = 0
   }
 
-  // physics
   for (let i = 0; i < rendered.length; i++) {
     const b = rendered[i]
     if (!b) continue
@@ -251,54 +263,52 @@ const tick = (rendered: BallState[], parent: HTMLElement): void => {
     }
   }
 
-  // spatial hash grid for collision
-  const cellSize = 80
-  const grid = new Map<number, number[]>()
-  for (let i = 0; i < rendered.length; i++) {
-    const b = rendered[i]
-    if (!b) continue
-    const cx = (b.x / cellSize) | 0
-    const cy = (b.y / cellSize) | 0
-    const key = cx * 10000 + cy
-    const cell = grid.get(key)
-    if (cell) cell.push(i)
-    else grid.set(key, [i])
-  }
+  if (rendered.length > 4) {
+    const cellSize = 80
+    const grid = new Map<number, number[]>()
+    for (let i = 0; i < rendered.length; i++) {
+      const b = rendered[i]
+      if (!b) continue
+      const key = ((b.x / cellSize) | 0) * 10000 + ((b.y / cellSize) | 0)
+      const cell = grid.get(key)
+      if (cell) cell.push(i)
+      else grid.set(key, [i])
+    }
 
-  for (let i = 0; i < rendered.length; i++) {
-    const a = rendered[i]
-    if (!a) continue
-    const cx = (a.x / cellSize) | 0
-    const cy = (a.y / cellSize) | 0
-    for (let ox = -1; ox <= 1; ox++) {
-      for (let oy = -1; oy <= 1; oy++) {
-        const key = (cx + ox) * 10000 + (cy + oy)
-        const cell = grid.get(key)
-        if (!cell) continue
-        for (const j of cell) {
-          if (j <= i) continue
-          const b = rendered[j]
-          if (!b) continue
-          const dx = b.x - a.x
-          const dy = b.y - a.y
-          const dist = Math.sqrt(dx * dx + dy * dy)
-          const minDist = a.r + b.r
-          if (dist < minDist && dist > 0.001) {
-            const nx = dx / dist
-            const ny = dy / dist
-            const overlap = minDist - dist
-            a.x -= nx * overlap / 2
-            a.y -= ny * overlap / 2
-            b.x += nx * overlap / 2
-            b.y += ny * overlap / 2
-            const dvx = a.vx - b.vx
-            const dvy = a.vy - b.vy
-            const dvn = dvx * nx + dvy * ny
-            if (dvn > 0) {
-              a.vx -= dvn * nx * BALL_BOUNCE
-              a.vy -= dvn * ny * BALL_BOUNCE
-              b.vx += dvn * nx * BALL_BOUNCE
-              b.vy += dvn * ny * BALL_BOUNCE
+    for (let i = 0; i < rendered.length; i++) {
+      const a = rendered[i]
+      if (!a) continue
+      const cx = (a.x / cellSize) | 0
+      const cy = (a.y / cellSize) | 0
+      for (let ox = -1; ox <= 1; ox++) {
+        for (let oy = -1; oy <= 1; oy++) {
+          const cell = grid.get((cx + ox) * 10000 + (cy + oy))
+          if (!cell) continue
+          for (const j of cell) {
+            if (j <= i) continue
+            const b = rendered[j]
+            if (!b) continue
+            const dx = b.x - a.x
+            const dy = b.y - a.y
+            const dist = Math.sqrt(dx * dx + dy * dy)
+            const minDist = a.r + b.r
+            if (dist < minDist && dist > 0.001) {
+              const nx = dx / dist
+              const ny = dy / dist
+              const overlap = minDist - dist
+              a.x -= nx * overlap / 2
+              a.y -= ny * overlap / 2
+              b.x += nx * overlap / 2
+              b.y += ny * overlap / 2
+              const dvx = a.vx - b.vx
+              const dvy = a.vy - b.vy
+              const dvn = dvx * nx + dvy * ny
+              if (dvn > 0) {
+                a.vx -= dvn * nx * BALL_BOUNCE
+                a.vy -= dvn * ny * BALL_BOUNCE
+                b.vx += dvn * nx * BALL_BOUNCE
+                b.vy += dvn * ny * BALL_BOUNCE
+              }
             }
           }
         }
@@ -306,8 +316,9 @@ const tick = (rendered: BallState[], parent: HTMLElement): void => {
     }
   }
 
-  for (const b of rendered) {
-    b.el.style.transform = `translate3d(${b.x - b.r}px, ${b.y - b.r}px, 0)`
+  for (let i = 0; i < rendered.length; i++) {
+    const b = rendered[i]
+    if (b) b.el.style.transform = `translate3d(${b.x - b.r}px,${b.y - b.r}px,0)`
   }
 }
 
@@ -335,7 +346,7 @@ export const view = (model: Model, language: string = 'en') => {
     [h.Class('page')],
     [
       h.div([h.Class('card')], [
-        h.h1([h.Class('title')], ['Counter']),
+        h.h1([h.Class('title')], [t('counterTitle', language)]),
         h.div([h.Class('buttons counter-actions')], [
           h.button(
             btnAttrs((d) => PressedDecrement({ duration: d })),
@@ -343,7 +354,7 @@ export const view = (model: Model, language: string = 'en') => {
           ),
           h.button(
             [h.OnClick(ClickedReset()), h.Class('btn btn-secondary')],
-            ['Reset'],
+            [t('reset', language)],
           ),
           h.button(
             btnAttrs((d) => PressedIncrement({ duration: d })),
@@ -362,20 +373,41 @@ export const view = (model: Model, language: string = 'en') => {
                   yield* Effect.acquireRelease(
                     Effect.sync(() => {
                       const parent = element as HTMLElement
-                      const rendered: BallState[] = []
-                      const state = { running: true, id: 0 }
+                      const rect = parent.getBoundingClientRect()
+                      const state: TickState = {
+                        rendered: [],
+                        running: true,
+                        id: 0,
+                        w: rect.width,
+                        h: rect.height,
+                        target: model.count,
+                        fontSize: model.fontSize,
+                        dirty: false,
+                        spawnCounter: 0,
+                      }
+                      const ro = new ResizeObserver(() => { state.dirty = true })
+                      ro.observe(parent)
+                      const mo = new MutationObserver(() => {
+                        const cs = parent.getAttribute('data-count')
+                        state.target = cs ? parseInt(cs) : 0
+                        const fs = parent.getAttribute('data-fontsize')
+                        state.fontSize = fs ? parseFloat(fs) : 3
+                      })
+                      mo.observe(parent, { attributes: true, attributeFilter: ['data-count', 'data-fontsize'] })
                       const loop = () => {
                         if (!state.running) return
-                        tick(rendered, parent)
+                        tick(state, parent)
                         state.id = requestAnimationFrame(loop)
                       }
                       state.id = requestAnimationFrame(loop)
-                      return { rendered, state }
+                      return { state, ro, mo }
                     }),
-                    ({ rendered, state }) => Effect.sync(() => {
+                    ({ state, ro, mo }) => Effect.sync(() => {
                       state.running = false
                       cancelAnimationFrame(state.id)
-                      rendered.forEach(b => b.el.remove())
+                      ro.disconnect()
+                      mo.disconnect()
+                      state.rendered.forEach(b => b.el.remove())
                     }),
                   )
                   return yield* Effect.never

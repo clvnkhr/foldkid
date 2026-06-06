@@ -3,6 +3,7 @@ import { Command } from 'foldkit'
 import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
 import { pop, chime, swoosh } from '../audio'
+import { t, tf } from '../i18n'
 
 const Bubble = S.Struct({ id: S.Number, color: S.String, popped: S.Boolean })
 type Bubble = typeof Bubble.Type
@@ -63,30 +64,30 @@ export const update = (
     }),
   )
 
-export const view = (model: Model) => {
+export const view = (model: Model, language: string = 'en') => {
   const h = html<Message>()
 
   return h.div(
     [h.Class('page')],
     [
       h.div([h.Class('card')], [
-        h.h1([h.Class('title')], ['Bubbles!']),
-        h.p([h.Class('bubbles-score')], [`Popped: ${model.score}`]),
+        h.h1([h.Class('title')], [t('bubblesTitle', language)]),
+        h.p([h.Class('bubbles-score')], [tf('popped', language, model.score)]),
         h.div([h.Class('buttons')], [
           h.button(
             [h.OnClick(ClickedAdd()), h.Class('btn btn-primary')],
-            ['➕ Add Bubble'],
+            [t('addBubble', language)],
           ),
           model.score > 0 || model.bubbles.length > 0
             ? h.button(
               [h.OnClick(ClickedReset()), h.Class('btn btn-secondary')],
-              ['Clear'],
+              [t('clear', language)],
             )
             : null,
         ]),
         h.div([h.Class('display-area')], [
           model.bubbles.length === 0
-            ? h.p([h.Class('bubbles-hint')], ['Tap "Add Bubble" to start!'])
+            ? h.p([h.Class('bubbles-hint')], [t('tapToAdd', language)])
             : null,
           h.div([h.Class('bubbles-area')], [
             ...model.bubbles.filter((b) => !b.popped).map((b) =>
@@ -100,7 +101,7 @@ export const view = (model: Model) => {
               )
             ),
             model.bubbles.filter((b) => !b.popped).length === 0 && model.bubbles.length > 0
-              ? h.p([h.Class('bubbles-done')], ['All popped! Add more!'])
+              ? h.p([h.Class('bubbles-done')], [t('allPopped', language)])
               : null,
           ]),
         ]),

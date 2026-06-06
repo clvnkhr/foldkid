@@ -9,6 +9,44 @@ import * as Counter from './games/counter'
 import * as Greeting from './games/greeting'
 import * as Peekaboo from './games/peekaboo'
 import { view as landingView } from './pages/landing'
+import { t } from './i18n'
+
+// PERSISTENCE
+
+const STORAGE_KEY = 'foldkid-settings'
+
+interface PersistedSettings {
+  language: string
+  darkMode: string
+  muted: boolean
+  counterRate: number
+  counterPitch: number
+  counterDisplayMode: string
+}
+
+const loadSettings = (): Partial<PersistedSettings> => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return {}
+    return JSON.parse(raw)
+  } catch {
+    return {}
+  }
+}
+
+const saveSettings = (model: Model): void => {
+  try {
+    const data: PersistedSettings = {
+      language: model.language,
+      darkMode: model.darkMode,
+      muted: model.muted,
+      counterRate: model.counter.rate,
+      counterPitch: model.counter.pitch,
+      counterDisplayMode: model.counter.displayMode,
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
+  } catch { /* ignore */ }
+}
 
 // MODEL
 
@@ -66,20 +104,28 @@ export type Message = typeof Message.Type
 
 // INIT
 
-export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>] => [
-  {
-    page: PageLanding(),
-    darkMode: 'auto',
-    language: 'en',
-    showSettings: false,
-    muted: false,
-    greeting: Greeting.init,
-    counter: Counter.init,
-    peekaboo: Peekaboo.init(),
-    bubbles: Bubbles.init,
-  },
-  [],
-]
+export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
+  const saved = loadSettings()
+  return [
+    {
+      page: PageLanding(),
+      darkMode: saved.darkMode ?? 'auto',
+      language: saved.language ?? 'en',
+      showSettings: false,
+      muted: saved.muted ?? false,
+      greeting: Greeting.init,
+      counter: {
+        ...Counter.init,
+        rate: saved.counterRate ?? Counter.init.rate,
+        pitch: saved.counterPitch ?? Counter.init.pitch,
+        displayMode: saved.counterDisplayMode ?? Counter.init.displayMode,
+      },
+      peekaboo: Peekaboo.init(),
+      bubbles: Bubbles.init,
+    },
+    [],
+  ]
+}
 
 // UPDATE
 
@@ -118,7 +164,7 @@ const updateBubbles = (
 const cycleDarkMode = (current: string): string =>
   current === 'auto' ? 'light' : current === 'light' ? 'dark' : 'auto'
 
-export const update = (
+const _update = (
   model: Model,
   message: Message,
 ): readonly [Model, ReadonlyArray<Command.Command<Message>>] =>
@@ -164,17 +210,31 @@ export const update = (
     }),
   )
 
+const SETTINGS_TAGS = new Set([
+  'ClickedDarkMode', 'SetLanguage', 'ToggleMute',
+  'CounterSetRate', 'CounterSetPitch', 'CounterSetDisplayMode',
+])
+
+export const update = (
+  model: Model,
+  message: Message,
+): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
+  const result = _update(model, message)
+  if (SETTINGS_TAGS.has(message._tag)) saveSettings(result[0])
+  return result
+}
+
 // VIEW
 
 const pageTitle = (model: Model): string =>
   M.value(model.page).pipe(
     M.withReturnType<string>(),
     M.tagsExhaustive({
-      PageLanding: () => 'foldkid - Games for Kids',
-      PageGreeting: () => 'Say Hello - foldkid',
-      PageCounter: () => 'Counter - foldkid',
-      PagePeekaboo: () => 'Peek-a-Boo - foldkid',
-      PageBubbles: () => 'Bubbles - foldkid',
+      PageLanding: () => t('pageTitleLanding', model.language),
+      PageGreeting: () => t('pageTitleGreeting', model.language),
+      PageCounter: () => t('pageTitleCounter', model.language),
+      PagePeekaboo: () => t('pageTitlePeekaboo', model.language),
+      PageBubbles: () => t('pageTitleBubbles', model.language),
     }),
   )
 
@@ -204,7 +264,7 @@ export const view = (model: Model): Document => {
               [
                 h.button(
                   [h.OnClick(ClickedLanding()), h.Class('back-btn')],
-                  ['← Back to games'],
+                  [t('backToGames', model.language)],
                 ),
                 h.div([h.Class('nav-right')], [
                   h.button(
@@ -235,23 +295,24 @@ export const view = (model: Model): Document => {
             ),
         h.div([h.Class('settings-panel'), h.Style({ display: model.showSettings ? '' : 'none' })], [
           h.div([h.Class('settings-header')], [
-            h.h2([], ['Settings']),
+            h.h2([], [t('settings', model.language)]),
             h.button(
               [h.OnClick(ClickedSettings()), h.Class('settings-close')],
               ['✕'],
             ),
           ]),
           h.div([h.Class('setting-section')], [
-            h.h3([], ['Language']),
+            h.h3([], [t('language', model.language)]),
             h.div([h.Class('lang-buttons')], [
               ...[
-                ['en', 'English'] as const,
-                ['zh', '中文'] as const,
-                ['fr', 'Français'] as const,
-                ['de', 'Deutsch'] as const,
-                ['fa', 'فارسی'] as const,
-                ['ms', 'Bahasa Malaysia'] as const,
-                ['zh-HK', '廣東話'] as const,
+                ['en', t('langEn', model.language)] as const,
+                ['zh', t('langZh', model.language)] as const,
+                ['fr', t('langFr', model.language)] as const,
+                ['de', t('langDe', model.language)] as const,
+                ['fa', t('langFa', model.language)] as const,
+                ['ms', t('langMs', model.language)] as const,
+                ['zh-HK', t('langZhHK', model.language)] as const,
+                ['ja', t('langJa', model.language)] as const,
               ].map(([val, label]) =>
                 h.button(
                   [
@@ -264,7 +325,7 @@ export const view = (model: Model): Document => {
             ]),
           ]),
           h.div([h.Class('setting-section')], [
-            h.h3([], ['Sound']),
+            h.h3([], [t('sound', model.language)]),
             h.button(
               [
                 h.Class('mute-toggle'),
@@ -275,9 +336,9 @@ export const view = (model: Model): Document => {
           ]),
           model.page._tag === 'PageCounter'
             ? h.div([h.Class('setting-section')], [
-              h.h3([], ['Counter Speech']),
+              h.h3([], [t('counterSpeech', model.language)]),
               h.div([h.Class('setting-row')], [
-                h.label([], ['Rate']),
+                h.label([], [t('rate', model.language)]),
                 h.div([h.Class('slider-row')], [
                   h.input([
                     h.Type('range'),
@@ -291,7 +352,7 @@ export const view = (model: Model): Document => {
                 ]),
               ]),
               h.div([h.Class('setting-row')], [
-                h.label([], ['Pitch']),
+                h.label([], [t('pitch', model.language)]),
                 h.div([h.Class('slider-row')], [
                   h.input([
                     h.Type('range'),
@@ -305,7 +366,7 @@ export const view = (model: Model): Document => {
                 ]),
               ]),
               h.div([h.Class('setting-row')], [
-                h.label([], ['Display']),
+                h.label([], [t('display', model.language)]),
                 h.div([h.Class('lang-buttons')], [
                   ...([
                     ['number', '123'] as const,
@@ -324,15 +385,15 @@ export const view = (model: Model): Document => {
               ]),
             ])
             : null,
-          h.p([h.Class('settings-note')], ['Voice availability depends on your device & browser.']),
+          h.p([h.Class('settings-note')], [t('voiceNote', model.language)]),
         ]),
         M.value(model.page).pipe(
           M.tagsExhaustive({
-            PageLanding: () => landingView(),
-            PageGreeting: () => Greeting.view(model.greeting),
+            PageLanding: () => landingView(model.language),
+            PageGreeting: () => Greeting.view(model.greeting, model.language),
             PageCounter: () => Counter.view(model.counter, model.language),
-            PagePeekaboo: () => Peekaboo.view(model.peekaboo),
-            PageBubbles: () => Bubbles.view(model.bubbles),
+            PagePeekaboo: () => Peekaboo.view(model.peekaboo, model.language),
+            PageBubbles: () => Bubbles.view(model.bubbles, model.language),
           }),
         ),
       ],

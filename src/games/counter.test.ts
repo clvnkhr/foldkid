@@ -198,6 +198,14 @@ describe('numberToWord', () => {
     expect(numberToWord(5, 'ms')).toBe('lima')
   })
 
+  it('converts to Japanese words', () => {
+    expect(numberToWord(0, 'ja')).toBe('零')
+    expect(numberToWord(5, 'ja')).toBe('五')
+    expect(numberToWord(10, 'ja')).toBe('十')
+    expect(numberToWord(13, 'ja')).toBe('十三')
+    expect(numberToWord(100, 'ja')).toBe('百')
+  })
+
   it('falls back for unknown language', () => {
     expect(numberToWord(5, 'xx')).toBe('5')
   })
