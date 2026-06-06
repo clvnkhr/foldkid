@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Scene, Story } from 'foldkit/test'
 import * as Counter from './counter'
+import { numberToWord } from './counter'
 
 const resolveClick = [{ name: 'PlayClick' }, Counter.SoundPlayed()] as const
 const resolveSwoosh = [{ name: 'PlaySwoosh' }, Counter.SoundPlayed()] as const
@@ -10,7 +11,7 @@ const resolveBalls = [{ name: 'counterBalls' }, Counter.SoundPlayed()] as const
 describe('Counter', () => {
   it('init state', () => {
     expect(Counter.init).toStrictEqual({
-      count: 0, fontSize: 3, holding: false, rate: 0.85, pitch: 1.1,
+      count: 0, fontSize: 3, holding: false, rate: 0.85, pitch: 1.1, displayMode: 'number',
     })
   })
 
@@ -120,5 +121,79 @@ describe('Counter', () => {
       }),
       Story.Command.expectNone(),
     )
+  })
+
+  it('SetDisplayMode updates displayMode', () => {
+    Story.story(
+      Counter.update,
+      Story.with(Counter.init),
+      Story.message(Counter.SetDisplayMode({ value: 'word' })),
+      Story.model((model) => {
+        expect(model.displayMode).toBe('word')
+      }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('renders word mode', () => {
+    Scene.scene(
+      { update: Counter.update, view: Counter.view },
+      Scene.with({ ...Counter.init, count: 5, displayMode: 'word' }),
+      Scene.expect(Scene.text('five')).toExist(),
+      Scene.Mount.resolveAll(resolveBalls),
+      Scene.Command.expectNone(),
+    )
+  })
+
+  it('renders both mode', () => {
+    Scene.scene(
+      { update: Counter.update, view: Counter.view },
+      Scene.with({ ...Counter.init, count: 5, displayMode: 'both' }),
+      Scene.expect(Scene.text('5 · five')).toExist(),
+      Scene.Mount.resolveAll(resolveBalls),
+      Scene.Command.expectNone(),
+    )
+  })
+})
+
+describe('numberToWord', () => {
+  it('converts to English words', () => {
+    expect(numberToWord(0, 'en')).toBe('zero')
+    expect(numberToWord(5, 'en')).toBe('five')
+    expect(numberToWord(13, 'en')).toBe('thirteen')
+    expect(numberToWord(42, 'en')).toBe('forty-two')
+  })
+
+  it('converts to German words', () => {
+    expect(numberToWord(5, 'de')).toBe('fünf')
+  })
+
+  it('converts to French words', () => {
+    expect(numberToWord(5, 'fr')).toBe('cinq')
+  })
+
+  it('converts to Malay words', () => {
+    expect(numberToWord(5, 'ms')).toBe('lima')
+  })
+
+  it('converts to Chinese words', () => {
+    expect(numberToWord(0, 'zh')).toBe('零')
+    expect(numberToWord(5, 'zh')).toBe('五')
+    expect(numberToWord(10, 'zh')).toBe('一十')
+    expect(numberToWord(21, 'zh')).toBe('二十一')
+  })
+
+  it('converts to Cantonese words', () => {
+    expect(numberToWord(0, 'zh-HK')).toBe('零')
+    expect(numberToWord(5, 'zh-HK')).toBe('五')
+  })
+
+  it('uses kosong for Malay zero', () => {
+    expect(numberToWord(0, 'ms')).toBe('kosong')
+    expect(numberToWord(5, 'ms')).toBe('lima')
+  })
+
+  it('falls back for unknown language', () => {
+    expect(numberToWord(5, 'xx')).toBe('5')
   })
 })

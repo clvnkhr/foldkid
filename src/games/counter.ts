@@ -4,8 +4,42 @@ import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
 import { click, swoosh } from '../audio'
 import { speak } from '../speech'
+import { toCardinal } from 'n2words/en-US'
+import { toCardinal as toCardinalDe } from 'n2words/de-DE'
+import { toCardinal as toCardinalFr } from 'n2words/fr-FR'
+import { toCardinal as toCardinalFa } from 'n2words/fa-IR'
+import { toCardinal as toCardinalMs } from 'n2words/ms-MY'
+import { toCardinal as toCardinalZh } from 'n2words/zh-Hans-CN'
+import { toCardinal as toCardinalZhHant } from 'n2words/zh-Hant-TW'
 
-export const Model = S.Struct({ count: S.Number, fontSize: S.Number, holding: S.Boolean, rate: S.Number, pitch: S.Number })
+const WORD_FN: Record<string, (n: number, opts: Record<string, boolean>) => string> = {
+  en: toCardinal,
+  de: toCardinalDe,
+  fr: toCardinalFr,
+  fa: toCardinalFa,
+  ms: toCardinalMs,
+  zh: toCardinalZh,
+  'zh-HK': toCardinalZhHant,
+}
+
+const WORD_OPTS: Record<string, Record<string, boolean>> = {
+  zh: { formal: false },
+  'zh-HK': { formal: false },
+}
+
+export const numberToWord = (n: number, language: string = 'en'): string => {
+  const fn = WORD_FN[language]
+  if (!fn) return n.toString()
+  try {
+    let word = fn(n, WORD_OPTS[language] ?? {})
+    if (language === 'ms' && word === 'sifar') word = 'kosong'
+    return word
+  } catch {
+    return n.toString()
+  }
+}
+
+export const Model = S.Struct({ count: S.Number, fontSize: S.Number, holding: S.Boolean, rate: S.Number, pitch: S.Number, displayMode: S.String })
 export type Model = typeof Model.Type
 
 export const PointerDown = m('CounterPointerDown')
@@ -14,12 +48,13 @@ export const PressedDecrement = m('CounterPressedDecrement', { duration: S.Numbe
 export const ClickedReset = m('CounterClickedReset')
 export const SetRate = m('CounterSetRate', { value: S.Number })
 export const SetPitch = m('CounterSetPitch', { value: S.Number })
+export const SetDisplayMode = m('CounterSetDisplayMode', { value: S.String })
 export const SoundPlayed = m('CounterSoundPlayed')
 
-export const Message = S.Union([PointerDown, PressedIncrement, PressedDecrement, ClickedReset, SetRate, SetPitch, SoundPlayed])
+export const Message = S.Union([PointerDown, PressedIncrement, PressedDecrement, ClickedReset, SetRate, SetPitch, SetDisplayMode, SoundPlayed])
 export type Message = typeof Message.Type
 
-export const init: Model = { count: 0, fontSize: 3, holding: false, rate: 0.85, pitch: 1.1 }
+export const init: Model = { count: 0, fontSize: 3, holding: false, rate: 0.85, pitch: 1.1, displayMode: 'number' }
 
 const calcFontSize = (duration: number): number => {
   const s = duration / 1000
@@ -59,6 +94,10 @@ export const update = (
       ],
       CounterSetPitch: (msg) => [
         { ...model, pitch: msg.value },
+        [],
+      ],
+      CounterSetDisplayMode: (msg) => [
+        { ...model, displayMode: msg.value },
         [],
       ],
       CounterSoundPlayed: () => [model, []],
@@ -269,8 +308,14 @@ const tick = (rendered: BallState[], parent: HTMLElement): void => {
   }
 }
 
-export const view = (model: Model) => {
+export const view = (model: Model, language: string = 'en') => {
   const h = html<Message>()
+
+  const displayText = (): string => {
+    if (model.displayMode === 'word') return numberToWord(model.count, language)
+    if (model.displayMode === 'both') return `${model.count} · ${numberToWord(model.count, language)}`
+    return model.count.toString()
+  }
 
   const btnAttrs = (msg: (d: number) => Message) => [
     h.Class('btn btn-primary'),
@@ -302,7 +347,7 @@ export const view = (model: Model) => {
             ['+1'],
           ),
         ]),
-        h.div([h.Class('display-area'), h.Style({ position: 'relative', overflow: 'hidden' })], [
+        h.div([h.Class('display-area'), h.Style({ position: 'relative' })], [
           h.div([
             h.Class('balls-container'),
             h.Attribute('data-count', model.count.toString()),
@@ -335,7 +380,7 @@ export const view = (model: Model) => {
               ),
             }),
           ], []),
-          h.p([h.Class(model.holding ? 'number holding' : model.count < 0 ? 'number negative' : 'number'), h.Style({ color: numberColor(model.count), fontSize: `${model.fontSize}rem`, position: 'relative', zIndex: '2' }), h.Key(model.count.toString())], [model.count.toString()]),
+          h.p([h.Class(model.holding ? 'number holding' : model.count < 0 ? 'number negative' : 'number'), h.Style({ color: numberColor(model.count), fontSize: `${model.fontSize}rem`, position: 'relative', zIndex: '2' }), h.Key(model.count.toString())], [displayText()]),
         ]),
       ]),
     ],

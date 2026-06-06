@@ -50,6 +50,7 @@ export const Message = S.Union([
   Counter.ClickedReset,
   Counter.SetRate,
   Counter.SetPitch,
+  Counter.SetDisplayMode,
   Peekaboo.ClickedCell,
   Peekaboo.ClickedNext,
   Bubbles.ClickedPop,
@@ -150,6 +151,7 @@ export const update = (
       CounterClickedReset: (msg) => updateCounter(model, msg),
       CounterSetRate: (msg) => updateCounter(model, msg),
       CounterSetPitch: (msg) => updateCounter(model, msg),
+      CounterSetDisplayMode: (msg) => updateCounter(model, msg),
       PeekabooClickedCell: (msg) => updatePeekaboo(model, msg),
       PeekabooClickedNext: (msg) => updatePeekaboo(model, msg),
       BubblesClickedPop: (msg) => updateBubbles(model, msg),
@@ -265,10 +267,10 @@ export const view = (model: Model): Document => {
             h.h3([], ['Sound']),
             h.button(
               [
-                h.Class(model.muted ? 'btn btn-secondary' : 'btn btn-primary'),
+                h.Class('mute-toggle'),
                 h.OnClick(ToggleMute()),
               ],
-              [model.muted ? '🔇 Muted' : '🔊 Sound On'],
+              [model.muted ? '🔇' : '🔊'],
             ),
           ]),
           model.page._tag === 'PageCounter'
@@ -302,6 +304,24 @@ export const view = (model: Model): Document => {
                   h.span([], [model.counter.pitch.toFixed(1)]),
                 ]),
               ]),
+              h.div([h.Class('setting-row')], [
+                h.label([], ['Display']),
+                h.div([h.Class('lang-buttons')], [
+                  ...([
+                    ['number', '123'] as const,
+                    ['word', 'Word'] as const,
+                    ['both', 'Both'] as const,
+                  ] as const).map(([val, label]) =>
+                    h.button(
+                      [
+                        h.Class(val === model.counter.displayMode ? 'btn btn-primary' : 'btn btn-secondary'),
+                        h.OnClick(Counter.SetDisplayMode({ value: val })),
+                      ],
+                      [label],
+                    ),
+                  ),
+                ]),
+              ]),
             ])
             : null,
           h.p([h.Class('settings-note')], ['Voice availability depends on your device & browser.']),
@@ -310,7 +330,7 @@ export const view = (model: Model): Document => {
           M.tagsExhaustive({
             PageLanding: () => landingView(),
             PageGreeting: () => Greeting.view(model.greeting),
-            PageCounter: () => Counter.view(model.counter),
+            PageCounter: () => Counter.view(model.counter, model.language),
             PagePeekaboo: () => Peekaboo.view(model.peekaboo),
             PageBubbles: () => Bubbles.view(model.bubbles),
           }),

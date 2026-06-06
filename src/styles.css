@@ -178,7 +178,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .balls-container {
@@ -203,6 +203,9 @@ body {
 
 .number {
   font-weight: 900;
+  line-height: 1;
+  user-select: none;
+  -webkit-user-select: none;
   transition: color 0.3s, font-size 0.15s;
 }
 
@@ -296,11 +299,22 @@ body {
 
 .counter-actions {
   flex-wrap: nowrap;
+  position: relative;
+  z-index: 10;
 }
 
 .counter-actions .btn {
-  flex: 1;
-  min-width: 0;
+  padding: 0.75rem 0.5rem;
+  overflow: hidden;
+  font-size: clamp(0.75rem, 4vw, 1.1rem);
+}
+
+.counter-actions .btn-primary {
+  flex: 2 1 auto;
+}
+
+.counter-actions .btn-secondary {
+  flex: 1 1 auto;
 }
 
 .btn {
@@ -722,6 +736,15 @@ body {
   margin: 0;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+
+.mute-toggle {
+  background: none;
+  border: none;
+  font-size: 1.4rem;
+  padding: 0;
+  cursor: pointer;
+  line-height: 1;
 }
 
 .settings-header {
