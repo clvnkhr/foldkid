@@ -27,12 +27,15 @@ const WORD_OPTS: Record<string, Record<string, boolean>> = {
   'zh-HK': { formal: false },
 }
 
+const zhStripLeadingOne = (s: string): string => s.startsWith('一十') ? s.slice(1) : s
+
 export const numberToWord = (n: number, language: string = 'en'): string => {
   const fn = WORD_FN[language]
   if (!fn) return n.toString()
   try {
     let word = fn(n, WORD_OPTS[language] ?? {})
     if (language === 'ms' && word === 'sifar') word = 'kosong'
+    if (language === 'zh' || language === 'zh-HK') word = zhStripLeadingOne(word)
     return word
   } catch {
     return n.toString()

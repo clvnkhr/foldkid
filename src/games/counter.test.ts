@@ -179,13 +179,18 @@ describe('numberToWord', () => {
   it('converts to Chinese words', () => {
     expect(numberToWord(0, 'zh')).toBe('零')
     expect(numberToWord(5, 'zh')).toBe('五')
-    expect(numberToWord(10, 'zh')).toBe('一十')
+    expect(numberToWord(10, 'zh')).toBe('十')
+    expect(numberToWord(13, 'zh')).toBe('十三')
     expect(numberToWord(21, 'zh')).toBe('二十一')
+    expect(numberToWord(100, 'zh')).toBe('一百')
+    expect(numberToWord(110, 'zh')).toBe('一百一十')
   })
 
   it('converts to Cantonese words', () => {
     expect(numberToWord(0, 'zh-HK')).toBe('零')
     expect(numberToWord(5, 'zh-HK')).toBe('五')
+    expect(numberToWord(10, 'zh-HK')).toBe('十')
+    expect(numberToWord(100, 'zh-HK')).toBe('一百')
   })
 
   it('uses kosong for Malay zero', () => {
