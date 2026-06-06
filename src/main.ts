@@ -127,7 +127,7 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
         displayMode: saved.counterDisplayMode ?? Counter.init.displayMode,
       },
       peekaboo: { ...Peekaboo.init(), anyWins: saved.peekabooAnyWins ?? false },
-      bubbles: Bubbles.init,
+      bubbles: Bubbles.init(),
     },
     [],
   ]

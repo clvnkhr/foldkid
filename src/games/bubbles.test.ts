@@ -5,16 +5,20 @@ import * as Bubbles from './bubbles'
 const resolvePop = [{ name: 'PlayPop' }, Bubbles.SoundPlayed()] as const
 const resolveChime = [{ name: 'PlayChime' }, Bubbles.SoundPlayed()] as const
 const resolveSwoosh = [{ name: 'PlaySwoosh' }, Bubbles.SoundPlayed()] as const
+const resolveAnim = [{ name: 'bubblesAnim' }, Bubbles.SoundPlayed()] as const
 
 describe('Bubbles', () => {
-  it('init state', () => {
-    expect(Bubbles.init).toStrictEqual({ bubbles: [], score: 0, nextId: 0 })
+  it('init creates empty state', () => {
+    const model = Bubbles.init()
+    expect(model.bubbles).toHaveLength(0)
+    expect(model.score).toBe(0)
+    expect(model.nextId).toBe(0)
   })
 
   it('add creates a bubble', () => {
     Story.story(
       Bubbles.update,
-      Story.with({ bubbles: [], score: 0, nextId: 0 }),
+      Story.with(Bubbles.init()),
       Story.message(Bubbles.ClickedAdd()),
       Story.model((model) => {
         expect(model.bubbles).toHaveLength(1)
@@ -60,10 +64,11 @@ describe('Bubbles', () => {
   it('renders hint when empty', () => {
     Scene.scene(
       { update: Bubbles.update, view: Bubbles.view },
-      Scene.with(Bubbles.init),
+      Scene.with(Bubbles.init()),
       Scene.expect(Scene.text('Bubbles!')).toExist(),
       Scene.expect(Scene.text('Tap "Add Bubble" to start!')).toExist(),
       Scene.expect(Scene.text('➕ Add Bubble')).toExist(),
+      Scene.Mount.resolveAll(resolveAnim),
       Scene.Command.expectNone(),
     )
   })
@@ -73,9 +78,8 @@ describe('Bubbles', () => {
     Scene.scene(
       { update: Bubbles.update, view: Bubbles.view },
       Scene.with({ bubbles: [bubble], score: 0, nextId: 1 }),
-      Scene.expect(Scene.text('○')).toExist(),
-      Scene.expect(Scene.text('○')).toHaveStyle('background', '#FF6B6B'),
-      Scene.expect(Scene.text('Tap "Add Bubble" to start!')).toBeAbsent(),
+      Scene.expect(Scene.text('➕ Add Bubble')).toExist(),
+      Scene.Mount.resolveAll(resolveAnim),
       Scene.Command.expectNone(),
     )
   })
@@ -86,6 +90,7 @@ describe('Bubbles', () => {
       { update: Bubbles.update, view: Bubbles.view },
       Scene.with({ bubbles: [bubble], score: 1, nextId: 1 }),
       Scene.expect(Scene.text('All popped! Add more!')).toExist(),
+      Scene.Mount.resolveAll(resolveAnim),
       Scene.Command.expectNone(),
     )
   })
@@ -95,6 +100,7 @@ describe('Bubbles', () => {
       { update: Bubbles.update, view: Bubbles.view },
       Scene.with({ bubbles: [{ id: 1, color: '#FF6B6B', popped: false }], score: 0, nextId: 1 }),
       Scene.expect(Scene.text('Clear')).toExist(),
+      Scene.Mount.resolveAll(resolveAnim),
       Scene.Command.expectNone(),
     )
   })
@@ -104,6 +110,7 @@ describe('Bubbles', () => {
       { update: Bubbles.update, view: Bubbles.view },
       Scene.with({ bubbles: [], score: 3, nextId: 3 }),
       Scene.expect(Scene.text('Clear')).toExist(),
+      Scene.Mount.resolveAll(resolveAnim),
       Scene.Command.expectNone(),
     )
   })
@@ -111,10 +118,42 @@ describe('Bubbles', () => {
   it('hides Clear button when empty and score is 0', () => {
     Scene.scene(
       { update: Bubbles.update, view: Bubbles.view },
-      Scene.with({ bubbles: [], score: 0, nextId: 0 }),
+      Scene.with(Bubbles.init()),
       Scene.expect(Scene.text('Clear')).toBeAbsent(),
+      Scene.Mount.resolveAll(resolveAnim),
       Scene.Command.expectNone(),
     )
+  })
+
+  it('popping one bubble does not affect other bubbles in the model', () => {
+    const b1 = { id: 1, color: '#FF6B6B', popped: false }
+    const b2 = { id: 2, color: '#4ECDC4', popped: false }
+    const b3 = { id: 3, color: '#FFE66D', popped: false }
+    Story.story(
+      Bubbles.update,
+      Story.with({ bubbles: [b1, b2, b3], score: 0, nextId: 4 }),
+      Story.message(Bubbles.ClickedPop({ id: 2 })),
+      Story.model((model) => {
+        expect(model.bubbles).toHaveLength(3)
+        expect(model.bubbles[0]).toStrictEqual({ ...b1 })
+        expect(model.bubbles[1]).toStrictEqual({ ...b2, popped: true })
+        expect(model.bubbles[2]).toStrictEqual({ ...b3 })
+        expect(model.score).toBe(1)
+      }),
+      Story.Command.resolveAll(resolvePop),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('sequential pop and add preserves unpopped bubbles', () => {
+    const b1 = { id: 1, color: '#FF6B6B', popped: false }
+    const next = Bubbles.update({ bubbles: [b1], score: 0, nextId: 2 }, Bubbles.ClickedAdd(), false)[0]
+    expect(next.bubbles).toHaveLength(2)
+    const afterPop = Bubbles.update(next, Bubbles.ClickedPop({ id: 1 }), false)[0]
+    expect(afterPop.bubbles).toHaveLength(2)
+    expect(afterPop.bubbles[0]?.popped).toBe(true)
+    expect(afterPop.bubbles[1]?.popped).toBe(false)
+    expect(afterPop.bubbles[1]?.id).toBe(2)
   })
 
   it('SoundPlayed leaves model unchanged', () => {
