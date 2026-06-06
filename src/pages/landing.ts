@@ -24,7 +24,6 @@ export const view = (language: string) => {
           [
             h.div([h.Class('game-emoji')], ['👋']),
             h.h2([h.Class('game-name')], [t('greetingTitle', language)]),
-            h.p([h.Class('game-desc')], [t('greetingDesc', language)]),
           ],
         ),
         h.div(
@@ -32,7 +31,6 @@ export const view = (language: string) => {
           [
             h.div([h.Class('game-emoji')], ['🔢']),
             h.h2([h.Class('game-name')], [t('counterTitle', language)]),
-            h.p([h.Class('game-desc')], [t('counterDesc', language)]),
           ],
         ),
         h.div(
@@ -40,7 +38,6 @@ export const view = (language: string) => {
           [
             h.div([h.Class('game-emoji')], ['🙈']),
             h.h2([h.Class('game-name')], [t('peekabooTitle', language)]),
-            h.p([h.Class('game-desc')], [t('peekabooDesc', language)]),
           ],
         ),
         h.div(
@@ -48,7 +45,6 @@ export const view = (language: string) => {
           [
             h.div([h.Class('game-emoji')], ['🫧']),
             h.h2([h.Class('game-name')], [t('bubblesTitle', language)]),
-            h.p([h.Class('game-desc')], [t('bubblesDesc', language)]),
           ],
         ),
       ]),

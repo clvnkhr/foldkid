@@ -19,7 +19,6 @@
   --cell-hover-bg: rgba(102, 126, 234, 0.18);
   --nav-bar-bg: transparent;
   --game-name-color: #1a1a2e;
-  --game-desc-color: #666;
   --shadow-color: rgba(0, 0, 0, 0.15);
   --shadow-color-strong: rgba(0, 0, 0, 0.3);
   --bubble-bg: rgba(255, 255, 255, 0.8);
@@ -43,7 +42,6 @@
   --cell-hover-bg: rgba(102, 126, 234, 0.25);
   --nav-bar-bg: rgba(0, 0, 0, 0.3);
   --game-name-color: #e2e8f0;
-  --game-desc-color: #a0aec0;
   --shadow-color: rgba(0, 0, 0, 0.4);
   --shadow-color-strong: rgba(0, 0, 0, 0.5);
   --bubble-bg: rgba(30, 30, 50, 0.8);
@@ -130,12 +128,6 @@ body {
   font-weight: 700;
   color: var(--game-name-color);
   margin-bottom: 0.5rem;
-}
-
-.game-desc {
-  font-size: 0.9rem;
-  color: var(--game-desc-color);
-  line-height: 1.4;
 }
 
 /* Shared Page Styles */

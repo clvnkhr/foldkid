@@ -26,15 +26,5 @@ describe('Landing', () => {
     )
   })
 
-  it('renders game descriptions', () => {
-    Scene.scene(
-      { update: Main.update, view: () => view('en') },
-      Scene.with(Main.init()[0]),
-      Scene.expect(Scene.text('A friendly hello greets you every time')).toExist(),
-      Scene.expect(Scene.text('Count up and down with big buttons')).toExist(),
-      Scene.expect(Scene.text('Hide and seek with a friendly face')).toExist(),
-      Scene.expect(Scene.text('Add and pop colorful bubbles')).toExist(),
-      Scene.Command.expectNone(),
-    )
-  })
+
 })
