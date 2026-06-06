@@ -2,7 +2,7 @@ import { Match as M, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { Document, html } from 'foldkit/html'
 
-import { ClickedBubbles, ClickedCounter, ClickedDarkMode, ClickedGreeting, ClickedLanding, ClickedPeekaboo, ClickedSettings, SetLanguage, SystemDarkModeChanged } from './message'
+import { ClickedBubbles, ClickedCounter, ClickedDarkMode, ClickedGreeting, ClickedLanding, ClickedPeekaboo, ClickedSettings, SetLanguage, SystemDarkModeChanged, ToggleMute } from './message'
 import { Page, PageBubbles, PageCounter, PageGreeting, PageLanding, PagePeekaboo } from './route'
 import * as Bubbles from './games/bubbles'
 import * as Counter from './games/counter'
@@ -17,6 +17,7 @@ export const Model = S.Struct({
   darkMode: S.String,
   language: S.String,
   showSettings: S.Boolean,
+  muted: S.Boolean,
   greeting: Greeting.Model,
   counter: Counter.Model,
   peekaboo: Peekaboo.Model,
@@ -33,6 +34,7 @@ export const Message = S.Union([
   ClickedSettings,
   SetLanguage,
   SystemDarkModeChanged,
+  ToggleMute,
   ClickedGreeting,
   ClickedCounter,
   ClickedPeekaboo,
@@ -69,6 +71,7 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
     darkMode: 'auto',
     language: 'en',
     showSettings: false,
+    muted: false,
     greeting: Greeting.init,
     counter: Counter.init,
     peekaboo: Peekaboo.init(),
@@ -83,7 +86,7 @@ const updateGreeting = (
   model: Model,
   message: Greeting.Message,
 ): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
-  const [next, cmds] = Greeting.update(model.greeting, message, model.language)
+  const [next, cmds] = Greeting.update(model.greeting, message, model.language, model.muted)
   return [{ ...model, greeting: next }, cmds]
 }
 
@@ -91,7 +94,7 @@ const updateCounter = (
   model: Model,
   message: Counter.Message,
 ): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
-  const [next, cmds] = Counter.update(model.counter, message, model.language)
+  const [next, cmds] = Counter.update(model.counter, message, model.language, model.muted)
   return [{ ...model, counter: next }, cmds]
 }
 
@@ -99,7 +102,7 @@ const updatePeekaboo = (
   model: Model,
   message: Peekaboo.Message,
 ): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
-  const [next, cmds] = Peekaboo.update(model.peekaboo, message)
+  const [next, cmds] = Peekaboo.update(model.peekaboo, message, model.muted)
   return [{ ...model, peekaboo: next }, cmds]
 }
 
@@ -107,7 +110,7 @@ const updateBubbles = (
   model: Model,
   message: Bubbles.Message,
 ): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
-  const [next, cmds] = Bubbles.update(model.bubbles, message)
+  const [next, cmds] = Bubbles.update(model.bubbles, message, model.muted)
   return [{ ...model, bubbles: next }, cmds]
 }
 
@@ -131,6 +134,7 @@ export const update = (
       SystemDarkModeChanged: () => [{ ...model }, []],
       ClickedSettings: () => [{ ...model, showSettings: !model.showSettings }, []],
       SetLanguage: (msg) => [{ ...model, language: msg.value }, []],
+      ToggleMute: () => [{ ...model, muted: !model.muted }, []],
       ClickedGreeting: () => [{ ...model, page: PageGreeting() }, []],
       ClickedCounter: () => [{ ...model, page: PageCounter() }, []],
       ClickedPeekaboo: () => [{ ...model, page: PagePeekaboo() }, []],
@@ -256,6 +260,16 @@ export const view = (model: Model): Document => {
                 ),
               ),
             ]),
+          ]),
+          h.div([h.Class('setting-section')], [
+            h.h3([], ['Sound']),
+            h.button(
+              [
+                h.Class(model.muted ? 'btn btn-secondary' : 'btn btn-primary'),
+                h.OnClick(ToggleMute()),
+              ],
+              [model.muted ? '🔇 Muted' : '🔊 Sound On'],
+            ),
           ]),
           model.page._tag === 'PageCounter'
             ? h.div([h.Class('setting-section')], [

@@ -27,6 +27,7 @@ export const init: Model = { bubbles: [], score: 0, nextId: 0 }
 export const update = (
   model: Model,
   message: Message,
+  muted: boolean = false,
 ): readonly [Model, ReadonlyArray<Command.Command<Message>>] =>
   M.value(message).pipe(
     M.withReturnType<
@@ -41,7 +42,7 @@ export const update = (
           ),
           score: model.score + 1,
         },
-        [pop(SoundPlayed())],
+        muted ? [] : [pop(SoundPlayed())],
       ],
       BubblesClickedAdd: () => [
         {
@@ -52,11 +53,11 @@ export const update = (
           ],
           nextId: model.nextId + 1,
         },
-        [chime(SoundPlayed())],
+        muted ? [] : [chime(SoundPlayed())],
       ],
       BubblesClickedReset: () => [
         { bubbles: [], score: 0, nextId: model.nextId },
-        [swoosh(SoundPlayed())],
+        muted ? [] : [swoosh(SoundPlayed())],
       ],
       BubblesSoundPlayed: () => [model, []],
     }),

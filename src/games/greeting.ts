@@ -220,6 +220,7 @@ export const update = (
   model: Model,
   message: Message,
   language: string = 'en',
+  muted: boolean = false,
 ): readonly [Model, ReadonlyArray<Command.Command<Message>>] =>
   M.value(message).pipe(
     M.withReturnType<readonly [Model, ReadonlyArray<Command.Command<Message>>]>(),
@@ -238,11 +239,11 @@ export const update = (
       ],
       GreetingClickedPlay: () => [
         { ...model, playCount: model.playCount + 1 },
-        [playGreeting(model.audioUrl, language)],
+        muted ? [] : [playGreeting(model.audioUrl, language)],
       ],
       GreetingClickedReset: () => [
         { status: 'idle', audioUrl: '', playCount: 0 },
-        [swoosh(SoundPlayed())],
+        muted ? [] : [swoosh(SoundPlayed())],
       ],
       GreetingSoundPlayed: () => [
         { ...model, status: 'idle' },

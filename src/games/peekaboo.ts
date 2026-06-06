@@ -4,15 +4,28 @@ import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
 import { boing } from '../audio'
 
-const EMOJI_POOL = [
-  '🎈', '🎉', '🎊', '🎁', '🧸', '🍭', '🍬', '🎂', '🌈', '🌸', '⭐', '🍕', '🍔', '🌮', '🍩', '🧁',
-  '0️⃣', '1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣',
-  '🐱', '🐶', '🐰', '🦋', '🦄', '🐻', '🐼', '🐨', '🦁', '🐯', '🐸', '🐵', '🦊', '🐴', '🦝', '🐮', '🐷', '🐙',
-  '🐧', '🐦', '🦅', '🦉', '🐥', '🦆',
-  '🐢', '🐍', '🦎', '🐊',
-  '🐳', '🐬', '🦈', '🐠', '🐡',
-  '🐝', '🐞', '🦗', '🐜',
-]
+const EMOJIS = [
+  ['🎈', 'Balloon'], ['🎉', 'Party Popper'], ['🎊', 'Confetti'], ['🎁', 'Gift'],
+  ['🧸', 'Teddy Bear'], ['🍭', 'Lollipop'], ['🍬', 'Candy'], ['🎂', 'Birthday Cake'],
+  ['🌈', 'Rainbow'], ['🌸', 'Cherry Blossom'], ['⭐', 'Star'], ['🍕', 'Pizza'],
+  ['🍔', 'Burger'], ['🌮', 'Taco'], ['🍩', 'Donut'], ['🧁', 'Cupcake'],
+  ['0️⃣', 'Zero'], ['1️⃣', 'One'], ['2️⃣', 'Two'], ['3️⃣', 'Three'], ['4️⃣', 'Four'],
+  ['5️⃣', 'Five'], ['6️⃣', 'Six'], ['7️⃣', 'Seven'], ['8️⃣', 'Eight'], ['9️⃣', 'Nine'],
+  ['🐱', 'Cat'], ['🐶', 'Dog'], ['🐰', 'Rabbit'], ['🦋', 'Butterfly'], ['🦄', 'Unicorn'],
+  ['🐻', 'Bear'], ['🐼', 'Panda'], ['🐨', 'Koala'], ['🦁', 'Lion'], ['🐯', 'Tiger'],
+  ['🐸', 'Frog'], ['🐵', 'Monkey'], ['🦊', 'Fox'], ['🐴', 'Horse'], ['🦝', 'Raccoon'],
+  ['🐮', 'Cow'], ['🐷', 'Pig'], ['🐙', 'Octopus'], ['🐧', 'Penguin'], ['🐦', 'Bird'],
+  ['🦅', 'Eagle'], ['🦉', 'Owl'], ['🐥', 'Chick'], ['🦆', 'Duck'],
+  ['🐢', 'Turtle'], ['🐍', 'Snake'], ['🦎', 'Lizard'], ['🐊', 'Crocodile'],
+  ['🐳', 'Whale'], ['🐬', 'Dolphin'], ['🦈', 'Shark'], ['🐠', 'Fish'], ['🐡', 'Blowfish'],
+  ['🐝', 'Bee'], ['🐞', 'Ladybug'], ['🦗', 'Cricket'], ['🐜', 'Ant'],
+] as const
+
+const EMOJI_POOL = EMOJIS.map(([emoji]) => emoji)
+
+const EMOJI_NAMES: Record<string, string> = Object.fromEntries(EMOJIS)
+
+export const emojiName = (emoji: string): string => EMOJI_NAMES[emoji] ?? emoji
 
 const EmojiCell = S.Struct({ id: S.Number, emoji: S.String })
 type EmojiCell = typeof EmojiCell.Type
@@ -48,6 +61,7 @@ export const init = (): Model => generateGame()
 export const update = (
   model: Model,
   message: Message,
+  muted: boolean = false,
 ): readonly [Model, ReadonlyArray<Command.Command<Message>>] =>
   M.value(message).pipe(
     M.withReturnType<readonly [Model, ReadonlyArray<Command.Command<Message>>]>(),
@@ -56,12 +70,9 @@ export const update = (
         if (model.won) return [model, []]
         const cell = model.grid.find(c => c.id === msg.id)
         if (cell && cell.emoji === model.target) {
-          const next = model.found.includes(model.target)
-            ? model.found
-            : [...model.found, model.target]
           return [
-            { ...model, won: true, found: next },
-            [boing(SoundPlayed())],
+            { ...model, won: true, found: [...model.found, model.target] },
+            muted ? [] : [boing(SoundPlayed())],
           ]
         }
         return [
@@ -106,7 +117,7 @@ export const view = (model: Model) => {
               ? h.div([h.Class('peekaboo-overlay'), h.Key('win-' + model.count)], [
                 h.div([h.Class('peekaboo-win')], [
                   h.div([h.Class('win-emoji')], [model.target]),
-                  h.h2([h.Class('win-title')], ['YOU WIN!!!']),
+                  h.h2([h.Class('win-title')], [`${emojiName(model.target)}!`]),
                   h.p([h.Class('peekaboo-count')], [
                     `Found ${model.count} time${model.count === 1 ? '' : 's'}!`,
                   ]),

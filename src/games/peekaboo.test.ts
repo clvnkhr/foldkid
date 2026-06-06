@@ -91,7 +91,7 @@ describe('Peekaboo', () => {
       { update: Peekaboo.update, view: Peekaboo.view },
       Scene.with(game),
       Scene.click(Scene.text(cell.emoji)),
-      Scene.expect(Scene.text('YOU WIN!!!')).toExist(),
+      Scene.expect(Scene.text(`${Peekaboo.emojiName(cell.emoji)}!`)).toExist(),
       Scene.Command.resolveAll(resolveBoing),
       Scene.Command.expectNone(),
     )

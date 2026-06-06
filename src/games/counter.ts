@@ -30,6 +30,7 @@ export const update = (
   model: Model,
   message: Message,
   language: string = 'en',
+  muted: boolean = false,
 ): readonly [Model, ReadonlyArray<Command.Command<Message>>] =>
   M.value(message).pipe(
     M.withReturnType<
@@ -42,15 +43,15 @@ export const update = (
       ],
       CounterPressedIncrement: (msg) => [
         { ...model, count: model.count + 1, fontSize: calcFontSize(msg.duration), holding: false },
-        [click(SoundPlayed()), speak(`${model.count + 1}`, SoundPlayed(), { rate: model.rate, pitch: model.pitch, lang: language })],
+        muted ? [] : [click(SoundPlayed()), speak(`${model.count + 1}`, SoundPlayed(), { rate: model.rate, pitch: model.pitch, lang: language })],
       ],
       CounterPressedDecrement: (msg) => [
         { ...model, count: model.count - 1, fontSize: calcFontSize(msg.duration), holding: false },
-        [click(SoundPlayed()), speak(`${model.count - 1}`, SoundPlayed(), { rate: model.rate, pitch: model.pitch, lang: language })],
+        muted ? [] : [click(SoundPlayed()), speak(`${model.count - 1}`, SoundPlayed(), { rate: model.rate, pitch: model.pitch, lang: language })],
       ],
       CounterClickedReset: () => [
         { ...model, count: 0 },
-        [swoosh(SoundPlayed()), speak('0', SoundPlayed(), { rate: model.rate, pitch: model.pitch, lang: language })],
+        muted ? [] : [swoosh(SoundPlayed()), speak('0', SoundPlayed(), { rate: model.rate, pitch: model.pitch, lang: language })],
       ],
       CounterSetRate: (msg) => [
         { ...model, rate: msg.value },
