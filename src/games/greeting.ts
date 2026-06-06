@@ -207,7 +207,7 @@ const playGreeting = (audioUrl: string, language: string): Command.Command<Messa
       tryPlay()
     }).catch(() => {})
 
-    const hello = new SpeechSynthesisUtterance('Hello')
+    const hello = new SpeechSynthesisUtterance(t('greetingHello', language))
     hello.rate = 0.85
     hello.pitch = 1.1
     hello.lang = language
