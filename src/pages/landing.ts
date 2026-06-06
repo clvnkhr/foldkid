@@ -47,6 +47,10 @@ export const view = (language: string) => {
             h.h2([h.Class('game-name')], [t('bubblesTitle', language)]),
           ],
         ),
+        h.a(
+          [h.Href('http://foldkit.dev'), h.Class('built-with'), h.Target('_blank')],
+          [t('builtWithFoldkit', language)],
+        ),
       ]),
     ],
   )

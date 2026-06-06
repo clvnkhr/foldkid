@@ -26,5 +26,14 @@ describe('Landing', () => {
     )
   })
 
+  it('renders built with Foldkit link', () => {
+    Scene.scene(
+      { update: Main.update, view: () => view('en') },
+      Scene.with(Main.init()[0]),
+      Scene.expect(Scene.text('Made with Foldkit')).toExist(),
+      Scene.Command.expectNone(),
+    )
+  })
+
 
 })

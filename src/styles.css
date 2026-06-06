@@ -130,6 +130,19 @@ body {
   margin-bottom: 0.5rem;
 }
 
+.built-with {
+  margin-top: 3rem;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.85rem;
+  text-decoration: none;
+  transition: color 0.15s;
+}
+
+.built-with:hover {
+  color: rgba(255, 255, 255, 0.9);
+  text-decoration: underline;
+}
+
 /* Shared Page Styles */
 
 .page {
@@ -573,6 +586,7 @@ body {
   font-size: 2rem;
   text-align: center;
   font-weight: 700;
+  color: var(--text-primary);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
   animation: tooltipPop 0.2s ease-out;
 }
@@ -659,6 +673,25 @@ body {
     transform: scale(1);
     opacity: 1;
   }
+}
+
+.replay-btn {
+  font-size: 3rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.5rem;
+  transition: transform 0.15s;
+  font-family: inherit;
+  line-height: 1;
+}
+
+.replay-btn:hover {
+  transform: scale(1.15);
+}
+
+.replay-btn:active {
+  transform: scale(0.95);
 }
 
 /* Bubbles */

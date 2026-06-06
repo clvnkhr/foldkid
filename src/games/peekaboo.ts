@@ -45,21 +45,25 @@ export const emojiName = (emoji: string, language: string = 'en'): string => {
   return EMOJI_NAMES[emoji] ?? emoji
 }
 
+const ICON_REPLAY = '🔊'
+
 const EmojiCell = S.Struct({ id: S.Number, emoji: S.String })
 type EmojiCell = typeof EmojiCell.Type
 
-export const Model = S.Struct({ grid: S.Array(EmojiCell), target: S.String, count: S.Number, shaking: S.Number, shakeTick: S.Number, won: S.Boolean, found: S.Array(S.String), anyWins: S.Boolean, tooltipEmoji: S.Union([S.String, S.Null]) })
+export const Model = S.Struct({ grid: S.Array(EmojiCell), target: S.String, count: S.Number, shaking: S.Number, shakeTick: S.Number, won: S.Boolean, found: S.Array(S.String), anyWins: S.Boolean, voiceMode: S.Boolean, tooltipEmoji: S.Union([S.String, S.Null]) })
 export type Model = typeof Model.Type
 
 export const ClickedCell = m('PeekabooClickedCell', { id: S.Number })
 export const ClickedNext = m('PeekabooClickedNext')
 export const SetAnyWins = m('PeekabooSetAnyWins', { value: S.Boolean })
+export const SetVoiceMode = m('PeekabooSetVoiceMode', { value: S.Boolean })
+export const ReplayQuestion = m('PeekabooReplayQuestion')
 export const ClickedCollectionEmoji = m('PeekabooClickedCollectionEmoji', { emoji: S.String })
 export const ClickedReset = m('PeekabooClickedReset')
 export const DismissTooltip = m('PeekabooDismissTooltip')
 export const SoundPlayed = m('PeekabooSoundPlayed')
 
-export const Message = S.Union([ClickedCell, ClickedNext, SetAnyWins, ClickedCollectionEmoji, ClickedReset, DismissTooltip, SoundPlayed])
+export const Message = S.Union([ClickedCell, ClickedNext, SetAnyWins, SetVoiceMode, ReplayQuestion, ClickedCollectionEmoji, ClickedReset, DismissTooltip, SoundPlayed])
 export type Message = typeof Message.Type
 
 const shuffle = <T>(arr: T[]): T[] => {
@@ -71,11 +75,11 @@ const shuffle = <T>(arr: T[]): T[] => {
   return a
 }
 
-const generateGame = (found?: string[], anyWins: boolean = false): Model => {
+const generateGame = (found?: string[], anyWins: boolean = false, voiceMode: boolean = false): Model => {
   const shuffled = shuffle(EMOJI_POOL).slice(0, 9)
   const grid = shuffled.map((emoji, i) => ({ id: i, emoji }))
   const target = grid[Math.floor(Math.random() * grid.length)]!.emoji
-  return { grid, target, count: 0, shaking: -1, shakeTick: 0, won: false, found: found ?? [], anyWins, tooltipEmoji: null }
+  return { grid, target, count: 0, shaking: -1, shakeTick: 0, won: false, found: found ?? [], anyWins, voiceMode, tooltipEmoji: null }
 }
 
 export const init = (): Model => generateGame()
@@ -103,23 +107,41 @@ export const update = (
           [],
         ]
       },
-      PeekabooClickedNext: () => [
-        { ...generateGame([...model.found], model.anyWins), count: model.count + 1 },
-        [],
-      ],
+      PeekabooClickedNext: () => {
+        const next = generateGame([...model.found], model.anyWins, model.voiceMode)
+        const cmds: Command.Command<Message>[] = []
+        if (model.voiceMode && !model.anyWins && !muted) {
+          cmds.push(speak(tf('whereIs', language, next.target), SoundPlayed(), { lang: language }))
+        }
+        return [{ ...next, count: model.count + 1 }, cmds]
+      },
       PeekabooSoundPlayed: () => [model, []],
       PeekabooSetAnyWins: (msg) => [
         { ...model, anyWins: msg.value },
         [],
       ],
+      PeekabooSetVoiceMode: (msg) => [
+        { ...model, voiceMode: msg.value },
+        [],
+      ],
+      PeekabooReplayQuestion: () => [
+        model,
+        model.voiceMode && !model.anyWins && !muted
+          ? [speak(tf('whereIs', language, model.target), SoundPlayed(), { lang: language })]
+          : [],
+      ],
       PeekabooClickedCollectionEmoji: (msg) => [
         { ...model, tooltipEmoji: msg.emoji },
         muted ? [] : [speak(emojiName(msg.emoji, language), SoundPlayed(), { lang: language })],
       ],
-      PeekabooClickedReset: () => [
-        { ...generateGame([], model.anyWins), count: 0 },
-        [],
-      ],
+      PeekabooClickedReset: () => {
+        const next = generateGame([], model.anyWins, model.voiceMode)
+        const cmds: Command.Command<Message>[] = []
+        if (model.voiceMode && !model.anyWins && !muted) {
+          cmds.push(speak(tf('whereIs', language, next.target), SoundPlayed(), { lang: language }))
+        }
+        return [next, cmds]
+      },
       PeekabooDismissTooltip: () => [
         { ...model, tooltipEmoji: null },
         [],
@@ -136,7 +158,11 @@ export const view = (model: Model, language: string = 'en') => {
     [
       h.div([h.Class('card')], [
         h.div([h.Class('peekaboo-main')], [
-          h.p([h.Class('peekaboo-prompt')], [model.anyWins ? t('pickYourFavourite', language) : tf('whereIs', language, model.target)]),
+          model.anyWins
+            ? model.voiceMode ? null : h.p([h.Class('peekaboo-prompt')], [t('pickYourFavourite', language)])
+            : model.voiceMode
+              ? h.button([h.Class('replay-btn'), h.OnClick(ReplayQuestion())], [ICON_REPLAY])
+              : h.p([h.Class('peekaboo-prompt')], [tf('whereIs', language, model.target)]),
           h.div([h.Class('peekaboo-game-area')], [
             h.div([h.Class('emoji-grid')], [
               ...model.grid.map((cell) =>
@@ -172,10 +198,10 @@ export const view = (model: Model, language: string = 'en') => {
                 h.span([h.Class('collection-emoji'), h.Key(e), h.OnClick(ClickedCollectionEmoji({ emoji: e }))], [e]),
               ),
             ]),
-            model.found.length > 0
-              ? h.button([h.Class('btn btn-secondary collection-reset'), h.OnClick(ClickedReset())], [t('reset', language)])
-              : null,
           ]),
+          model.found.length > 0
+            ? h.button([h.Class('btn btn-secondary'), h.OnClick(ClickedReset())], [t('reset', language)])
+            : null,
           model.tooltipEmoji
             ? h.div([h.Class('tooltip-backdrop'), h.Key('backdrop'), h.OnClick(DismissTooltip())], [
               h.div([h.Class('emoji-tooltip')], [`${model.tooltipEmoji} ${emojiName(model.tooltipEmoji, language)}`]),

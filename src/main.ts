@@ -9,7 +9,13 @@ import * as Counter from './games/counter'
 import * as Greeting from './games/greeting'
 import * as Peekaboo from './games/peekaboo'
 import { view as landingView } from './pages/landing'
-import { t } from './i18n'
+import { t, tf } from './i18n'
+import { speak } from './speech'
+
+const ICON_UNMUTED = '🔊'
+const ICON_MUTED = '🔇'
+const ICON_TEXT_MODE = '📝'
+const ICON_VOICE_MODE = '🔊'
 
 // PERSISTENCE
 
@@ -23,6 +29,7 @@ interface PersistedSettings {
   counterPitch: number
   counterDisplayMode: string
   peekabooAnyWins: boolean
+  peekabooVoiceMode: boolean
 }
 
 const loadSettings = (): Partial<PersistedSettings> => {
@@ -45,6 +52,7 @@ const saveSettings = (model: Model): void => {
       counterPitch: model.counter.pitch,
       counterDisplayMode: model.counter.displayMode,
       peekabooAnyWins: model.peekaboo.anyWins,
+      peekabooVoiceMode: model.peekaboo.voiceMode,
     }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
   } catch { /* ignore */ }
@@ -94,6 +102,8 @@ export const Message = S.Union([
   Peekaboo.ClickedCell,
   Peekaboo.ClickedNext,
   Peekaboo.SetAnyWins,
+  Peekaboo.SetVoiceMode,
+  Peekaboo.ReplayQuestion,
   Peekaboo.ClickedCollectionEmoji,
   Peekaboo.ClickedReset,
   Peekaboo.DismissTooltip,
@@ -112,6 +122,12 @@ export type Message = typeof Message.Type
 
 export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
   const saved = loadSettings()
+  const peekabooInit = Peekaboo.init()
+  const cmds: Command.Command<Message>[] = []
+  const voiceMode = saved.peekabooVoiceMode ?? false
+  if (voiceMode && !saved.peekabooAnyWins && !saved.muted) {
+    cmds.push(speak(tf('whereIs', saved.language ?? 'en', peekabooInit.target), Peekaboo.SoundPlayed(), { lang: saved.language ?? 'en' }))
+  }
   return [
     {
       page: PageLanding(),
@@ -126,10 +142,10 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
         pitch: saved.counterPitch ?? Counter.init.pitch,
         displayMode: saved.counterDisplayMode ?? Counter.init.displayMode,
       },
-      peekaboo: { ...Peekaboo.init(), anyWins: saved.peekabooAnyWins ?? false },
+      peekaboo: { ...peekabooInit, anyWins: saved.peekabooAnyWins ?? false, voiceMode },
       bubbles: Bubbles.init(),
     },
-    [],
+    cmds,
   ]
 }
 
@@ -207,6 +223,8 @@ const _update = (
       PeekabooClickedCell: (msg) => updatePeekaboo(model, msg),
       PeekabooClickedNext: (msg) => updatePeekaboo(model, msg),
       PeekabooSetAnyWins: (msg) => updatePeekaboo(model, msg),
+      PeekabooSetVoiceMode: (msg) => updatePeekaboo(model, msg),
+      PeekabooReplayQuestion: (msg) => updatePeekaboo(model, msg),
       PeekabooClickedCollectionEmoji: (msg) => updatePeekaboo(model, msg),
       PeekabooClickedReset: (msg) => updatePeekaboo(model, msg),
       PeekabooDismissTooltip: (msg) => updatePeekaboo(model, msg),
@@ -223,7 +241,7 @@ const _update = (
 const SETTINGS_TAGS = new Set([
   'ClickedDarkMode', 'SetLanguage', 'ToggleMute',
   'CounterSetRate', 'CounterSetPitch', 'CounterSetDisplayMode',
-  'PeekabooSetAnyWins',
+  'PeekabooSetAnyWins', 'PeekabooSetVoiceMode',
 ])
 
 export const update = (
@@ -342,7 +360,7 @@ export const view = (model: Model): Document => {
                 h.Class('mute-toggle'),
                 h.OnClick(ToggleMute()),
               ],
-              [model.muted ? '🔇' : '🔊'],
+              [model.muted ? ICON_MUTED : ICON_UNMUTED],
             ),
           ]),
           model.page._tag === 'PageCounter'
@@ -411,6 +429,16 @@ export const view = (model: Model): Document => {
                     ],
                     [label],
                   ),
+                ),
+              ]),
+              h.div([h.Class('lang-buttons'), h.Style({ marginTop: '0.5rem' })], [
+                h.button(
+                  [h.Class(!model.peekaboo.voiceMode ? 'btn btn-primary' : 'btn btn-secondary'), h.OnClick(Peekaboo.SetVoiceMode({ value: false }))],
+                  [ICON_TEXT_MODE],
+                ),
+                h.button(
+                  [h.Class(model.peekaboo.voiceMode ? 'btn btn-primary' : 'btn btn-secondary'), h.OnClick(Peekaboo.SetVoiceMode({ value: true }))],
+                  [`${ICON_VOICE_MODE} ${t('voiceMode', model.language)}`],
                 ),
               ]),
             ])
