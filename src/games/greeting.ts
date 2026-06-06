@@ -1,8 +1,7 @@
-import { Effect, Match as M, Schema as S } from 'effect'
+import { Effect, Match as M, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
-import { swoosh } from '../audio'
 import { t, tf } from '../i18n'
 
 const MAX_RECORDING_MS = 10_000
@@ -11,7 +10,7 @@ const SILENCE_FRAMES_LIMIT = 90
 const TRIM_THRESHOLD = 0.02
 const TRIM_PADDING_SAMPLES = 200
 
-export const Model = S.Struct({ status: S.String, audioUrl: S.String, playCount: S.Number })
+export const Model = S.Struct({ status: S.String, audioUrl: S.String, playCount: S.Number, autoPlay: S.Boolean, recordingId: S.Number })
 export type Model = typeof Model.Type
 
 export const ClickedRecord = m('GreetingClickedRecord')
@@ -24,7 +23,7 @@ export const SoundPlayed = m('GreetingSoundPlayed')
 export const Message = S.Union([ClickedRecord, RecordedAudio, RecordingFailed, ClickedPlay, ClickedReset, SoundPlayed])
 export type Message = typeof Message.Type
 
-export const init: Model = { status: 'idle', audioUrl: '', playCount: 0 }
+export const init: Model = { status: 'idle', audioUrl: '', playCount: 0, autoPlay: false, recordingId: 0 }
 
 const trimSilence = (samples: Float32Array): Float32Array => {
   const threshold = TRIM_THRESHOLD * (2 ** 0.5)
@@ -187,34 +186,39 @@ const findVoice = (lang: string): SpeechSynthesisVoice | undefined => {
 
 const playGreeting = (audioUrl: string, language: string): Command.Command<Message> => ({
   name: 'PlayGreeting',
-  effect: Effect.callback<Message>((resume) => {
-    let cancelled = false
+  effect: Effect.sync(() => {
+    const ctx = new AudioContext()
+    let audioBuffer: AudioBuffer | null = null
+    let helloDone = false
 
-    const speakHello = (): void => {
-      if (cancelled) return
-      speechSynthesis.cancel()
-      const hello = new SpeechSynthesisUtterance('Hello')
-      hello.rate = 0.85
-      hello.pitch = 1.1
-      hello.lang = language
-      const voice = findVoice(language)
-      if (voice) hello.voice = voice
-      hello.onend = () => {
-        resume(Effect.succeed(SoundPlayed()))
-      }
-      speechSynthesis.speak(hello)
+    const tryPlay = (): void => {
+      if (!helloDone || !audioBuffer) return
+      const src = ctx.createBufferSource()
+      src.buffer = audioBuffer
+      src.connect(ctx.destination)
+      src.start()
+      src.onended = () => { ctx.close() }
     }
 
-    const audio = new Audio(audioUrl)
-    audio.onended = speakHello
-    audio.onerror = speakHello
-    audio.play().catch(speakHello)
+    fetch(audioUrl).then(r => r.arrayBuffer()).then(buf =>
+      ctx.decodeAudioData(buf),
+    ).then(buf => {
+      audioBuffer = buf
+      tryPlay()
+    }).catch(() => {})
 
-    return Effect.sync(() => {
-      cancelled = true
-      speechSynthesis.cancel()
-    })
-  }),
+    const hello = new SpeechSynthesisUtterance('Hello')
+    hello.rate = 0.85
+    hello.pitch = 1.1
+    hello.lang = language
+    const voice = findVoice(language)
+    if (voice) hello.voice = voice
+    hello.onend = () => {
+      helloDone = true
+      tryPlay()
+    }
+    speechSynthesis.speak(hello)
+  }).pipe(Effect.as(SoundPlayed())),
 })
 
 export const update = (
@@ -227,11 +231,11 @@ export const update = (
     M.withReturnType<readonly [Model, ReadonlyArray<Command.Command<Message>>]>(),
     M.tagsExhaustive({
       GreetingClickedRecord: () => [
-        { ...model, status: 'recording' },
+        { ...model, status: 'recording', autoPlay: false },
         [record()],
       ],
       GreetingRecordedAudio: (msg) => [
-        { ...model, status: 'ready', audioUrl: msg.audioUrl },
+        { ...model, status: 'idle', audioUrl: msg.audioUrl, autoPlay: true, recordingId: (model.recordingId ?? 0) + 1 },
         [],
       ],
       GreetingRecordingFailed: () => [
@@ -239,17 +243,14 @@ export const update = (
         [],
       ],
       GreetingClickedPlay: () => [
-        { ...model, playCount: model.playCount + 1 },
+        { ...model, autoPlay: false, playCount: model.playCount + 1 },
         muted ? [] : [playGreeting(model.audioUrl, language)],
       ],
       GreetingClickedReset: () => [
-        { status: 'idle', audioUrl: '', playCount: 0 },
-        muted ? [] : [swoosh(SoundPlayed())],
-      ],
-      GreetingSoundPlayed: () => [
-        { ...model, status: 'idle' },
+        { status: 'idle', audioUrl: '', playCount: 0, autoPlay: false, recordingId: 0 },
         [],
       ],
+      GreetingSoundPlayed: () => [model, []],
     }),
   )
 
@@ -267,7 +268,18 @@ export const view = (model: Model, language: string = 'en') => {
         h.div([h.Class('buttons')], [
           model.status === 'idle' && model.audioUrl
             ? h.button(
-              [h.OnClick(ClickedPlay()), h.Class('btn btn-primary')],
+              [
+                h.OnClick(ClickedPlay()),
+                h.Class('btn btn-primary'),
+                h.Key('say-hello-' + model.recordingId),
+                ...(model.autoPlay ? [h.OnMount({
+                  name: 'autoPlayGreeting',
+                  f: (el) => {
+                    requestAnimationFrame(() => (el as HTMLElement).click())
+                    return Stream.empty
+                  },
+                })] : []),
+              ],
               [t('sayHello', language)],
             )
             : null,
@@ -277,13 +289,7 @@ export const view = (model: Model, language: string = 'en') => {
               [t('recordName', language)],
             )
             : null,
-          model.status === 'ready'
-            ? h.button(
-              [h.OnClick(ClickedPlay()), h.Class('btn btn-primary')],
-              [t('sayHello', language)],
-            )
-            : null,
-          model.status === 'ready' || model.playCount > 0
+          model.audioUrl || model.playCount > 0
             ? h.button(
               [h.OnClick(ClickedReset()), h.Class('btn btn-secondary')],
               [t('reset', language)],
