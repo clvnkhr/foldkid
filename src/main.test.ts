@@ -132,6 +132,6 @@ const createModel = (): Main.Model => {
   const init = Main.init()[0]
   return {
     ...init,
-    peekaboo: { grid: [], target: '🎈', count: 0, shaking: -1, shakeTick: 0, won: false, found: [], anyWins: false },
+    peekaboo: { grid: [], target: '🎈', count: 0, shaking: -1, shakeTick: 0, won: false, found: [], anyWins: false, tooltipEmoji: null },
   }
 }

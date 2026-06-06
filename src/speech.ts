@@ -1,6 +1,6 @@
 import { Effect } from 'effect'
 
-const findVoice = (lang: string): SpeechSynthesisVoice | undefined => {
+export const findVoice = (lang: string): SpeechSynthesisVoice | undefined => {
   const voices = speechSynthesis.getVoices()
   if (voices.length === 0) return undefined
   return voices.find(v => v.lang.startsWith(lang)) ?? voices.find(v => v.lang.startsWith(lang.slice(0, 2)))

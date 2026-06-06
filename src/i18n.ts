@@ -5,8 +5,7 @@ const translations = {
     backToGames: '← Back to games',
     settings: 'Settings',
     sound: 'Sound',
-    soundOn: '🔊 Sound On',
-    muted: '🔇 Muted',
+
     language: 'Language',
     counterSpeech: 'Counter Speech',
     rate: 'Rate',
@@ -59,8 +58,7 @@ const translations = {
     backToGames: '← 返回游戏',
     settings: '设置',
     sound: '声音',
-    soundOn: '🔊 开启声音',
-    muted: '🔇 静音',
+
     language: '语言',
     counterSpeech: '计数器语音',
     rate: '语速',
@@ -113,8 +111,7 @@ const translations = {
     backToGames: '← Retour aux jeux',
     settings: 'Réglages',
     sound: 'Son',
-    soundOn: '🔊 Son activé',
-    muted: '🔇 Muet',
+
     language: 'Langue',
     counterSpeech: 'Voix du compteur',
     rate: 'Vitesse',
@@ -167,8 +164,7 @@ const translations = {
     backToGames: '← Zurück zu den Spielen',
     settings: 'Einstellungen',
     sound: 'Ton',
-    soundOn: '🔊 Ton an',
-    muted: '🔇 Stumm',
+
     language: 'Sprache',
     counterSpeech: 'Zähler-Stimme',
     rate: 'Tempo',
@@ -221,8 +217,7 @@ const translations = {
     backToGames: '← بازگشت به بازی‌ها',
     settings: 'تنظیمات',
     sound: 'صدا',
-    soundOn: '🔊 صدا روشن',
-    muted: '🔇 بی‌صدا',
+
     language: 'زبان',
     counterSpeech: 'صدای شمارنده',
     rate: 'سرعت',
@@ -275,8 +270,7 @@ const translations = {
     backToGames: '← Kembali ke permainan',
     settings: 'Tetapan',
     sound: 'Bunyi',
-    soundOn: '🔊 Bunyi Hidup',
-    muted: '🔇 Senyap',
+
     language: 'Bahasa',
     counterSpeech: 'Suara Pengira',
     rate: 'Kelajuan',
@@ -329,8 +323,7 @@ const translations = {
     backToGames: '← 返回遊戲',
     settings: '設定',
     sound: '聲音',
-    soundOn: '🔊 開啟聲音',
-    muted: '🔇 靜音',
+
     language: '語言',
     counterSpeech: '計數器語音',
     rate: '語速',
@@ -383,8 +376,7 @@ const translations = {
     backToGames: '← ゲームにもどる',
     settings: 'せってい',
     sound: 'おと',
-    soundOn: '🔊 おと オン',
-    muted: '🔇 ミュート',
+
     language: 'げんご',
     counterSpeech: 'カウンターのこえ',
     rate: 'はやさ',

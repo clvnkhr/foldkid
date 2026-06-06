@@ -84,15 +84,15 @@ export const update = (
       ],
       CounterPressedIncrement: (msg) => [
         { ...model, count: model.count + 1, fontSize: calcFontSize(msg.duration), holding: false },
-        muted ? [] : [click(SoundPlayed()), speak(`${model.count + 1}`, SoundPlayed(), { rate: model.rate, pitch: model.pitch, lang: language })],
+        muted ? [] : [click(SoundPlayed()), speak(numberToWord(model.count + 1, language), SoundPlayed(), { rate: model.rate, pitch: model.pitch, lang: language })],
       ],
       CounterPressedDecrement: (msg) => [
         { ...model, count: model.count - 1, fontSize: calcFontSize(msg.duration), holding: false },
-        muted ? [] : [click(SoundPlayed()), speak(`${model.count - 1}`, SoundPlayed(), { rate: model.rate, pitch: model.pitch, lang: language })],
+        muted ? [] : [click(SoundPlayed()), speak(numberToWord(model.count - 1, language), SoundPlayed(), { rate: model.rate, pitch: model.pitch, lang: language })],
       ],
       CounterClickedReset: () => [
         { ...model, count: 0 },
-        muted ? [] : [swoosh(SoundPlayed()), speak('0', SoundPlayed(), { rate: model.rate, pitch: model.pitch, lang: language })],
+        muted ? [] : [swoosh(SoundPlayed()), speak(numberToWord(0, language), SoundPlayed(), { rate: model.rate, pitch: model.pitch, lang: language })],
       ],
       CounterSetRate: (msg) => [
         { ...model, rate: msg.value },

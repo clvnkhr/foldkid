@@ -48,15 +48,18 @@ export const emojiName = (emoji: string, language: string = 'en'): string => {
 const EmojiCell = S.Struct({ id: S.Number, emoji: S.String })
 type EmojiCell = typeof EmojiCell.Type
 
-export const Model = S.Struct({ grid: S.Array(EmojiCell), target: S.String, count: S.Number, shaking: S.Number, shakeTick: S.Number, won: S.Boolean, found: S.Array(S.String), anyWins: S.Boolean })
+export const Model = S.Struct({ grid: S.Array(EmojiCell), target: S.String, count: S.Number, shaking: S.Number, shakeTick: S.Number, won: S.Boolean, found: S.Array(S.String), anyWins: S.Boolean, tooltipEmoji: S.Union([S.String, S.Null]) })
 export type Model = typeof Model.Type
 
 export const ClickedCell = m('PeekabooClickedCell', { id: S.Number })
 export const ClickedNext = m('PeekabooClickedNext')
 export const SetAnyWins = m('PeekabooSetAnyWins', { value: S.Boolean })
+export const ClickedCollectionEmoji = m('PeekabooClickedCollectionEmoji', { emoji: S.String })
+export const ClickedReset = m('PeekabooClickedReset')
+export const DismissTooltip = m('PeekabooDismissTooltip')
 export const SoundPlayed = m('PeekabooSoundPlayed')
 
-export const Message = S.Union([ClickedCell, ClickedNext, SetAnyWins, SoundPlayed])
+export const Message = S.Union([ClickedCell, ClickedNext, SetAnyWins, ClickedCollectionEmoji, ClickedReset, DismissTooltip, SoundPlayed])
 export type Message = typeof Message.Type
 
 const shuffle = <T>(arr: T[]): T[] => {
@@ -72,7 +75,7 @@ const generateGame = (found?: string[], anyWins: boolean = false): Model => {
   const shuffled = shuffle(EMOJI_POOL).slice(0, 9)
   const grid = shuffled.map((emoji, i) => ({ id: i, emoji }))
   const target = grid[Math.floor(Math.random() * grid.length)]!.emoji
-  return { grid, target, count: 0, shaking: -1, shakeTick: 0, won: false, found: found ?? [], anyWins }
+  return { grid, target, count: 0, shaking: -1, shakeTick: 0, won: false, found: found ?? [], anyWins, tooltipEmoji: null }
 }
 
 export const init = (): Model => generateGame()
@@ -91,7 +94,7 @@ export const update = (
         const cell = model.grid.find(c => c.id === msg.id)
         if (cell && (cell.emoji === model.target || model.anyWins)) {
           return [
-            { ...model, won: true, found: [...model.found, cell!.emoji] },
+            { ...model, won: true, found: [...model.found, cell!.emoji], tooltipEmoji: null },
             muted ? [] : [boing(SoundPlayed()), speak(emojiName(cell!.emoji, language), SoundPlayed(), { lang: language })],
           ]
         }
@@ -107,6 +110,18 @@ export const update = (
       PeekabooSoundPlayed: () => [model, []],
       PeekabooSetAnyWins: (msg) => [
         { ...model, anyWins: msg.value },
+        [],
+      ],
+      PeekabooClickedCollectionEmoji: (msg) => [
+        { ...model, tooltipEmoji: msg.emoji },
+        muted ? [] : [speak(emojiName(msg.emoji, language), SoundPlayed(), { lang: language })],
+      ],
+      PeekabooClickedReset: () => [
+        { ...generateGame([], model.anyWins), count: 0 },
+        [],
+      ],
+      PeekabooDismissTooltip: () => [
+        { ...model, tooltipEmoji: null },
         [],
       ],
     }),
@@ -154,10 +169,18 @@ export const view = (model: Model, language: string = 'en') => {
             h.p([h.Class('collection-label')], [t('collection', language)]),
             h.div([h.Class('collection-grid')], [
               ...model.found.map((e) =>
-                h.span([h.Class('collection-emoji'), h.Key(e)], [e]),
+                h.span([h.Class('collection-emoji'), h.Key(e), h.OnClick(ClickedCollectionEmoji({ emoji: e }))], [e]),
               ),
             ]),
+            model.found.length > 0
+              ? h.button([h.Class('btn btn-secondary collection-reset'), h.OnClick(ClickedReset())], [t('reset', language)])
+              : null,
           ]),
+          model.tooltipEmoji
+            ? h.div([h.Class('tooltip-backdrop'), h.Key('backdrop'), h.OnClick(DismissTooltip())], [
+              h.div([h.Class('emoji-tooltip')], [`${model.tooltipEmoji} ${emojiName(model.tooltipEmoji, language)}`]),
+            ])
+            : null,
         ]),
       ]),
     ],

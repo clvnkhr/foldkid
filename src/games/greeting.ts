@@ -3,6 +3,7 @@ import { Command } from 'foldkit'
 import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
 import { t, tf } from '../i18n'
+import { findVoice } from '../speech'
 
 const MAX_RECORDING_MS = 10_000
 const SILENCE_THRESHOLD = 3
@@ -178,12 +179,6 @@ const record = (): Command.Command<Message> => ({
   }),
 })
 
-const findVoice = (lang: string): SpeechSynthesisVoice | undefined => {
-  const voices = speechSynthesis.getVoices()
-  if (voices.length === 0) return undefined
-  return voices.find(v => v.lang.startsWith(lang)) ?? voices.find(v => v.lang.startsWith(lang.slice(0, 2)))
-}
-
 const playGreeting = (audioUrl: string, language: string): Command.Command<Message> => ({
   name: 'PlayGreeting',
   effect: Effect.sync(() => {
@@ -205,7 +200,7 @@ const playGreeting = (audioUrl: string, language: string): Command.Command<Messa
     ).then(buf => {
       audioBuffer = buf
       tryPlay()
-    }).catch(() => {})
+    }).catch(() => { ctx.close() })
 
     const hello = new SpeechSynthesisUtterance(t('greetingHello', language))
     hello.rate = 0.85

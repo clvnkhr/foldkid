@@ -180,4 +180,118 @@ describe('Peekaboo', () => {
       Story.Command.expectNone(),
     )
   })
+
+  it('ClickedCollectionEmoji sets tooltipEmoji and speaks the name', () => {
+    const game = Peekaboo.init()
+    const emoji = game.grid[0]!.emoji
+    Story.story(
+      Peekaboo.update,
+      Story.with(game),
+      Story.message(Peekaboo.ClickedCollectionEmoji({ emoji })),
+      Story.model((model) => {
+        expect(model.tooltipEmoji).toBe(emoji)
+      }),
+      Story.Command.resolveAll(
+        [{ name: 'Speak' }, Peekaboo.SoundPlayed()] as const,
+      ),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('DismissTooltip clears tooltipEmoji', () => {
+    const game = { ...Peekaboo.init(), tooltipEmoji: '🎈' }
+    Story.story(
+      Peekaboo.update,
+      Story.with(game),
+      Story.message(Peekaboo.DismissTooltip()),
+      Story.model((model) => {
+        expect(model.tooltipEmoji).toBeNull()
+      }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('ClickedReset clears found and resets count', () => {
+    const game = { ...Peekaboo.init(), found: ['🎈', '🎉'], count: 2 }
+    Story.story(
+      Peekaboo.update,
+      Story.with(game),
+      Story.message(Peekaboo.ClickedReset()),
+      Story.model((model) => {
+        expect(model.found).toHaveLength(0)
+        expect(model.count).toBe(0)
+        expect(model.won).toBe(false)
+        expect(model.grid).toHaveLength(9)
+      }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('reset button renders when collection non-empty', () => {
+    const game = { ...Peekaboo.init(), found: ['🎈'] }
+    Scene.scene(
+      { update: Peekaboo.update, view: Peekaboo.view },
+      Scene.with(game),
+      Scene.expect(Scene.text('Reset')).toExist(),
+      Scene.Command.expectNone(),
+    )
+  })
+
+  it('tooltip shows emoji name in floating popup when tooltipEmoji is set', () => {
+    const game = { ...Peekaboo.init(), tooltipEmoji: '🎈' }
+    Scene.scene(
+      { update: Peekaboo.update, view: Peekaboo.view },
+      Scene.with(game),
+      Scene.expect(Scene.text('🎈 Balloon')).toExist(),
+      Scene.Command.expectNone(),
+    )
+  })
+
+  it('tooltip not shown when tooltipEmoji is null', () => {
+    const game = Peekaboo.init()
+    Scene.scene(
+      { update: Peekaboo.update, view: Peekaboo.view },
+      Scene.with(game),
+      Scene.expect(Scene.text('🎈 Balloon')).not.toExist(),
+      Scene.Command.expectNone(),
+    )
+  })
+
+  it('correct cell click clears tooltip', () => {
+    const game = Peekaboo.init()
+    const cell = game.grid.find(c => c.emoji === game.target)!
+    Story.story(
+      Peekaboo.update,
+      Story.with({ ...game, tooltipEmoji: cell.emoji }),
+      Story.message(Peekaboo.ClickedCell({ id: cell.id })),
+      Story.model((model) => {
+        expect(model.tooltipEmoji).toBeNull()
+      }),
+      Story.Command.resolveAll(...resolveWin),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('reset button does not render when collection empty', () => {
+    const game = Peekaboo.init()
+    Scene.scene(
+      { update: Peekaboo.update, view: Peekaboo.view },
+      Scene.with(game),
+      Scene.expect(Scene.text('Reset')).not.toExist(),
+      Scene.Command.expectNone(),
+    )
+  })
+
+  it('ClickedReset preserves anyWins setting', () => {
+    const game = { ...Peekaboo.init(), found: ['🎈'], anyWins: true }
+    Story.story(
+      Peekaboo.update,
+      Story.with(game),
+      Story.message(Peekaboo.ClickedReset()),
+      Story.model((model) => {
+        expect(model.anyWins).toBe(true)
+      }),
+      Story.Command.expectNone(),
+    )
+  })
 })
