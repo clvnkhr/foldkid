@@ -22,6 +22,7 @@ interface PersistedSettings {
   counterRate: number
   counterPitch: number
   counterDisplayMode: string
+  peekabooAnyWins: boolean
 }
 
 const loadSettings = (): Partial<PersistedSettings> => {
@@ -43,6 +44,7 @@ const saveSettings = (model: Model): void => {
       counterRate: model.counter.rate,
       counterPitch: model.counter.pitch,
       counterDisplayMode: model.counter.displayMode,
+      peekabooAnyWins: model.peekaboo.anyWins,
     }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
   } catch { /* ignore */ }
@@ -91,6 +93,7 @@ export const Message = S.Union([
   Counter.SetDisplayMode,
   Peekaboo.ClickedCell,
   Peekaboo.ClickedNext,
+  Peekaboo.SetAnyWins,
   Bubbles.ClickedPop,
   Bubbles.ClickedAdd,
   Bubbles.ClickedReset,
@@ -120,7 +123,7 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
         pitch: saved.counterPitch ?? Counter.init.pitch,
         displayMode: saved.counterDisplayMode ?? Counter.init.displayMode,
       },
-      peekaboo: Peekaboo.init(),
+      peekaboo: { ...Peekaboo.init(), anyWins: saved.peekabooAnyWins ?? false },
       bubbles: Bubbles.init,
     },
     [],
@@ -149,7 +152,7 @@ const updatePeekaboo = (
   model: Model,
   message: Peekaboo.Message,
 ): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
-  const [next, cmds] = Peekaboo.update(model.peekaboo, message, model.muted)
+  const [next, cmds] = Peekaboo.update(model.peekaboo, message, model.muted, model.language)
   return [{ ...model, peekaboo: next }, cmds]
 }
 
@@ -200,6 +203,7 @@ const _update = (
       CounterSetDisplayMode: (msg) => updateCounter(model, msg),
       PeekabooClickedCell: (msg) => updatePeekaboo(model, msg),
       PeekabooClickedNext: (msg) => updatePeekaboo(model, msg),
+      PeekabooSetAnyWins: (msg) => updatePeekaboo(model, msg),
       BubblesClickedPop: (msg) => updateBubbles(model, msg),
       BubblesClickedAdd: (msg) => updateBubbles(model, msg),
       BubblesClickedReset: (msg) => updateBubbles(model, msg),
@@ -213,6 +217,7 @@ const _update = (
 const SETTINGS_TAGS = new Set([
   'ClickedDarkMode', 'SetLanguage', 'ToggleMute',
   'CounterSetRate', 'CounterSetPitch', 'CounterSetDisplayMode',
+  'PeekabooSetAnyWins',
 ])
 
 export const update = (
@@ -382,6 +387,25 @@ export const view = (model: Model): Document => {
                     ),
                   ),
                 ]),
+              ]),
+            ])
+            : null,
+          model.page._tag === 'PagePeekaboo'
+            ? h.div([h.Class('setting-section')], [
+              h.h3([], [t('peekabooTitle', model.language)]),
+              h.div([h.Class('lang-buttons')], [
+                ...[
+                  [false, t('findMode', model.language)] as const,
+                  [true, t('anyMode', model.language)] as const,
+                ].map(([val, label]) =>
+                  h.button(
+                    [
+                      h.Class(val === model.peekaboo.anyWins ? 'btn btn-primary' : 'btn btn-secondary'),
+                      h.OnClick(Peekaboo.SetAnyWins({ value: val })),
+                    ],
+                    [label],
+                  ),
+                ),
               ]),
             ])
             : null,

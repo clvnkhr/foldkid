@@ -426,6 +426,7 @@ body {
 
 .peekaboo-main {
   width: 100%;
+  position: relative;
 }
 
 .peekaboo-game-area {
@@ -437,16 +438,16 @@ body {
 }
 
 .peekaboo-overlay {
-  position: absolute;
+  position: fixed;
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 1rem;
   z-index: 50;
   animation: fadeIn 0.25s ease-out;
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
+  background: color-mix(in srgb, var(--card-bg) 80%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 @keyframes fadeIn {
@@ -578,9 +579,7 @@ body {
 }
 
 .peekaboo-win {
-  background: rgba(255, 255, 255, 0.15);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: color-mix(in srgb, var(--card-bg) 95%, transparent);
   border-radius: 1.5rem;
   padding: 2rem;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
