@@ -289,6 +289,7 @@ const tick = (state: TickState, parent: HTMLElement): void => {
     const prevY = new Float64Array(rendered.length)
     for (let i = 0; i < rendered.length; i++) {
       const b = rendered[i]
+      if (!b) continue
       prevX[i] = b.x
       prevY[i] = b.y
     }
@@ -361,14 +362,14 @@ const tick = (state: TickState, parent: HTMLElement): void => {
       for (let i = 0; i < rendered.length; i++) {
         const b = rendered[i]
         if (!b) continue
-        const dx = b.x - prevX[i]
-        const dy = b.y - prevY[i]
+        const dx = b.x - prevX[i]!
+        const dy = b.y - prevY[i]!
         const distSq = dx * dx + dy * dy
         if (distSq > maxDisp * maxDisp) {
           const dist = Math.sqrt(distSq)
           const scale = maxDisp / dist
-          b.x = prevX[i] + dx * scale
-          b.y = prevY[i] + dy * scale
+          b.x = prevX[i]! + dx * scale
+          b.y = prevY[i]! + dy * scale
         }
       }
     }
