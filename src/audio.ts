@@ -1,32 +1,39 @@
 import { Effect } from 'effect'
 
-// AudioContext creation can fail; catch the defect and produce undefined
-const getAudioContext: Effect.Effect<AudioContext | undefined> = Effect.sync(
-  () => new AudioContext(),
-).pipe(Effect.catchDefect(() => Effect.succeed(undefined)))
+let sharedCtx: AudioContext | undefined
+
+const getContext = (): AudioContext | undefined => {
+  if (sharedCtx?.state === 'closed') sharedCtx = undefined
+  if (!sharedCtx) {
+    try { sharedCtx = new AudioContext() } catch { return undefined }
+  }
+  if (sharedCtx.state === 'suspended') sharedCtx.resume()
+  return sharedCtx
+}
 
 const playTone = (
   frequency: number,
   duration: number,
   type: OscillatorType,
 ): Effect.Effect<void> =>
-  getAudioContext.pipe(
-    Effect.flatMap((ctx) => {
-      if (!ctx) return Effect.void
-      const osc = ctx.createOscillator()
-      const gain = ctx.createGain()
-      osc.type = type
-      osc.frequency.value = frequency
-      gain.gain.setValueAtTime(0.15, ctx.currentTime)
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration)
-      osc.connect(gain)
-      gain.connect(ctx.destination)
-      osc.start()
-      osc.stop(ctx.currentTime + duration)
-      osc.onended = () => ctx.close()
-      return Effect.void
-    }),
-  )
+  Effect.sync(() => {
+    const ctx = getContext()
+    if (!ctx) return
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.type = type
+    osc.frequency.value = frequency
+    gain.gain.setValueAtTime(0.15, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration)
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.start()
+    osc.stop(ctx.currentTime + duration)
+    osc.onended = () => {
+      osc.disconnect()
+      gain.disconnect()
+    }
+  })
 
 export const click = <Msg>(msg: Msg) => ({
   name: 'PlayClick' as const,

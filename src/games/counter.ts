@@ -119,10 +119,27 @@ export const update = (
     }),
   )
 
-const numberColor = (n: number): string => {
+const ballHue = (n: number): [number, number, number] => {
   const hue = (Math.abs(n) * 137.508) % 360
-  if (n < 0) return `hsl(${(hue + 200) % 360}, 70%, 60%)`
-  return `hsl(${hue}, 75%, 55%)`
+  if (n < 0) return [(hue + 200) % 360, 70, 60]
+  return [hue, 75, 55]
+}
+
+const numberColor = (n: number): string => {
+  const [h, s, l] = ballHue(n)
+  return `hsl(${h}, ${s}%, ${l}%)`
+}
+
+const ballGradient = (hue: number, negative: boolean): string => {
+  const h = negative ? (hue + 200) % 360 : hue
+  const s = negative ? 70 : 75
+  const l = negative ? 60 : 55
+  return [
+    `radial-gradient(circle at 35% 35%,`,
+    `hsl(${h}, ${s}%, ${Math.min(100, l + 28)}%) 0%,`,
+    `hsl(${h}, ${s}%, ${l}%) 45%,`,
+    `hsl(${h}, ${s + 5}%, ${Math.max(0, l - 14)}%) 100%)`,
+  ].join(' ')
 }
 
 let pointerDownTime = 0
@@ -145,11 +162,13 @@ const FRICTION = 0.995
 const BALL_BOUNCE = 0.3
 const WALL_FRICTION = 0.85
 
+const activeParticles = new Set<HTMLElement>()
+
 const poof = (el: HTMLElement): void => {
   const rect = el.getBoundingClientRect()
   const cx = rect.left + rect.width / 2
   const cy = rect.top + rect.height / 2
-  const color = el.style.backgroundColor || '#667eea'
+  const color = el.style.background || el.style.backgroundColor || '#667eea'
   const s = rect.width / 16
   el.remove()
 
@@ -169,12 +188,15 @@ const poof = (el: HTMLElement): void => {
       `pointer-events:none`,
       `z-index:1000`,
     ].join(';')
+    activeParticles.add(p)
     document.body.appendChild(p)
-    p.animate([
+    const anim = p.animate([
       { transform: 'translate(0,0) scale(1)', opacity: 1 },
       { transform: `translate(${Math.cos(angle) * dist}px,${Math.sin(angle) * dist}px) scale(0.2)`, opacity: 0 },
     ], { duration: 300 + Math.random() * 100, easing: 'ease-out', fill: 'forwards' })
-      .onfinish = () => p.remove()
+    const done = () => { activeParticles.delete(p); p.remove() }
+    anim.onfinish = done
+    anim.finished.then(done).catch(done)
   }
 }
 
@@ -240,7 +262,7 @@ const tick = (state: TickState, parent: HTMLElement): void => {
       const size = b.r * 2
       d.style.width = `${size}px`
       d.style.height = `${size}px`
-      d.style.backgroundColor = numberColor(b.hue)
+      d.style.background = ballGradient(b.hue, negative)
       parent.appendChild(d)
       rendered.push({ ...b, el: d })
     }
@@ -272,57 +294,49 @@ const tick = (state: TickState, parent: HTMLElement): void => {
     }
   }
 
-  if (rendered.length > 4) {
-    const cellSize = 80
-    const grid = new Map<number, number[]>()
-    for (let i = 0; i < rendered.length; i++) {
-      const b = rendered[i]
+  for (let i = 0; i < rendered.length; i++) {
+    const a = rendered[i]
+    if (!a) continue
+    for (let j = i + 1; j < rendered.length; j++) {
+      const b = rendered[j]
       if (!b) continue
-      const key = ((b.x / cellSize) | 0) * 10000 + ((b.y / cellSize) | 0)
-      const cell = grid.get(key)
-      if (cell) cell.push(i)
-      else grid.set(key, [i])
-    }
-
-    for (let i = 0; i < rendered.length; i++) {
-      const a = rendered[i]
-      if (!a) continue
-      const cx = (a.x / cellSize) | 0
-      const cy = (a.y / cellSize) | 0
-      for (let ox = -1; ox <= 1; ox++) {
-        for (let oy = -1; oy <= 1; oy++) {
-          const cell = grid.get((cx + ox) * 10000 + (cy + oy))
-          if (!cell) continue
-          for (const j of cell) {
-            if (j <= i) continue
-            const b = rendered[j]
-            if (!b) continue
-            const dx = b.x - a.x
-            const dy = b.y - a.y
-            const dist = Math.sqrt(dx * dx + dy * dy)
-            const minDist = a.r + b.r
-            if (dist < minDist && dist > 0.001) {
-              const nx = dx / dist
-              const ny = dy / dist
-              const overlap = minDist - dist
-              a.x -= nx * overlap / 2
-              a.y -= ny * overlap / 2
-              b.x += nx * overlap / 2
-              b.y += ny * overlap / 2
-              const dvx = a.vx - b.vx
-              const dvy = a.vy - b.vy
-              const dvn = dvx * nx + dvy * ny
-              if (dvn > 0) {
-                a.vx -= dvn * nx * BALL_BOUNCE
-                a.vy -= dvn * ny * BALL_BOUNCE
-                b.vx += dvn * nx * BALL_BOUNCE
-                b.vy += dvn * ny * BALL_BOUNCE
-              }
-            }
-          }
-        }
+      const dx = b.x - a.x
+      const dy = b.y - a.y
+      const minDist = a.r + b.r
+      const distSq = dx * dx + dy * dy
+      if (distSq >= minDist * minDist) continue
+      const dist = Math.sqrt(distSq)
+      const overlap = minDist - dist
+      if (overlap < 1 && a.vx * a.vx + a.vy * a.vy + b.vx * b.vx + b.vy * b.vy < 4) continue
+      const nx = dx / dist
+      const ny = dy / dist
+      const massA = a.r * a.r * a.r
+      const massB = b.r * b.r * b.r
+      const totalMass = massA + massB
+      const pushWeight = overlap / totalMass
+      a.x -= nx * pushWeight * massB
+      a.y -= ny * pushWeight * massB
+      b.x += nx * pushWeight * massA
+      b.y += ny * pushWeight * massA
+      const dvx = a.vx - b.vx
+      const dvy = a.vy - b.vy
+      const dvn = dvx * nx + dvy * ny
+      if (dvn > 0.5) {
+        const impulse = (1 + BALL_BOUNCE) * massA * massB * dvn / totalMass
+        const fa = impulse / massA
+        const fb = impulse / massB
+        a.vx -= fa * nx
+        a.vy -= fa * ny
+        b.vx += fb * nx
+        b.vy += fb * ny
       }
     }
+  }
+
+  for (let i = 0; i < rendered.length; i++) {
+    const b = rendered[i]
+    if (!b) continue
+    if (b.vx * b.vx + b.vy * b.vy < 1) { b.vx = 0; b.vy = 0 }
   }
 
   for (let i = 0; i < rendered.length; i++) {
@@ -417,6 +431,8 @@ export const view = (model: Model, language: string = 'en') => {
                       ro.disconnect()
                       mo.disconnect()
                       state.rendered.forEach(b => b.el.remove())
+                      activeParticles.forEach(el => el.remove())
+                      activeParticles.clear()
                     }),
                   )
                   return yield* Effect.never

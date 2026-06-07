@@ -65,15 +65,18 @@ const buildSettingsData = (model: Model): PersistedSettings => ({
   peekabooPairsMode: model.peekaboo.pairsMode,
 })
 
-const persistSettings = (model: Model): Command.Command<Message> => ({
-  name: 'PersistSettings',
-  effect: Effect.sync(() => {
+let persistTimer: ReturnType<typeof setTimeout> | undefined
+
+const persistSettings = (model: Model): Command.Command<Message> => {
+  if (persistTimer) clearTimeout(persistTimer)
+  persistTimer = setTimeout(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(buildSettingsData(model)))
-  }).pipe(
-    Effect.catchDefect(() => Effect.void),
-    Effect.as(SettingsPersisted()),
-  ),
-})
+  }, 200)
+  return {
+    name: 'PersistSettings',
+    effect: Effect.succeed(SettingsPersisted()),
+  }
+}
 
 // MODEL
 
