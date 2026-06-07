@@ -488,6 +488,10 @@ body {
   user-select: none;
 }
 
+.emoji-cell--pairs {
+  font-size: clamp(1.3rem, 6vw, 3rem);
+}
+
 .emoji-cell:hover {
   background: var(--cell-hover-bg);
   transform: scale(1.08);

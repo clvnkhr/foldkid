@@ -30,6 +30,7 @@ interface PersistedSettings {
   counterDisplayMode: string
   peekabooAnyWins: boolean
   peekabooVoiceMode: boolean
+  peekabooPairsMode: boolean
 }
 
 const DarkModeValues = ['auto', 'light', 'dark'] as const
@@ -61,6 +62,7 @@ const buildSettingsData = (model: Model): PersistedSettings => ({
   counterDisplayMode: model.counter.displayMode,
   peekabooAnyWins: model.peekaboo.anyWins,
   peekabooVoiceMode: model.peekaboo.voiceMode,
+  peekabooPairsMode: model.peekaboo.pairsMode,
 })
 
 const persistSettings = (model: Model): Command.Command<Message> => ({
@@ -120,6 +122,7 @@ export const Message = S.Union([
   Peekaboo.ClickedNext,
   Peekaboo.SetAnyWins,
   Peekaboo.SetVoiceMode,
+  Peekaboo.SetPairsMode,
   Peekaboo.ReplayQuestion,
   Peekaboo.ClickedCollectionEmoji,
   Peekaboo.ClickedReset,
@@ -140,7 +143,8 @@ export type Message = typeof Message.Type
 
 export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
   const saved = loadSettings()
-  const peekabooInit = Peekaboo.init()
+  const pairsMode = saved.peekabooPairsMode ?? false
+  const peekabooInit = Peekaboo.init(pairsMode)
   const cmds: Command.Command<Message>[] = []
   const voiceMode = saved.peekabooVoiceMode ?? false
   if (voiceMode && !saved.peekabooAnyWins && !saved.muted) {
@@ -160,7 +164,7 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
         pitch: saved.counterPitch ?? Counter.init.pitch,
         displayMode: sanitizeDisplayMode(saved.counterDisplayMode, Counter.init.displayMode),
       },
-      peekaboo: { ...peekabooInit, anyWins: saved.peekabooAnyWins ?? false, voiceMode },
+      peekaboo: { ...peekabooInit, anyWins: saved.peekabooAnyWins ?? false, voiceMode, pairsMode },
       bubbles: Bubbles.init(),
     },
     cmds,
@@ -245,6 +249,7 @@ const _update = (
       PeekabooClickedNext: (msg) => updatePeekaboo(model, msg),
       PeekabooSetAnyWins: (msg) => updatePeekaboo(model, msg),
       PeekabooSetVoiceMode: (msg) => updatePeekaboo(model, msg),
+      PeekabooSetPairsMode: (msg) => updatePeekaboo(model, msg),
       PeekabooReplayQuestion: (msg) => updatePeekaboo(model, msg),
       PeekabooClickedCollectionEmoji: (msg) => updatePeekaboo(model, msg),
       PeekabooClickedReset: (msg) => updatePeekaboo(model, msg),
@@ -263,7 +268,7 @@ const _update = (
 const SETTINGS_TAGS = new Set([
   'ClickedDarkMode', 'SetLanguage', 'ToggleMute',
   'CounterSetRate', 'CounterSetPitch', 'CounterSetDisplayMode',
-  'PeekabooSetAnyWins', 'PeekabooSetVoiceMode',
+  'PeekabooSetAnyWins', 'PeekabooSetVoiceMode', 'PeekabooSetPairsMode',
 ])
 
 export const update = (
@@ -463,6 +468,16 @@ export const view = (model: Model): Document => {
                 h.button(
                   [h.Class(model.peekaboo.voiceMode ? 'btn btn-primary' : 'btn btn-secondary'), h.OnClick(Peekaboo.SetVoiceMode({ value: true }))],
                   [`${ICON_VOICE_MODE} ${t('voiceMode', model.language)}`],
+                ),
+              ]),
+              h.div([h.Class('lang-buttons'), h.Style({ marginTop: '0.5rem' })], [
+                h.button(
+                  [h.Class(!model.peekaboo.pairsMode ? 'btn btn-primary' : 'btn btn-secondary'), h.OnClick(Peekaboo.SetPairsMode({ value: false }))],
+                  [t('singleMode', model.language)],
+                ),
+                h.button(
+                  [h.Class(model.peekaboo.pairsMode ? 'btn btn-primary' : 'btn btn-secondary'), h.OnClick(Peekaboo.SetPairsMode({ value: true }))],
+                  [t('pairsMode', model.language)],
                 ),
               ]),
             ])

@@ -53,6 +53,8 @@ const translations = {
     langZhHK: '廣東話',
     langJa: '日本語',
     builtWithFoldkit: 'Made with Foldkit',
+    singleMode: 'Single',
+    pairsMode: 'Pairs',
   },
   zh: {
     appName: '折纸娃',
@@ -108,6 +110,8 @@ const translations = {
     langZhHK: '廣東話',
     langJa: '日本語',
     builtWithFoldkit: '用 Foldkit 製作',
+    singleMode: 'Single',
+    pairsMode: 'Pairs',
   },
   fr: {
     appName: 'PliEnfant',
@@ -163,6 +167,8 @@ const translations = {
     langZhHK: '廣東話',
     langJa: '日本語',
     builtWithFoldkit: 'Fabriqué avec Foldkit',
+    singleMode: 'Single',
+    pairsMode: 'Pairs',
   },
   de: {
     appName: 'FaltKind',
@@ -218,6 +224,8 @@ const translations = {
     langZhHK: '廣東話',
     langJa: '日本語',
     builtWithFoldkit: 'Hergestellt mit Foldkit',
+    singleMode: 'Single',
+    pairsMode: 'Pairs',
   },
   fa: {
     appName: 'بچهاوری',
@@ -273,6 +281,8 @@ const translations = {
     langZhHK: '廣東話',
     langJa: '日本語',
     builtWithFoldkit: 'ساخته شده با Foldkit',
+    singleMode: 'Single',
+    pairsMode: 'Pairs',
   },
   ms: {
     appName: 'LipatBudak',
@@ -328,6 +338,8 @@ const translations = {
     langZhHK: '廣東話',
     langJa: '日本語',
     builtWithFoldkit: 'Dibuat dengan Foldkit',
+    singleMode: 'Single',
+    pairsMode: 'Pairs',
   },
   'zh-HK': {
     appName: '摺紙細路',
@@ -383,6 +395,8 @@ const translations = {
     langZhHK: '廣東話',
     langJa: '日本語',
     builtWithFoldkit: '用 Foldkit 整嘅',
+    singleMode: 'Single',
+    pairsMode: 'Pairs',
   },
   ja: {
     appName: '折り紙っ子',
@@ -438,6 +452,8 @@ const translations = {
     langZhHK: '廣東話',
     langJa: '日本語',
     builtWithFoldkit: 'Foldkit で作ったよ',
+    singleMode: 'Single',
+    pairsMode: 'Pairs',
   },
 } as const
 
