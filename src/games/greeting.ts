@@ -11,7 +11,15 @@ const SILENCE_FRAMES_LIMIT = 90
 const TRIM_THRESHOLD = 0.02
 const TRIM_PADDING_SAMPLES = 200
 
-export const Model = S.Struct({ status: S.String, audioUrl: S.String, playCount: S.Number, autoPlay: S.Boolean, recordingId: S.Number })
+const StatusType = S.Union([S.Literal('idle'), S.Literal('recording')])
+
+export const Model = S.Struct({
+  status: StatusType,
+  audioUrl: S.String,
+  playCount: S.Number,
+  autoPlay: S.Boolean,
+  recordingId: S.Number,
+})
 export type Model = typeof Model.Type
 
 export const ClickedRecord = m('GreetingClickedRecord')
@@ -74,6 +82,10 @@ const record = (): Command.Command<Message> => ({
     let mediaRecorder: MediaRecorder | null = null
     let stream: MediaStream | null = null
 
+    const fail = (): void => {
+      resume(Effect.succeed(RecordingFailed()))
+    }
+
     navigator.mediaDevices.getUserMedia({ audio: true })
       .then((ms) => {
         if (cancelled) {
@@ -118,7 +130,7 @@ const record = (): Command.Command<Message> => ({
               })
               .catch(() => {
                 if (audioCtx) audioCtx.close()
-                resume(Effect.succeed(RecordingFailed()))
+                fail()
               })
           })
         }
@@ -128,7 +140,7 @@ const record = (): Command.Command<Message> => ({
           source.disconnect()
           ms.getTracks().forEach((t) => t.stop())
           if (audioCtx) audioCtx.close()
-          resume(Effect.succeed(RecordingFailed()))
+          fail()
         }
 
         let silentFrames = 0
@@ -162,7 +174,7 @@ const record = (): Command.Command<Message> => ({
         rafId = requestAnimationFrame(detectSilence)
       })
       .catch(() => {
-        resume(Effect.succeed(RecordingFailed()))
+        fail()
       })
 
     return Effect.sync(() => {
@@ -233,7 +245,7 @@ export const update = (
         { ...model, status: 'idle', audioUrl: msg.audioUrl, autoPlay: true, recordingId: (model.recordingId ?? 0) + 1 },
         [],
       ],
-      GreetingRecordingFailed: () => [
+      GreetingRecordingFailed: (_msg) => [
         { ...model, status: 'idle' },
         [],
       ],

@@ -32,6 +32,10 @@ interface PersistedSettings {
   peekabooVoiceMode: boolean
 }
 
+const DarkModeValues = ['auto', 'light', 'dark'] as const
+type DarkMode = typeof DarkModeValues[number]
+const DisplayModeValues = ['number', 'word', 'both'] as const
+
 const loadSettings = (): Partial<PersistedSettings> => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -41,6 +45,12 @@ const loadSettings = (): Partial<PersistedSettings> => {
     return {}
   }
 }
+
+const sanitizeDarkMode = (value: string | undefined, fallback: DarkMode): DarkMode =>
+  DarkModeValues.includes(value as DarkMode) ? (value as DarkMode) : fallback
+
+const sanitizeDisplayMode = (value: string | undefined, fallback: 'number' | 'word' | 'both'): 'number' | 'word' | 'both' =>
+  DisplayModeValues.includes(value as 'number' | 'word' | 'both') ? (value as 'number' | 'word' | 'both') : fallback
 
 const saveSettings = (model: Model): void => {
   try {
@@ -60,9 +70,11 @@ const saveSettings = (model: Model): void => {
 
 // MODEL
 
+const DarkModeType = S.Union([S.Literal('auto'), S.Literal('light'), S.Literal('dark')])
+
 export const Model = S.Struct({
   page: Page,
-  darkMode: S.String,
+  darkMode: DarkModeType,
   language: S.String,
   showSettings: S.Boolean,
   muted: S.Boolean,
@@ -131,7 +143,7 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
   return [
     {
       page: PageLanding(),
-      darkMode: saved.darkMode ?? 'auto',
+      darkMode: sanitizeDarkMode(saved.darkMode, 'auto'),
       language: saved.language ?? 'en',
       showSettings: false,
       muted: saved.muted ?? false,
@@ -140,7 +152,7 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
         ...Counter.init,
         rate: saved.counterRate ?? Counter.init.rate,
         pitch: saved.counterPitch ?? Counter.init.pitch,
-        displayMode: saved.counterDisplayMode ?? Counter.init.displayMode,
+        displayMode: sanitizeDisplayMode(saved.counterDisplayMode, Counter.init.displayMode),
       },
       peekaboo: { ...peekabooInit, anyWins: saved.peekabooAnyWins ?? false, voiceMode },
       bubbles: Bubbles.init(),
@@ -183,7 +195,7 @@ const updateBubbles = (
   return [{ ...model, bubbles: next }, cmds]
 }
 
-const cycleDarkMode = (current: string): string =>
+const cycleDarkMode = (current: 'auto' | 'light' | 'dark'): 'auto' | 'light' | 'dark' =>
   current === 'auto' ? 'light' : current === 'light' ? 'dark' : 'auto'
 
 const _update = (

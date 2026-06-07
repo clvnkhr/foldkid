@@ -45,7 +45,16 @@ export const numberToWord = (n: number, language: string = 'en'): string => {
   }
 }
 
-export const Model = S.Struct({ count: S.Number, fontSize: S.Number, holding: S.Boolean, rate: S.Number, pitch: S.Number, displayMode: S.String })
+const DisplayMode = S.Union([S.Literal('number'), S.Literal('word'), S.Literal('both')])
+
+export const Model = S.Struct({
+  count: S.Number,
+  fontSize: S.Number,
+  holding: S.Boolean,
+  rate: S.Number,
+  pitch: S.Number,
+  displayMode: DisplayMode,
+})
 export type Model = typeof Model.Type
 
 export const PointerDown = m('CounterPointerDown')
@@ -54,7 +63,7 @@ export const PressedDecrement = m('CounterPressedDecrement', { duration: S.Numbe
 export const ClickedReset = m('CounterClickedReset')
 export const SetRate = m('CounterSetRate', { value: S.Number })
 export const SetPitch = m('CounterSetPitch', { value: S.Number })
-export const SetDisplayMode = m('CounterSetDisplayMode', { value: S.String })
+export const SetDisplayMode = m('CounterSetDisplayMode', { value: DisplayMode })
 export const SoundPlayed = m('CounterSoundPlayed')
 
 export const Message = S.Union([PointerDown, PressedIncrement, PressedDecrement, ClickedReset, SetRate, SetPitch, SetDisplayMode, SoundPlayed])

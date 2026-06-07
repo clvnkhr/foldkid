@@ -1,6 +1,6 @@
 import { Effect } from 'effect'
 
-const getContext = (): AudioContext | undefined => {
+const getAudioContext = (): AudioContext | undefined => {
   try {
     return new AudioContext()
   } catch {
@@ -14,7 +14,7 @@ const playTone = (
   type: OscillatorType,
 ): Effect.Effect<void> =>
   Effect.sync(() => {
-    const ctx = getContext()
+    const ctx = getAudioContext()
     if (!ctx) return
     const osc = ctx.createOscillator()
     const gain = ctx.createGain()
