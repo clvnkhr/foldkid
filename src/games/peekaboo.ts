@@ -111,7 +111,7 @@ export const update = (
         const next = generateGame([...model.found], model.anyWins, model.voiceMode)
         const cmds: Command.Command<Message>[] = []
         if (model.voiceMode && !model.anyWins && !muted) {
-          cmds.push(speak(tf('whereIs', language, next.target), SoundPlayed(), { lang: language }))
+          cmds.push(speak(tf('whereIs', language, emojiName(next.target, language)), SoundPlayed(), { lang: language }))
         }
         return [{ ...next, count: model.count + 1 }, cmds]
       },
@@ -127,7 +127,7 @@ export const update = (
       PeekabooReplayQuestion: () => [
         model,
         model.voiceMode && !model.anyWins && !muted
-          ? [speak(tf('whereIs', language, model.target), SoundPlayed(), { lang: language })]
+          ? [speak(tf('whereIs', language, emojiName(model.target, language)), SoundPlayed(), { lang: language })]
           : [],
       ],
       PeekabooClickedCollectionEmoji: (msg) => [
@@ -138,7 +138,7 @@ export const update = (
         const next = generateGame([], model.anyWins, model.voiceMode)
         const cmds: Command.Command<Message>[] = []
         if (model.voiceMode && !model.anyWins && !muted) {
-          cmds.push(speak(tf('whereIs', language, next.target), SoundPlayed(), { lang: language }))
+          cmds.push(speak(tf('whereIs', language, emojiName(next.target, language)), SoundPlayed(), { lang: language }))
         }
         return [next, cmds]
       },

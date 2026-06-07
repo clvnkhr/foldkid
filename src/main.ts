@@ -144,7 +144,7 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
   const cmds: Command.Command<Message>[] = []
   const voiceMode = saved.peekabooVoiceMode ?? false
   if (voiceMode && !saved.peekabooAnyWins && !saved.muted) {
-    cmds.push(speak(tf('whereIs', saved.language ?? 'en', peekabooInit.target), Peekaboo.SoundPlayed(), { lang: saved.language ?? 'en' }))
+    cmds.push(speak(tf('whereIs', saved.language ?? 'en', Peekaboo.emojiName(peekabooInit.target, saved.language ?? 'en')), Peekaboo.SoundPlayed(), { lang: saved.language ?? 'en' }))
   }
   return [
     {
@@ -201,8 +201,11 @@ const updateBubbles = (
   return [{ ...model, bubbles: next }, cmds]
 }
 
-const cycleDarkMode = (current: 'auto' | 'light' | 'dark'): 'auto' | 'light' | 'dark' =>
-  current === 'auto' ? 'light' : current === 'light' ? 'dark' : 'auto'
+const cycleDarkMode = (current: DarkMode): DarkMode => {
+  if (current === 'auto') return 'light'
+  if (current === 'light') return 'dark'
+  return 'auto'
+}
 
 const _update = (
   model: Model,
