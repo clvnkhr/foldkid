@@ -1,8 +1,8 @@
-import { Match as M, Schema as S, Stream } from 'effect'
+import { Effect, Match as M, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { Document, html } from 'foldkit/html'
 
-import { ClickedBubbles, ClickedCounter, ClickedDarkMode, ClickedGreeting, ClickedLanding, ClickedPeekaboo, ClickedSettings, SetLanguage, SystemDarkModeChanged, ToggleMute } from './message'
+import { ClickedBubbles, ClickedCounter, ClickedDarkMode, ClickedGreeting, ClickedLanding, ClickedPeekaboo, ClickedSettings, SetLanguage, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
 import { Page, PageBubbles, PageCounter, PageGreeting, PageLanding, PagePeekaboo } from './route'
 import * as Bubbles from './games/bubbles'
 import * as Counter from './games/counter'
@@ -52,21 +52,26 @@ const sanitizeDarkMode = (value: string | undefined, fallback: DarkMode): DarkMo
 const sanitizeDisplayMode = (value: string | undefined, fallback: 'number' | 'word' | 'both'): 'number' | 'word' | 'both' =>
   DisplayModeValues.includes(value as 'number' | 'word' | 'both') ? (value as 'number' | 'word' | 'both') : fallback
 
-const saveSettings = (model: Model): void => {
-  try {
-    const data: PersistedSettings = {
-      language: model.language,
-      darkMode: model.darkMode,
-      muted: model.muted,
-      counterRate: model.counter.rate,
-      counterPitch: model.counter.pitch,
-      counterDisplayMode: model.counter.displayMode,
-      peekabooAnyWins: model.peekaboo.anyWins,
-      peekabooVoiceMode: model.peekaboo.voiceMode,
-    }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
-  } catch { /* ignore */ }
-}
+const buildSettingsData = (model: Model): PersistedSettings => ({
+  language: model.language,
+  darkMode: model.darkMode,
+  muted: model.muted,
+  counterRate: model.counter.rate,
+  counterPitch: model.counter.pitch,
+  counterDisplayMode: model.counter.displayMode,
+  peekabooAnyWins: model.peekaboo.anyWins,
+  peekabooVoiceMode: model.peekaboo.voiceMode,
+})
+
+const persistSettings = (model: Model): Command.Command<Message> => ({
+  name: 'PersistSettings',
+  effect: Effect.sync(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(buildSettingsData(model)))
+  }).pipe(
+    Effect.catchDefect(() => Effect.void),
+    Effect.as(SettingsPersisted()),
+  ),
+})
 
 // MODEL
 
@@ -126,6 +131,7 @@ export const Message = S.Union([
   Counter.SoundPlayed,
   Peekaboo.SoundPlayed,
   Bubbles.SoundPlayed,
+  SettingsPersisted,
 ])
 
 export type Message = typeof Message.Type
@@ -247,6 +253,7 @@ const _update = (
       CounterSoundPlayed: (msg) => updateCounter(model, msg),
       PeekabooSoundPlayed: (msg) => updatePeekaboo(model, msg),
       BubblesSoundPlayed: (msg) => updateBubbles(model, msg),
+      SettingsPersisted: () => [model, []],
     }),
   )
 
@@ -261,7 +268,9 @@ export const update = (
   message: Message,
 ): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
   const result = _update(model, message)
-  if (SETTINGS_TAGS.has(message._tag)) saveSettings(result[0])
+  if (SETTINGS_TAGS.has(message._tag)) {
+    return [result[0], [...result[1], persistSettings(result[0])]]
+  }
   return result
 }
 

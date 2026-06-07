@@ -10,7 +10,7 @@ export const speak = <Msg>(
   text: string,
   msg: Msg,
   options?: { rate?: number; pitch?: number; lang?: string },
-): Readonly<{ name: string; effect: Effect.Effect<Msg> }> => ({
+) => ({
   name: 'Speak',
   effect: Effect.sync(() => {
     speechSynthesis.cancel()

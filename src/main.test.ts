@@ -3,7 +3,9 @@ import { Story } from 'foldkit/test'
 import * as Main from './main'
 import * as Greeting from './games/greeting'
 import { PageGreeting } from './route'
-import { ClickedLanding, ClickedGreeting, ClickedCounter, ClickedPeekaboo, ClickedBubbles, ClickedDarkMode } from './message'
+import { ClickedLanding, ClickedGreeting, ClickedCounter, ClickedPeekaboo, ClickedBubbles, ClickedDarkMode, SettingsPersisted } from './message'
+
+const resolveSettings = [{ name: 'PersistSettings' }, SettingsPersisted()] as const
 
 describe('Main', () => {
   it('init returns correct initial state', () => {
@@ -90,6 +92,7 @@ describe('Main', () => {
       Story.model((model) => {
         expect(model.darkMode).toBe('light')
       }),
+      Story.Command.resolveAll(resolveSettings),
       Story.Command.expectNone(),
     )
 
@@ -100,6 +103,7 @@ describe('Main', () => {
       Story.model((model) => {
         expect(model.darkMode).toBe('dark')
       }),
+      Story.Command.resolveAll(resolveSettings),
       Story.Command.expectNone(),
     )
 
@@ -110,6 +114,7 @@ describe('Main', () => {
       Story.model((model) => {
         expect(model.darkMode).toBe('auto')
       }),
+      Story.Command.resolveAll(resolveSettings),
       Story.Command.expectNone(),
     )
   })
