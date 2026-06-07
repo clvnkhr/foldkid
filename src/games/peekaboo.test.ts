@@ -61,6 +61,7 @@ describe('Peekaboo', () => {
         expect(model.won).toBe(false)
         expect(model.shaking).toBe(wrong.id)
         expect(model.shakeTick).toBe(1)
+        expect(model.wrongCount).toBe(1)
       }),
       Story.Command.expectNone(),
     )
@@ -111,6 +112,42 @@ describe('Peekaboo', () => {
         expect(model.won).toBe(true)
         expect(model.count).toBe(0)
       }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('hint appears after 3 wrong guesses', () => {
+    const game = Peekaboo.init()
+    const correctId = game.grid.find(c => c.emoji === game.target)!.id
+    const wrongCells = game.grid.filter(c => c.emoji !== game.target)
+
+    Story.story(
+      Peekaboo.update,
+      Story.with(game),
+      Story.message(Peekaboo.ClickedCell({ id: wrongCells[0]!.id })),
+      Story.message(Peekaboo.ClickedCell({ id: wrongCells[1]!.id })),
+      Story.message(Peekaboo.ClickedCell({ id: wrongCells[2]!.id })),
+      Story.model((model) => {
+        expect(model.wrongCount).toBe(3)
+        expect(model.hintId).toBe(correctId)
+      }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('hint is cleared on correct answer', () => {
+    const game = Peekaboo.init()
+    const correctId = game.grid.find(c => c.emoji === game.target)!.id
+
+    Story.story(
+      Peekaboo.update,
+      Story.with({ ...game, wrongCount: 3, hintId: correctId }),
+      Story.message(Peekaboo.ClickedCell({ id: correctId })),
+      Story.model((model) => {
+        expect(model.hintId).toBeNull()
+        expect(model.wrongCount).toBe(0)
+      }),
+      Story.Command.resolveAll(...resolveWin),
       Story.Command.expectNone(),
     )
   })

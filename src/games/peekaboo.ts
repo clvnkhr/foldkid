@@ -50,7 +50,7 @@ const ICON_REPLAY = '🔊'
 const EmojiCell = S.Struct({ id: S.Number, emoji: S.String })
 type EmojiCell = typeof EmojiCell.Type
 
-export const Model = S.Struct({ grid: S.Array(EmojiCell), target: S.String, count: S.Number, shaking: S.Number, shakeTick: S.Number, won: S.Boolean, found: S.Array(S.String), anyWins: S.Boolean, voiceMode: S.Boolean, tooltipEmoji: S.Union([S.String, S.Null]) })
+export const Model = S.Struct({ grid: S.Array(EmojiCell), target: S.String, count: S.Number, shaking: S.Number, shakeTick: S.Number, won: S.Boolean, found: S.Array(S.String), anyWins: S.Boolean, voiceMode: S.Boolean, tooltipEmoji: S.Union([S.String, S.Null]), wrongCount: S.Number, hintId: S.Union([S.Number, S.Null]) })
 export type Model = typeof Model.Type
 
 export const ClickedCell = m('PeekabooClickedCell', { id: S.Number })
@@ -79,7 +79,7 @@ const generateGame = (found?: string[], anyWins: boolean = false, voiceMode: boo
   const shuffled = shuffle(EMOJI_POOL).slice(0, 9)
   const grid = shuffled.map((emoji, i) => ({ id: i, emoji }))
   const target = grid[Math.floor(Math.random() * grid.length)]!.emoji
-  return { grid, target, count: 0, shaking: -1, shakeTick: 0, won: false, found: found ?? [], anyWins, voiceMode, tooltipEmoji: null }
+  return { grid, target, count: 0, shaking: -1, shakeTick: 0, won: false, found: found ?? [], anyWins, voiceMode, tooltipEmoji: null, wrongCount: 0, hintId: null }
 }
 
 export const init = (): Model => generateGame()
@@ -98,12 +98,14 @@ export const update = (
         const cell = model.grid.find(c => c.id === msg.id)
         if (cell && (cell.emoji === model.target || model.anyWins)) {
           return [
-            { ...model, won: true, found: [...model.found, cell!.emoji], tooltipEmoji: null },
+            { ...model, won: true, found: [...model.found, cell!.emoji], tooltipEmoji: null, wrongCount: 0, hintId: null },
             muted ? [] : [boing(SoundPlayed()), speak(emojiName(cell!.emoji, language), SoundPlayed(), { lang: language })],
           ]
         }
+        const wrongCount = model.wrongCount + 1
+        const hintId = model.hintId !== null ? model.hintId : wrongCount >= 3 ? (model.grid.find(c => c.emoji === model.target)?.id ?? null) : null
         return [
-          { ...model, shaking: msg.id, shakeTick: model.shakeTick + 1 },
+          { ...model, shaking: msg.id, shakeTick: model.shakeTick + 1, wrongCount, hintId },
           [],
         ]
       },
@@ -165,16 +167,19 @@ export const view = (model: Model, language: string = 'en') => {
               : h.p([h.Class('peekaboo-prompt')], [tf('whereIs', language, model.target)]),
           h.div([h.Class('peekaboo-game-area')], [
             h.div([h.Class('emoji-grid')], [
-              ...model.grid.map((cell) =>
-                h.div(
+              ...model.grid.map((cell) => {
+                let cellClass = 'emoji-cell'
+                if (model.shaking === cell.id) cellClass = 'emoji-cell shaking'
+                else if (model.hintId === cell.id) cellClass = 'emoji-cell hint'
+                return h.div(
                   [
-                    h.Class(model.shaking === cell.id ? 'emoji-cell shaking' : 'emoji-cell'),
+                    h.Class(cellClass),
                     h.OnClick(ClickedCell({ id: cell.id })),
                     h.Key(cell.id.toString() + (model.shaking === cell.id ? 's' + model.shakeTick : '')),
                   ],
                   [cell.emoji],
-                ),
-              ),
+                )
+              }),
             ]),
             h.p([h.Class('peekaboo-count')], [tf('found', language, model.count)]),
           ]),

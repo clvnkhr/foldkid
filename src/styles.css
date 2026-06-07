@@ -501,6 +501,10 @@ body {
   animation: emojiShake 0.5s ease-in-out;
 }
 
+.emoji-cell.hint {
+  box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.8), 0 0 20px 6px rgba(76, 175, 80, 0.4);
+}
+
 @keyframes emojiShake {
 
   0%,
