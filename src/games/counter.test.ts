@@ -99,6 +99,46 @@ describe('Counter', () => {
     )
   })
 
+  it('pointer down then up off-button still increments (window listener path)', () => {
+    Story.story(
+      Counter.update,
+      Story.with(Counter.init),
+      Story.message(Counter.PointerDown()),
+      Story.model((model) => {
+        expect(model.holding).toBe(true)
+        expect(model.count).toBe(0)
+      }),
+      Story.Command.expectNone(),
+      Story.message(Counter.PressedIncrement({ duration: 2000 })),
+      Story.model((model) => {
+        expect(model.count).toBe(1)
+        expect(model.fontSize).toBe(20)
+        expect(model.holding).toBe(false)
+      }),
+      Story.Command.resolveAll(resolveClick, resolveSpeak),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('pointer down then up off-button still decrements (window listener path)', () => {
+    Story.story(
+      Counter.update,
+      Story.with(Counter.init),
+      Story.message(Counter.PointerDown()),
+      Story.model((model) => {
+        expect(model.holding).toBe(true)
+      }),
+      Story.Command.expectNone(),
+      Story.message(Counter.PressedDecrement({ duration: 0 })),
+      Story.model((model) => {
+        expect(model.count).toBe(-1)
+        expect(model.holding).toBe(false)
+      }),
+      Story.Command.resolveAll(resolveClick, resolveSpeak),
+      Story.Command.expectNone(),
+    )
+  })
+
   it('SoundPlayed leaves model unchanged', () => {
     Story.story(
       Counter.update,

@@ -5,6 +5,9 @@
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 body {
@@ -158,8 +161,6 @@ body {
   cursor: pointer;
   transition: transform 0.15s, box-shadow 0.15s;
   font-family: inherit;
-  user-select: none;
-  -webkit-user-select: none;
 }
 
 .btn:hover {
@@ -332,8 +333,6 @@ body {
 .number {
   font-weight: 900;
   line-height: 1;
-  user-select: none;
-  -webkit-user-select: none;
   transition: color 0.3s, font-size 0.15s;
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
@@ -449,7 +448,6 @@ body {
   border-radius: 1rem;
   cursor: pointer;
   transition: background 0.15s, transform 0.15s;
-  user-select: none;
 }
 
 .emoji-cell--pairs {
@@ -636,7 +634,6 @@ body {
   position: absolute;
   border-radius: 50%;
   cursor: pointer;
-  user-select: none;
   will-change: transform;
   pointer-events: auto;
   opacity: 0.85;

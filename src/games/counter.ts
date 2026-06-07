@@ -143,6 +143,7 @@ const ballGradient = (hue: number, negative: boolean): string => {
 }
 
 let pointerDownTime = 0
+let pressedButton: 'inc' | 'dec' | null = null
 
 // BALL PHYSICS //
 
@@ -388,15 +389,23 @@ export const view = (model: Model, language: string = 'en') => {
     return model.count.toString()
   }
 
-  const btnAttrs = (msg: (d: number) => Message) => [
+  const btnAttrs = (msg: (d: number) => Message, btn: 'inc' | 'dec') => [
     h.Class('btn btn-primary'),
     h.OnPointerDown((_pt, _btn, _sx, _sy, ts) => {
       pointerDownTime = ts
+      pressedButton = btn
       return O.some(PointerDown())
     }),
-    h.OnPointerUp((_sx, _sy, _pt, ts) =>
-      O.some(msg(ts - pointerDownTime)),
-    ),
+    h.OnPointerUp((_sx, _sy, _pt, ts) => {
+      pressedButton = null
+      return O.some(msg(ts - pointerDownTime))
+    }),
+    h.OnPointerLeave(() => {
+      if (!pressedButton) return O.none()
+      const d = performance.now() - pointerDownTime
+      pressedButton = null
+      return O.some(msg(d))
+    }),
   ] as const
 
   return h.div(
@@ -406,7 +415,7 @@ export const view = (model: Model, language: string = 'en') => {
         h.h1([h.Class('title')], [t('counterTitle', language)]),
         h.div([h.Class('buttons counter-actions')], [
           h.button(
-            btnAttrs((d) => PressedDecrement({ duration: d })),
+            btnAttrs((d) => PressedDecrement({ duration: d }), 'dec'),
             ['-1'],
           ),
           h.button(
@@ -414,7 +423,7 @@ export const view = (model: Model, language: string = 'en') => {
             [t('reset', language)],
           ),
           h.button(
-            btnAttrs((d) => PressedIncrement({ duration: d })),
+            btnAttrs((d) => PressedIncrement({ duration: d }), 'inc'),
             ['+1'],
           ),
         ]),
