@@ -224,6 +224,8 @@ interface TickState {
   fontSize: number
   dirty: boolean
   spawnCounter: number
+  settleTimer: number
+  frozen: boolean
 }
 
 const tick = (state: TickState, parent: HTMLElement): void => {
@@ -270,58 +272,78 @@ const tick = (state: TickState, parent: HTMLElement): void => {
     state.spawnCounter = 0
   }
 
-  for (let i = 0; i < rendered.length; i++) {
-    const b = rendered[i]
-    if (!b) continue
-    b.vy += (negative ? -1 : 1) * GRAVITY * dt
-    b.vx *= FRICTION
-    b.x += b.vx * dt
-    b.y += b.vy * dt
-    if (b.x < b.r) { b.x = b.r; b.vx = -b.vx * BOUNCE * WALL_FRICTION; b.vy *= WALL_FRICTION }
-    if (b.x > w - b.r) { b.x = w - b.r; b.vx = -b.vx * BOUNCE * WALL_FRICTION; b.vy *= WALL_FRICTION }
-    if (negative) {
-      if (b.y - b.r < 0) {
-        b.y = b.r
-        b.vy = -b.vy * BOUNCE
-        b.vx *= WALL_FRICTION
-        if (b.vy > 0 && b.vy < GRAVITY_DT) b.vy = 0
-      }
-    } else if (b.y > h - b.r) {
-      b.y = h - b.r
-      b.vy = -b.vy * BOUNCE
-      b.vx *= WALL_FRICTION
-      if (b.vy < 0 && -b.vy < GRAVITY_DT) b.vy = 0
-    }
+  if (rendered.length === target) {
+    state.settleTimer++
+  } else {
+    state.settleTimer = 0
+    state.frozen = false
   }
 
-  for (let i = 0; i < rendered.length; i++) {
-    const a = rendered[i]
-    if (!a) continue
-    for (let j = i + 1; j < rendered.length; j++) {
-      const b = rendered[j]
+  if (state.settleTimer >= 2100) {
+    state.frozen = true
+  }
+
+  if (!state.frozen) {
+    const prevX = new Float64Array(rendered.length)
+    const prevY = new Float64Array(rendered.length)
+    for (let i = 0; i < rendered.length; i++) {
+      const b = rendered[i]
+      prevX[i] = b.x
+      prevY[i] = b.y
+    }
+
+    for (let i = 0; i < rendered.length; i++) {
+      const b = rendered[i]
       if (!b) continue
-      const dx = b.x - a.x
-      const dy = b.y - a.y
-      const minDist = a.r + b.r
-      const distSq = dx * dx + dy * dy
-      if (distSq >= minDist * minDist) continue
-      const dist = Math.sqrt(distSq)
-      const overlap = minDist - dist
-      if (overlap < 1 && a.vx * a.vx + a.vy * a.vy + b.vx * b.vx + b.vy * b.vy < 4) continue
-      const nx = dx / dist
-      const ny = dy / dist
-      const massA = a.r * a.r * a.r
-      const massB = b.r * b.r * b.r
-      const totalMass = massA + massB
-      const pushWeight = overlap / totalMass
-      a.x -= nx * pushWeight * massB
-      a.y -= ny * pushWeight * massB
-      b.x += nx * pushWeight * massA
-      b.y += ny * pushWeight * massA
-      const dvx = a.vx - b.vx
-      const dvy = a.vy - b.vy
-      const dvn = dvx * nx + dvy * ny
-      if (dvn > 0.5) {
+      b.vy += (negative ? -1 : 1) * GRAVITY * dt
+      b.vx *= FRICTION
+      b.x += b.vx * dt
+      b.y += b.vy * dt
+      if (b.x < b.r) { b.x = b.r; b.vx = -b.vx * BOUNCE * WALL_FRICTION; b.vy *= WALL_FRICTION }
+      if (b.x > w - b.r) { b.x = w - b.r; b.vx = -b.vx * BOUNCE * WALL_FRICTION; b.vy *= WALL_FRICTION }
+      if (negative) {
+        if (b.y - b.r < 0) {
+          b.y = b.r
+          b.vy = -b.vy * BOUNCE
+          b.vx *= WALL_FRICTION
+          if (b.vy > 0 && b.vy < GRAVITY_DT) b.vy = 0
+        }
+      } else if (b.y > h - b.r) {
+        b.y = h - b.r
+        b.vy = -b.vy * BOUNCE
+        b.vx *= WALL_FRICTION
+        if (b.vy < 0 && -b.vy < GRAVITY_DT) b.vy = 0
+      }
+    }
+
+    for (let i = 0; i < rendered.length; i++) {
+      const a = rendered[i]
+      if (!a) continue
+      for (let j = i + 1; j < rendered.length; j++) {
+        const b = rendered[j]
+        if (!b) continue
+        const dx = b.x - a.x
+        const dy = b.y - a.y
+        const minDist = a.r + b.r
+        const distSq = dx * dx + dy * dy
+        if (distSq >= minDist * minDist) continue
+        const dist = Math.sqrt(distSq)
+        if (dist <= 0 || !isFinite(dist)) continue
+        const overlap = minDist - dist
+        if (overlap < 1 && a.vx * a.vx + a.vy * a.vy + b.vx * b.vx + b.vy * b.vy < 4) continue
+        const nx = dx / dist
+        const ny = dy / dist
+        const massA = a.r * a.r * a.r
+        const massB = b.r * b.r * b.r
+        const totalMass = massA + massB
+        const pushWeight = overlap / totalMass
+        a.x -= nx * pushWeight * massB
+        a.y -= ny * pushWeight * massB
+        b.x += nx * pushWeight * massA
+        b.y += ny * pushWeight * massA
+        const dvx = a.vx - b.vx
+        const dvy = a.vy - b.vy
+        const dvn = dvx * nx + dvy * ny
         const impulse = (1 + BALL_BOUNCE) * massA * massB * dvn / totalMass
         const fa = impulse / massA
         const fb = impulse / massB
@@ -331,12 +353,24 @@ const tick = (state: TickState, parent: HTMLElement): void => {
         b.vy += fb * ny
       }
     }
-  }
 
-  for (let i = 0; i < rendered.length; i++) {
-    const b = rendered[i]
-    if (!b) continue
-    if (b.vx * b.vx + b.vy * b.vy < 1) { b.vx = 0; b.vy = 0 }
+    if (state.settleTimer > 300) {
+      const t = Math.min((state.settleTimer - 300) / 1800, 1)
+      const maxDisp = 10 * (1 - t)
+      for (let i = 0; i < rendered.length; i++) {
+        const b = rendered[i]
+        if (!b) continue
+        const dx = b.x - prevX[i]
+        const dy = b.y - prevY[i]
+        const distSq = dx * dx + dy * dy
+        if (distSq > maxDisp * maxDisp) {
+          const dist = Math.sqrt(distSq)
+          const scale = maxDisp / dist
+          b.x = prevX[i] + dx * scale
+          b.y = prevY[i] + dy * scale
+        }
+      }
+    }
   }
 
   for (let i = 0; i < rendered.length; i++) {
@@ -405,8 +439,10 @@ export const view = (model: Model, language: string = 'en') => {
                         h: rect.height,
                         target: model.count,
                         fontSize: model.fontSize,
-                        dirty: false,
+                        dirty: true,
                         spawnCounter: 0,
+                        settleTimer: 0,
+                        frozen: false,
                       }
                       const ro = new ResizeObserver(() => { state.dirty = true })
                       ro.observe(parent)

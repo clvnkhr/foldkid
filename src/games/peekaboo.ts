@@ -38,15 +38,15 @@ const EMOJI_NAMES_BY_LANG: Record<string, string[]> = {
 }
 
 export const emojiName = (emoji: string, language: string = 'en'): string => {
-  const graphemes = [...emoji]
-  if (graphemes.length > 1) {
-    return graphemes.map(g => emojiName(g, language)).join(' ')
+  const graphemes = [...new Intl.Segmenter().segment(emoji)].map(s => s.segment)
+  if (graphemes.length === 1) {
+    const idx = EMOJI_POOL.indexOf(emoji)
+    if (idx === -1) return emoji
+    const names = EMOJI_NAMES_BY_LANG[language]
+    if (names && idx < names.length) return names[idx]!
+    return EMOJI_NAMES[emoji] ?? emoji
   }
-  const idx = EMOJI_POOL.indexOf(emoji)
-  if (idx === -1) return emoji
-  const names = EMOJI_NAMES_BY_LANG[language]
-  if (names && idx < names.length) return names[idx]!
-  return EMOJI_NAMES[emoji] ?? emoji
+  return graphemes.map(g => emojiName(g, language)).join(' ')
 }
 
 const ICON_REPLAY = '🔊'
