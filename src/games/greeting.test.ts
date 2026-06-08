@@ -6,7 +6,7 @@ const resolveSpeakPrompt = [{ name: 'speakPrompt' }, Greeting.SoundPlayed()] as 
 
 describe('Greeting', () => {
   it('init state', () => {
-    expect(Greeting.init).toStrictEqual({ status: 'idle', audioUrl: '', playCount: 0, autoPlay: false, recordingId: 0, showingHello: false })
+    expect(Greeting.init).toStrictEqual({ status: 'idle', audioUrl: '', playCount: 0, autoPlay: false, recordingId: 0, hellos: [], voiceEffect: 'normal' })
   })
 
   it('ClickedRecord sets status to recording', () => {
@@ -16,7 +16,7 @@ describe('Greeting', () => {
       Story.message(Greeting.ClickedRecord()),
       Story.model((model) => {
         expect(model.status).toBe('recording')
-        expect(model.showingHello).toBe(false)
+        expect(model.hellos).toStrictEqual([])
       }),
       Story.Command.resolveAll([{ name: 'Record' }, Greeting.RecordingFailed()]),
       Story.Command.expectNone(),
@@ -57,9 +57,14 @@ describe('Greeting', () => {
       Story.message(Greeting.ClickedPlay()),
       Story.model((model) => {
         expect(model.playCount).toBe(1)
-        expect(model.showingHello).toBe(true)
+        expect(model.hellos).toHaveLength(1)
+        expect(model.hellos[0]!.id).toBe(1)
+        expect(model.hellos[0]!.effect).toBe('normal')
       }),
-      Story.Command.resolveAll([{ name: 'PlayGreeting' }, Greeting.SoundPlayed()]),
+      Story.Command.resolveAll(
+        [{ name: 'PlayGreeting' }, Greeting.SoundPlayed()],
+        [{ name: 'HideHello' }, Greeting.HideHello({ id: 1 })],
+      ),
       Story.Command.expectNone(),
     )
   })
@@ -74,7 +79,8 @@ describe('Greeting', () => {
         expect(model.audioUrl).toBe('')
         expect(model.playCount).toBe(0)
         expect(model.autoPlay).toBe(false)
-        expect(model.showingHello).toBe(false)
+        expect(model.hellos).toStrictEqual([])
+        expect(model.voiceEffect).toBe('normal')
         expect(model.recordingId).toBeGreaterThan(0)
       }),
       Story.Command.expectNone(),
@@ -155,8 +161,18 @@ describe('Greeting', () => {
   it('shows Hello text when greeting was played', () => {
     Scene.scene(
       { update: Greeting.update, view: Greeting.view },
-      Scene.with({ status: 'idle', audioUrl: '', playCount: 1, autoPlay: false, showingHello: true }),
+      Scene.with({ status: 'idle', audioUrl: '', playCount: 1, autoPlay: false, hellos: [{ id: 1, effect: 'normal' }], voiceEffect: 'normal' }),
       Scene.expect(Scene.text('Hello! 😊')).toExist(),
+      Scene.Mount.resolveAll(resolveSpeakPrompt),
+      Scene.Command.expectNone(),
+    )
+  })
+
+  it('shows effect-specific emoji in Hello text', () => {
+    Scene.scene(
+      { update: Greeting.update, view: Greeting.view },
+      Scene.with({ status: 'idle', audioUrl: '', playCount: 1, autoPlay: false, hellos: [{ id: 1, effect: 'high' }], voiceEffect: 'high' }),
+      Scene.expect(Scene.text('Hello! 🐹')).toExist(),
       Scene.Mount.resolveAll(resolveSpeakPrompt),
       Scene.Command.expectNone(),
     )
@@ -182,6 +198,48 @@ describe('Greeting', () => {
     )
   })
 
+  it('shows effect buttons', () => {
+    Scene.scene(
+      { update: Greeting.update, view: Greeting.view },
+      Scene.with({ status: 'idle', audioUrl: 'data:audio/wav;base64,test', playCount: 0, autoPlay: false, voiceEffect: 'robot' }),
+      Scene.expect(Scene.text('👽 Alien')).toExist(),
+      Scene.expect(Scene.text('🐿️ Chipmunk')).toExist(),
+      Scene.expect(Scene.text('🤖 Robot')).toExist(),
+      Scene.Command.expectNone(),
+    )
+  })
+
+  it('SetVoiceEffect updates the effect', () => {
+    Story.story(
+      Greeting.update,
+      Story.with(Greeting.init),
+      Story.message(Greeting.SetVoiceEffect({ value: 'high' })),
+      Story.model((model) => {
+        expect(model.voiceEffect).toBe('high')
+      }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('SetVoiceEffect plays greeting when audio exists', () => {
+    Story.story(
+      Greeting.update,
+      Story.with({ status: 'idle', audioUrl: 'data:audio/wav;base64,test', playCount: 1, autoPlay: false, hellos: [], voiceEffect: 'normal' }),
+      Story.message(Greeting.SetVoiceEffect({ value: 'robot' })),
+      Story.model((model) => {
+        expect(model.voiceEffect).toBe('robot')
+        expect(model.hellos).toHaveLength(1)
+        expect(model.hellos[0]!.id).toBe(2)
+        expect(model.hellos[0]!.effect).toBe('robot')
+      }),
+      Story.Command.resolveAll(
+        [{ name: 'PlayGreeting' }, Greeting.SoundPlayed()],
+        [{ name: 'HideHello' }, Greeting.HideHello({ id: 2 })],
+      ),
+      Story.Command.expectNone(),
+    )
+  })
+
   it('ClickedStopRecording sets status to idle and dispatches Stop command', () => {
     Story.story(
       Greeting.update,
@@ -197,6 +255,7 @@ describe('Greeting', () => {
       Story.message(Greeting.ClickedPlay()),
       Story.Command.resolveAll(
         [{ name: 'PlayGreeting' }, Greeting.SoundPlayed()],
+        [{ name: 'HideHello' }, Greeting.HideHello({ id: 1 })],
       ),
       Story.model((model) => {
         expect(model.playCount).toBe(1)
@@ -225,6 +284,7 @@ describe('Greeting', () => {
       }),
       Story.Command.resolveAll(
         [{ name: 'PlayGreeting' }, Greeting.SoundPlayed()],
+        [{ name: 'HideHello' }, Greeting.HideHello({ id: 1 })],
       ),
       Story.Command.expectNone(),
     )
@@ -245,6 +305,7 @@ describe('Greeting', () => {
       Story.message(Greeting.ClickedPlay()),
       Story.Command.resolveAll(
         [{ name: 'PlayGreeting' }, Greeting.SoundPlayed()],
+        [{ name: 'HideHello' }, Greeting.HideHello({ id: 1 })],
       ),
       Story.model((model) => {
         expect(model.playCount).toBe(1)

@@ -36,6 +36,7 @@ interface PersistedSettings {
   bubblesRainbowMode: boolean
   bubblesBatchCount: number
   bubblesPopLabel: boolean
+  greetingVoiceEffect: string
 }
 
 const DarkModeValues = ['auto', 'light', 'dark'] as const
@@ -72,6 +73,7 @@ const buildSettingsData = (model: Model): PersistedSettings => ({
   bubblesRainbowMode: model.bubbles.rainbowMode,
   bubblesBatchCount: model.bubbles.batchCount,
   bubblesPopLabel: model.bubbles.popLabel,
+  greetingVoiceEffect: model.greeting.voiceEffect,
 })
 
 let persistTimer: ReturnType<typeof setTimeout> | undefined
@@ -124,6 +126,8 @@ export const Message = S.Union([
   Greeting.RecordedAudio,
   Greeting.RecordingFailed,
   Greeting.ClickedPlay,
+  Greeting.SetVoiceEffect,
+  Greeting.HideHello,
   Counter.PointerDown,
   Counter.PressedIncrement,
   Counter.PressedDecrement,
@@ -180,7 +184,7 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
       language: saved.language ?? 'en',
       showSettings: false,
       muted: saved.muted ?? false,
-      greeting: Greeting.init,
+      greeting: { ...Greeting.init, voiceEffect: saved.greetingVoiceEffect ?? 'normal' },
       counter: {
         ...Counter.init,
         rate: saved.counterRate ?? Counter.init.rate,
@@ -267,6 +271,8 @@ const _update = (
       GreetingRecordingFailed: (msg) => updateGreeting(model, msg),
       GreetingClickedPlay: (msg) => updateGreeting(model, msg),
       GreetingClickedReset: (msg) => updateGreeting(model, msg),
+      GreetingSetVoiceEffect: (msg) => updateGreeting(model, msg),
+      GreetingHideHello: (msg) => updateGreeting(model, msg),
       CounterPointerDown: (msg) => updateCounter(model, msg),
       CounterPressedIncrement: (msg) => updateCounter(model, msg),
       CounterPressedDecrement: (msg) => updateCounter(model, msg),
@@ -308,6 +314,7 @@ const SETTINGS_TAGS = new Set([
   'CounterSetRate', 'CounterSetPitch', 'CounterSetDisplayMode',
   'FindItSetAnyWins', 'FindItSetVoiceMode', 'FindItSetPairsMode',
   'BubblesSetRainbowMode', 'BubblesSetBatchCount', 'BubblesSetPopLabel',
+  'GreetingSetVoiceEffect',
 ])
 
 export const update = (

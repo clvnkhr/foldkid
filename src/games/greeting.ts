@@ -19,7 +19,8 @@ export const Model = S.Struct({
   playCount: S.Number,
   autoPlay: S.Boolean,
   recordingId: S.Number,
-  showingHello: S.Boolean,
+  hellos: S.Array(S.Struct({ id: S.Number, effect: S.String, left: S.String, top: S.String, color: S.String })),
+  voiceEffect: S.String,
 })
 export type Model = typeof Model.Type
 
@@ -30,11 +31,13 @@ export const RecordingFailed = m('GreetingRecordingFailed')
 export const ClickedPlay = m('GreetingClickedPlay')
 export const ClickedReset = m('GreetingClickedReset')
 export const SoundPlayed = m('GreetingSoundPlayed')
+export const SetVoiceEffect = m('GreetingSetVoiceEffect', { value: S.String })
+export const HideHello = m('GreetingHideHello', { id: S.Number })
 
-export const Message = S.Union([ClickedRecord, ClickedStopRecording, RecordedAudio, RecordingFailed, ClickedPlay, ClickedReset, SoundPlayed])
+export const Message = S.Union([ClickedRecord, ClickedStopRecording, RecordedAudio, RecordingFailed, ClickedPlay, ClickedReset, SoundPlayed, SetVoiceEffect, HideHello])
 export type Message = typeof Message.Type
 
-export const init: Model = { status: 'idle', audioUrl: '', playCount: 0, autoPlay: false, recordingId: 0, showingHello: false }
+export const init: Model = { status: 'idle', audioUrl: '', playCount: 0, autoPlay: false, recordingId: 0, hellos: [], voiceEffect: 'normal' }
 
 const trimSilence = (samples: Float32Array): Float32Array => {
   const threshold = TRIM_THRESHOLD * (2 ** 0.5)
@@ -166,7 +169,88 @@ const record = (): Command.Command<Message> => ({
   }),
 })
 
-const playGreeting = (audioUrl: string, language: string): Command.Command<Message> => ({
+const applyEffect = (ctx: AudioContext, source: AudioBufferSourceNode, effect: string): void => {
+  switch (effect) {
+    case 'normal':
+      source.connect(ctx.destination)
+      break
+    case 'high':
+      source.playbackRate.value = 1.5
+      source.connect(ctx.destination)
+      break
+    case 'low':
+      source.playbackRate.value = 0.6
+      source.connect(ctx.destination)
+      break
+    case 'echo': {
+      const delay = ctx.createDelay(1.0)
+      delay.delayTime.value = 0.2
+      const feedback = ctx.createGain()
+      feedback.gain.value = 0.4
+      source.connect(delay)
+      delay.connect(feedback)
+      feedback.connect(delay)
+      source.connect(ctx.destination)
+      delay.connect(ctx.destination)
+      break
+    }
+    case 'highpass': {
+      const filter = ctx.createBiquadFilter()
+      filter.type = 'highpass'
+      filter.frequency.value = 3000
+      source.connect(filter)
+      filter.connect(ctx.destination)
+      break
+    }
+    case 'lowpass': {
+      const filter = ctx.createBiquadFilter()
+      filter.type = 'lowpass'
+      filter.frequency.value = 800
+      source.connect(filter)
+      filter.connect(ctx.destination)
+      break
+    }
+    case 'reverse':
+      source.connect(ctx.destination)
+      break
+    case 'robot': {
+      const gain = ctx.createGain()
+      gain.gain.value = 0.5
+      const lfo = ctx.createOscillator()
+      lfo.frequency.value = 50
+      lfo.type = 'sine'
+      const mod = ctx.createGain()
+      mod.gain.value = 0.4
+      lfo.connect(mod)
+      mod.connect(gain.gain)
+      source.connect(gain)
+      gain.connect(ctx.destination)
+      lfo.start()
+      break
+    }
+    case 'alien': {
+      const lfo = ctx.createOscillator()
+      lfo.frequency.value = 3
+      lfo.type = 'sine'
+      const mod = ctx.createGain()
+      mod.gain.value = 0.5
+      lfo.connect(mod)
+      mod.connect(source.playbackRate)
+      source.playbackRate.value = 1
+      source.connect(ctx.destination)
+      lfo.start()
+      break
+    }
+    case 'chipmunk':
+      source.playbackRate.value = 2.5
+      source.connect(ctx.destination)
+      break
+    default:
+      source.connect(ctx.destination)
+  }
+}
+
+const playGreeting = (audioUrl: string, language: string, voiceEffect: string): Command.Command<Message> => ({
   name: 'PlayGreeting',
   effect: Effect.sync(() => {
     const ctx = new AudioContext()
@@ -177,7 +261,7 @@ const playGreeting = (audioUrl: string, language: string): Command.Command<Messa
       if (!helloDone || !audioBuffer) return
       const src = ctx.createBufferSource()
       src.buffer = audioBuffer
-      src.connect(ctx.destination)
+      applyEffect(ctx, src, voiceEffect)
       src.start()
       src.onended = () => { ctx.close() }
     }
@@ -186,6 +270,11 @@ const playGreeting = (audioUrl: string, language: string): Command.Command<Messa
       ctx.decodeAudioData(buf),
     ).then(buf => {
       audioBuffer = buf
+      if (voiceEffect === 'reverse') {
+        for (let c = 0; c < audioBuffer.numberOfChannels; c++) {
+          audioBuffer.getChannelData(c).reverse()
+        }
+      }
       tryPlay()
     }).catch(() => { ctx.close() })
 
@@ -203,6 +292,22 @@ const playGreeting = (audioUrl: string, language: string): Command.Command<Messa
   }).pipe(Effect.as(SoundPlayed())),
 })
 
+const EFFECTS = [
+  { value: 'normal', emoji: '😊', labelKey: 'effectNormal' as const },
+  { value: 'high', emoji: '🐹', labelKey: 'effectHigh' as const },
+  { value: 'low', emoji: '🦁', labelKey: 'effectLow' as const },
+  { value: 'echo', emoji: '🗣️', labelKey: 'effectEcho' as const },
+  { value: 'highpass', emoji: '📞', labelKey: 'effectHighpass' as const },
+  { value: 'lowpass', emoji: '🧸', labelKey: 'effectLowpass' as const },
+  { value: 'reverse', emoji: '⏪', labelKey: 'effectReverse' as const },
+  { value: 'robot', emoji: '🤖', labelKey: 'effectRobot' as const },
+  { value: 'alien', emoji: '👽', labelKey: 'effectAlien' as const },
+  { value: 'chipmunk', emoji: '🐿️', labelKey: 'effectChipmunk' as const },
+] as const
+
+const randomHelloColor = (): string =>
+  `hsl(${Math.round(Math.random() * 360)}, 80%, 55%)`
+
 const stopRecordingCmd = (): Command.Command<Message> => ({
   name: 'Stop',
   effect: Effect.sync(() => {
@@ -217,6 +322,15 @@ const stopRecordingCmd = (): Command.Command<Message> => ({
   }),
 })
 
+const hideHelloCmd = (id: number): Command.Command<Message> => ({
+  name: 'HideHello',
+  effect: Effect.callback<Message>((resume) => {
+    setTimeout(() => {
+      resume(Effect.succeed(HideHello({ id })))
+    }, 1500)
+  }),
+})
+
 export const update = (
   model: Model,
   message: Message,
@@ -227,7 +341,7 @@ export const update = (
     M.withReturnType<readonly [Model, ReadonlyArray<Command.Command<Message>>]>(),
     M.tagsExhaustive({
       GreetingClickedRecord: () => [
-        { ...model, status: 'recording', autoPlay: false, showingHello: false },
+        { ...model, status: 'recording', autoPlay: false, hellos: [] },
         [record()],
       ],
       GreetingClickedStopRecording: () => [
@@ -242,15 +356,32 @@ export const update = (
         { ...model, status: 'idle' },
         [],
       ],
-      GreetingClickedPlay: () => [
-        { ...model, autoPlay: false, playCount: model.playCount + 1, showingHello: true },
-        muted ? [] : [playGreeting(model.audioUrl, language)],
-      ],
+      GreetingClickedPlay: () => {
+        const next = model.playCount + 1
+        return [
+          { ...model, autoPlay: false, playCount: next, hellos: [...(model.hellos ?? []), { id: next, effect: model.voiceEffect ?? 'normal', left: `${Math.round(Math.random() * 60 - 30)}%`, top: `${Math.round(Math.random() * 60 - 30)}%`, color: randomHelloColor() }] },
+          muted ? [hideHelloCmd(next)] : [playGreeting(model.audioUrl, language, model.voiceEffect ?? 'normal'), hideHelloCmd(next)],
+        ]
+      },
       GreetingClickedReset: () => [
-        { status: 'idle', audioUrl: '', playCount: 0, autoPlay: false, recordingId: (model.recordingId ?? 0) + 1, showingHello: false },
+        { status: 'idle', audioUrl: '', playCount: 0, autoPlay: false, recordingId: (model.recordingId ?? 0) + 1, hellos: [], voiceEffect: 'normal' },
         [],
       ],
       GreetingSoundPlayed: () => [model, []],
+      GreetingHideHello: (msg) => [{ ...model, hellos: (model.hellos ?? []).filter(h => h.id !== msg.id) }, []],
+      GreetingSetVoiceEffect: (msg) => {
+        if (model.status === 'idle' && model.audioUrl) {
+          const next = model.playCount + 1
+          return [
+            { ...model, voiceEffect: msg.value, playCount: next, hellos: [...(model.hellos ?? []), { id: next, effect: msg.value ?? 'normal', left: `${Math.round(Math.random() * 60 - 30)}%`, top: `${Math.round(Math.random() * 60 - 30)}%`, color: randomHelloColor() }] },
+            muted ? [hideHelloCmd(next)] : [playGreeting(model.audioUrl, language, msg.value), hideHelloCmd(next)],
+          ]
+        }
+        return [
+          { ...model, voiceEffect: msg.value },
+          [],
+        ]
+      },
     }),
   )
 
@@ -317,8 +448,24 @@ export const view = (model: Model, language: string = 'en') => {
             [t('reset', language)],
           ),
         ]),
-        h.div([h.Class('display-area')], [
-          model.showingHello ? h.p([h.Class('hello-text')], ['Hello! 😊']) : null,
+          h.div([h.Class('effect-buttons')], [
+            ...EFFECTS.map(({ value, emoji, labelKey }) =>
+              h.button(
+                [
+                  h.Class(value === model.voiceEffect ? 'btn btn-primary' : 'btn btn-secondary'),
+                  h.OnClick(SetVoiceEffect({ value })),
+                ],
+                [`${emoji} ${t(labelKey, language)}`],
+              ),
+            ),
+          ]),
+          h.div([h.Class('display-area')], [
+          ...(model.hellos ?? []).map(hello =>
+            h.p(
+              [h.Class('hello-text'), h.Key('hello-' + hello.id), h.Style({ left: hello.left, top: hello.top, color: hello.color })],
+              [`Hello! ${(EFFECTS.find(e => e.value === hello.effect) ?? EFFECTS[0]).emoji}`],
+            ),
+          ),
           h.p([h.Class('count')], [tf('greeted', language, model.playCount)]),
         ]),
       ]),
