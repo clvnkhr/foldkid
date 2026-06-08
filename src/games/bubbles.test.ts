@@ -15,14 +15,15 @@ describe('Bubbles', () => {
     expect(model.nextId).toBe(0)
   })
 
-  it('add creates a bubble', () => {
+  it('add creates a bubble with size based on hold duration', () => {
     Story.story(
       Bubbles.update,
       Story.with(Bubbles.init()),
-      Story.message(Bubbles.ClickedAdd()),
+      Story.message(Bubbles.AddReleased({ duration: 500 })),
       Story.model((model) => {
         expect(model.bubbles).toHaveLength(1)
         expect(model.bubbles[0]?.popped).toBe(false)
+        expect(model.bubbles[0]?.size).toBeGreaterThanOrEqual(10)
         expect(model.score).toBe(0)
       }),
       Story.Command.resolveAll(resolveChime),
@@ -31,10 +32,10 @@ describe('Bubbles', () => {
   })
 
   it('pop a bubble by id', () => {
-    const bubble = { id: 1, color: '#FF6B6B', popped: false }
+    const bubble = { id: 1, color: '#FF6B6B', popped: false, size: 20 }
     Story.story(
       Bubbles.update,
-      Story.with({ bubbles: [bubble], score: 0, nextId: 1 }),
+      Story.with({ ...Bubbles.init(), bubbles: [bubble], score: 0, nextId: 1 }),
       Story.message(Bubbles.ClickedPop({ id: 1 })),
       Story.model((model) => {
         expect(model.bubbles[0]?.popped).toBe(true)
@@ -46,10 +47,10 @@ describe('Bubbles', () => {
   })
 
   it('reset clears all', () => {
-    const bubble = { id: 1, color: '#FF6B6B', popped: false }
+    const bubble = { id: 1, color: '#FF6B6B', popped: false, size: 20 }
     Story.story(
       Bubbles.update,
-      Story.with({ bubbles: [bubble], score: 3, nextId: 1 }),
+      Story.with({ ...Bubbles.init(), bubbles: [bubble], score: 3, nextId: 1 }),
       Story.message(Bubbles.ClickedReset()),
       Story.model((model) => {
         expect(model.bubbles).toHaveLength(0)
@@ -74,10 +75,10 @@ describe('Bubbles', () => {
   })
 
   it('renders bubble after adding', () => {
-    const bubble = { id: 1, color: '#FF6B6B', popped: false }
+    const bubble = { id: 1, color: '#FF6B6B', popped: false, size: 20 }
     Scene.scene(
       { update: Bubbles.update, view: Bubbles.view },
-      Scene.with({ bubbles: [bubble], score: 0, nextId: 1 }),
+      Scene.with({ ...Bubbles.init(), bubbles: [bubble], score: 0, nextId: 1 }),
       Scene.expect(Scene.text('➕ Add Bubble')).toExist(),
       Scene.Mount.resolveAll(resolveAnim),
       Scene.Command.expectNone(),
@@ -85,10 +86,10 @@ describe('Bubbles', () => {
   })
 
   it('shows done message when all popped', () => {
-    const bubble = { id: 1, color: '#FF6B6B', popped: true }
+    const bubble = { id: 1, color: '#FF6B6B', popped: true, size: 20 }
     Scene.scene(
       { update: Bubbles.update, view: Bubbles.view },
-      Scene.with({ bubbles: [bubble], score: 1, nextId: 1 }),
+      Scene.with({ ...Bubbles.init(), bubbles: [bubble], score: 1, nextId: 1 }),
       Scene.expect(Scene.text('All popped! Add more!')).toExist(),
       Scene.Mount.resolveAll(resolveAnim),
       Scene.Command.expectNone(),
@@ -98,7 +99,7 @@ describe('Bubbles', () => {
   it('shows Clear button when bubbles exist', () => {
     Scene.scene(
       { update: Bubbles.update, view: Bubbles.view },
-      Scene.with({ bubbles: [{ id: 1, color: '#FF6B6B', popped: false }], score: 0, nextId: 1 }),
+      Scene.with({ ...Bubbles.init(), bubbles: [{ id: 1, color: '#FF6B6B', popped: false, size: 20 }], score: 0, nextId: 1 }),
       Scene.expect(Scene.text('Clear')).toExist(),
       Scene.Mount.resolveAll(resolveAnim),
       Scene.Command.expectNone(),
@@ -108,7 +109,7 @@ describe('Bubbles', () => {
   it('shows Clear button when score > 0 even with no bubbles', () => {
     Scene.scene(
       { update: Bubbles.update, view: Bubbles.view },
-      Scene.with({ bubbles: [], score: 3, nextId: 3 }),
+      Scene.with({ ...Bubbles.init(), bubbles: [], score: 3, nextId: 3 }),
       Scene.expect(Scene.text('Clear')).toExist(),
       Scene.Mount.resolveAll(resolveAnim),
       Scene.Command.expectNone(),
@@ -126,12 +127,12 @@ describe('Bubbles', () => {
   })
 
   it('popping one bubble does not affect other bubbles in the model', () => {
-    const b1 = { id: 1, color: '#FF6B6B', popped: false }
-    const b2 = { id: 2, color: '#4ECDC4', popped: false }
-    const b3 = { id: 3, color: '#FFE66D', popped: false }
+    const b1 = { id: 1, color: '#FF6B6B', popped: false, size: 20 }
+    const b2 = { id: 2, color: '#4ECDC4', popped: false, size: 20 }
+    const b3 = { id: 3, color: '#FFE66D', popped: false, size: 20 }
     Story.story(
       Bubbles.update,
-      Story.with({ bubbles: [b1, b2, b3], score: 0, nextId: 4 }),
+      Story.with({ ...Bubbles.init(), bubbles: [b1, b2, b3], score: 0, nextId: 4 }),
       Story.message(Bubbles.ClickedPop({ id: 2 })),
       Story.model((model) => {
         expect(model.bubbles).toHaveLength(3)
@@ -146,8 +147,8 @@ describe('Bubbles', () => {
   })
 
   it('sequential pop and add preserves unpopped bubbles', () => {
-    const b1 = { id: 1, color: '#FF6B6B', popped: false }
-    const next = Bubbles.update({ bubbles: [b1], score: 0, nextId: 2 }, Bubbles.ClickedAdd(), false)[0]
+    const b1 = { id: 1, color: '#FF6B6B', popped: false, size: 20 }
+    const next = Bubbles.update({ ...Bubbles.init(), bubbles: [b1], score: 0, nextId: 2 }, Bubbles.AddReleased({ duration: 500 }), false)[0]
     expect(next.bubbles).toHaveLength(2)
     const afterPop = Bubbles.update(next, Bubbles.ClickedPop({ id: 1 }), false)[0]
     expect(afterPop.bubbles).toHaveLength(2)
@@ -157,7 +158,7 @@ describe('Bubbles', () => {
   })
 
   it('SoundPlayed leaves model unchanged', () => {
-    const model = { bubbles: [{ id: 1, color: '#FF6B6B', popped: false }], score: 2, nextId: 2 }
+    const model = { ...Bubbles.init(), bubbles: [{ id: 1, color: '#FF6B6B', popped: false, size: 20 }], score: 2, nextId: 2 }
     Story.story(
       Bubbles.update,
       Story.with(model),

@@ -31,11 +31,15 @@ interface PersistedSettings {
   peekabooAnyWins: boolean
   peekabooVoiceMode: boolean
   peekabooPairsMode: boolean
+  bubblesRainbowMode: boolean
+  bubblesBatchCount: number
+  bubblesPopLabel: boolean
 }
 
 const DarkModeValues = ['auto', 'light', 'dark'] as const
 type DarkMode = typeof DarkModeValues[number]
 const DisplayModeValues = ['number', 'word', 'both'] as const
+const BatchCountValues = [1, 3, 5] as const
 
 const loadSettings = (): Partial<PersistedSettings> => {
   try {
@@ -63,6 +67,9 @@ const buildSettingsData = (model: Model): PersistedSettings => ({
   peekabooAnyWins: model.peekaboo.anyWins,
   peekabooVoiceMode: model.peekaboo.voiceMode,
   peekabooPairsMode: model.peekaboo.pairsMode,
+  bubblesRainbowMode: model.bubbles.rainbowMode,
+  bubblesBatchCount: model.bubbles.batchCount,
+  bubblesPopLabel: model.bubbles.popLabel,
 })
 
 let persistTimer: ReturnType<typeof setTimeout> | undefined
@@ -137,12 +144,15 @@ export const Message = S.Union([
   Peekaboo.ClickedReset,
   Peekaboo.DismissTooltip,
   Bubbles.ClickedPop,
-  Bubbles.ClickedAdd,
   Bubbles.ClickedReset,
   Greeting.SoundPlayed,
   Counter.SoundPlayed,
   Peekaboo.SoundPlayed,
   Bubbles.SoundPlayed,
+  Bubbles.SetRainbowMode,
+  Bubbles.SetBatchCount,
+  Bubbles.SetPopLabel,
+  Bubbles.AddReleased,
   SettingsPersisted,
 ])
 
@@ -159,6 +169,7 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
   if (voiceMode && !saved.peekabooAnyWins && !saved.muted) {
     cmds.push(speak(tf('whereIs', saved.language ?? 'en', Peekaboo.emojiName(peekabooInit.target, saved.language ?? 'en')), Peekaboo.SoundPlayed(), { lang: saved.language ?? 'en' }))
   }
+  const batchCount = BatchCountValues.includes(saved.bubblesBatchCount as typeof BatchCountValues[number]) ? saved.bubblesBatchCount as 1 | 3 | 5 : 1
   return [
     {
       page: PageLanding(),
@@ -174,7 +185,12 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
         displayMode: sanitizeDisplayMode(saved.counterDisplayMode, Counter.init.displayMode),
       },
       peekaboo: { ...peekabooInit, anyWins: saved.peekabooAnyWins ?? false, voiceMode, pairsMode },
-      bubbles: Bubbles.init(),
+      bubbles: {
+        ...Bubbles.init(),
+        rainbowMode: saved.bubblesRainbowMode ?? false,
+        batchCount,
+        popLabel: saved.bubblesPopLabel ?? false,
+      },
     },
     cmds,
   ]
@@ -270,12 +286,15 @@ const _update = (
       PeekabooClickedReset: (msg) => updatePeekaboo(model, msg),
       PeekabooDismissTooltip: (msg) => updatePeekaboo(model, msg),
       BubblesClickedPop: (msg) => updateBubbles(model, msg),
-      BubblesClickedAdd: (msg) => updateBubbles(model, msg),
       BubblesClickedReset: (msg) => updateBubbles(model, msg),
       GreetingSoundPlayed: (msg) => updateGreeting(model, msg),
       CounterSoundPlayed: (msg) => updateCounter(model, msg),
       PeekabooSoundPlayed: (msg) => updatePeekaboo(model, msg),
       BubblesSoundPlayed: (msg) => updateBubbles(model, msg),
+      BubblesSetRainbowMode: (msg) => updateBubbles(model, msg),
+      BubblesSetBatchCount: (msg) => updateBubbles(model, msg),
+      BubblesSetPopLabel: (msg) => updateBubbles(model, msg),
+      BubblesAddReleased: (msg) => updateBubbles(model, msg),
       SettingsPersisted: () => [model, []],
     }),
   )
@@ -284,6 +303,7 @@ const SETTINGS_TAGS = new Set([
   'ClickedDarkMode', 'SetLanguage', 'ToggleMute',
   'CounterSetRate', 'CounterSetPitch', 'CounterSetDisplayMode',
   'PeekabooSetAnyWins', 'PeekabooSetVoiceMode', 'PeekabooSetPairsMode',
+  'BubblesSetRainbowMode', 'BubblesSetBatchCount', 'BubblesSetPopLabel',
 ])
 
 export const update = (
@@ -493,6 +513,42 @@ export const view = (model: Model): Document => {
                 h.button(
                   [h.Class(model.peekaboo.pairsMode ? 'btn btn-primary' : 'btn btn-secondary'), h.OnClick(Peekaboo.SetPairsMode({ value: true }))],
                   [t('pairsMode', model.language)],
+                ),
+              ]),
+            ])
+            : null,
+          model.page._tag === 'PageBubbles'
+            ? h.div([h.Class('setting-section')], [
+              h.h3([], [t('bubblesTitle', model.language)]),
+              h.div([h.Class('lang-buttons')], [
+                h.button(
+                  [h.Class(!model.bubbles.rainbowMode ? 'btn btn-primary' : 'btn btn-secondary'), h.OnClick(Bubbles.SetRainbowMode({ value: false }))],
+                  [t('normal', model.language)],
+                ),
+                h.button(
+                  [h.Class(model.bubbles.rainbowMode ? 'btn btn-primary' : 'btn btn-secondary'), h.OnClick(Bubbles.SetRainbowMode({ value: true }))],
+                  [t('rainbowMode', model.language)],
+                ),
+              ]),
+              h.div([h.Class('lang-buttons'), h.Style({ marginTop: '0.5rem' })], [
+                ...[1, 3, 5].map((val) =>
+                  h.button(
+                    [
+                      h.Class(val === model.bubbles.batchCount ? 'btn btn-primary' : 'btn btn-secondary'),
+                      h.OnClick(Bubbles.SetBatchCount({ value: val })),
+                    ],
+                    [val.toString()],
+                  ),
+                ),
+              ]),
+              h.div([h.Class('lang-buttons'), h.Style({ marginTop: '0.5rem' })], [
+                h.button(
+                  [h.Class(!model.bubbles.popLabel ? 'btn btn-primary' : 'btn btn-secondary'), h.OnClick(Bubbles.SetPopLabel({ value: false }))],
+                  [t('normal', model.language)],
+                ),
+                h.button(
+                  [h.Class(model.bubbles.popLabel ? 'btn btn-primary' : 'btn btn-secondary'), h.OnClick(Bubbles.SetPopLabel({ value: true }))],
+                  [t('popLabel', model.language)],
                 ),
               ]),
             ])

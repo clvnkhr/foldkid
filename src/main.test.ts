@@ -16,7 +16,7 @@ describe('Main', () => {
     expect(model.showSettings).toBe(false)
     expect(model.greeting).toStrictEqual({ status: 'idle', audioUrl: '', playCount: 0, autoPlay: false, recordingId: 0 })
     expect(model.counter.count).toBe(0)
-    expect(model.bubbles).toStrictEqual({ bubbles: [], score: 0, nextId: 0 })
+    expect(model.bubbles).toStrictEqual({ bubbles: [], score: 0, nextId: 0, rainbowMode: false, batchCount: 1, popLabel: false })
   })
 
   it('ClickedLanding sets page to landing', () => {

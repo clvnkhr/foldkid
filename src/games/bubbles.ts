@@ -1,31 +1,37 @@
-import { Effect, Match as M, Schema as S, Stream } from 'effect'
+import { Effect, Match as M, Option as O, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
 import { pop, chime, swoosh } from '../audio'
 import { t, tf } from '../i18n'
 
-const Bubble = S.Struct({ id: S.Number, color: S.String, popped: S.Boolean })
+const Bubble = S.Struct({ id: S.Number, color: S.String, popped: S.Boolean, size: S.Number })
 type Bubble = typeof Bubble.Type
 
 const COLORS = ['#FF6B6B', '#4ECDC4', '#FFE66D', '#A8E6CF', '#FF8B94', '#95E1D3']
 
 const randomColor = (): string => COLORS[Math.floor(Math.random() * COLORS.length)] as string
 
-export const Model = S.Struct({ bubbles: S.Array(Bubble), score: S.Number, nextId: S.Number })
+let isHolding = false
+let holdStartTime = 0
+
+export const Model = S.Struct({ bubbles: S.Array(Bubble), score: S.Number, nextId: S.Number, rainbowMode: S.Boolean, batchCount: S.Number, popLabel: S.Boolean })
 export type Model = typeof Model.Type
 
 export const ClickedPop = m('BubblesClickedPop', { id: S.Number })
-export const ClickedAdd = m('BubblesClickedAdd')
 export const ClickedReset = m('BubblesClickedReset')
 export const SoundPlayed = m('BubblesSoundPlayed')
+export const SetRainbowMode = m('BubblesSetRainbowMode', { value: S.Boolean })
+export const SetBatchCount = m('BubblesSetBatchCount', { value: S.Number })
+export const SetPopLabel = m('BubblesSetPopLabel', { value: S.Boolean })
+export const AddReleased = m('BubblesAddReleased', { duration: S.Number })
 
-export const Message = S.Union([ClickedPop, ClickedAdd, ClickedReset, SoundPlayed])
+export const Message = S.Union([ClickedPop, ClickedReset, SoundPlayed, SetRainbowMode, SetBatchCount, SetPopLabel, AddReleased])
 export type Message = typeof Message.Type
 
-export const init = (): Model => ({ bubbles: [], score: 0, nextId: 0 })
+export const init = (): Model => ({ bubbles: [], score: 0, nextId: 0, rainbowMode: false, batchCount: 1, popLabel: false })
 
-const poof = (cx: number, cy: number, w: number, color: string): void => {
+const poof = (cx: number, cy: number, w: number, color: string, popLabelText: string): void => {
   const s = w / 16
   const count = Math.max(6, Math.floor(w / 8))
   const duration = 300 + w * 1.5
@@ -103,6 +109,55 @@ const poof = (cx: number, cy: number, w: number, color: string): void => {
     ], { duration: 150 + Math.random() * 100, easing: 'ease-out', fill: 'forwards' })
       .onfinish = () => p.remove()
   }
+
+  // Sparkle particles
+  for (let i = 0; i < 3; i++) {
+    const sp = document.createElement('div')
+    const sps = 4 + Math.random() * 4
+    const angle = Math.random() * Math.PI * 2
+    const dist = 40 + Math.random() * 50
+    sp.style.cssText = [
+      'position:fixed',
+      `left:${cx - sps / 2}px`,
+      `top:${cy - sps / 2}px`,
+      `width:${sps}px`,
+      `height:${sps}px`,
+      'border-radius:50%',
+      'background:white',
+      'box-shadow:0 0 6px 2px rgba(255,255,255,0.8)',
+      'pointer-events:none',
+      'z-index:1002',
+    ].join(';')
+    document.body.appendChild(sp)
+    sp.animate([
+      { transform: 'translate(0,0) scale(1)', opacity: 1 },
+      { transform: `translate(${Math.cos(angle) * dist}px,${Math.sin(angle) * dist}px) scale(0.3)`, opacity: 0 },
+    ], { duration: 250 + Math.random() * 200, easing: 'ease-out', fill: 'forwards' })
+      .onfinish = () => sp.remove()
+  }
+
+  // Score popup or pop label
+  if (popLabelText) {
+    const popup = document.createElement('div')
+    popup.textContent = popLabelText
+    popup.style.cssText = [
+      'position:fixed',
+      `left:${cx - 15}px`,
+      `top:${cy - 15}px`,
+      'font-size:1.5rem',
+      'font-weight:700',
+      'color:#FFD700',
+      'text-shadow:0 1px 3px rgba(0,0,0,0.4)',
+      'pointer-events:none',
+      'z-index:1003',
+    ].join(';')
+    document.body.appendChild(popup)
+    popup.animate([
+      { transform: 'translateY(0) scale(1)', opacity: 1 },
+      { transform: 'translateY(-50px) scale(1.4)', opacity: 0 },
+    ], { duration: 700, easing: 'ease-out', fill: 'forwards' })
+      .onfinish = () => popup.remove()
+  }
 }
 
 interface BubbleAnim {
@@ -116,6 +171,7 @@ interface BubbleAnim {
   cy: number
   rectW: number
   color: string
+  hue: number
 }
 
 interface AnimState {
@@ -128,6 +184,7 @@ const tick = (state: AnimState, container: HTMLElement): void => {
   const w = window.innerWidth
   const h = window.innerHeight
   const dt = 1 / 60
+  const rainbow = container.getAttribute('data-rainbow-mode') === 'true'
 
   const els = container.querySelectorAll(':scope > .bubble') as NodeListOf<HTMLElement>
   const currentIds = new Set<number>()
@@ -144,13 +201,14 @@ const tick = (state: AnimState, container: HTMLElement): void => {
         el,
         x: Math.random() * w,
         y: Math.random() * h,
-        vx: (Math.random() - 0.5) * 40,
-        vy: (Math.random() - 0.5) * 40 - 20,
-        r: 12 + Math.random() * 10,
+        vx: (Math.random() - 0.5) * 60,
+        vy: (Math.random() - 0.5) * 50 - 20,
+        r: parseFloat(el.getAttribute('data-size') ?? '20'),
         cx: 0,
         cy: 0,
         rectW: 0,
         color: el.style.backgroundColor || '#667eea',
+        hue: Math.random() * 360,
       }
       state.bubbles.set(id, ba)
     }
@@ -177,8 +235,8 @@ const tick = (state: AnimState, container: HTMLElement): void => {
     if (!ba.el.parentElement) continue
     ba.x += ba.vx * dt
     ba.y += ba.vy * dt
-    ba.r += 8 * dt
-    if (ba.r > 50) ba.r = 50
+    ba.r += 6 * dt
+    if (ba.r > 200) ba.r = 200
 
     // Wrap around edges
     if (ba.x < -ba.r) ba.x = w + ba.r
@@ -190,6 +248,11 @@ const tick = (state: AnimState, container: HTMLElement): void => {
     ba.el.style.width = `${size}px`
     ba.el.style.height = `${size}px`
     ba.el.style.transform = `translate3d(${ba.x - ba.r}px,${ba.y - ba.r}px,0)`
+
+    if (rainbow) {
+      ba.hue = (ba.hue + 60 * dt) % 360
+      ba.el.style.backgroundColor = `hsl(${ba.hue}, 75%, 60%)`
+    }
   }
 }
 
@@ -211,21 +274,28 @@ export const update = (
         },
         muted ? [] : [pop(SoundPlayed())],
       ],
-      BubblesClickedAdd: () => [
-        {
-          ...model,
-          bubbles: [
-            ...model.bubbles,
-            { id: model.nextId, color: randomColor(), popped: false },
-          ],
-          nextId: model.nextId + 1,
-        },
-        muted ? [] : [chime(SoundPlayed())],
-      ],
+      BubblesAddReleased: (msg) => {
+        const size = Math.min(10 + msg.duration * 0.07, 200)
+        const newBubbles: Bubble[] = []
+        for (let i = 0; i < model.batchCount; i++) {
+          newBubbles.push({ id: model.nextId + i, color: randomColor(), popped: false, size })
+        }
+        return [
+          {
+            ...model,
+            bubbles: [...model.bubbles, ...newBubbles],
+            nextId: model.nextId + model.batchCount,
+          },
+          muted ? [] : [chime(SoundPlayed())],
+        ]
+      },
       BubblesClickedReset: () => [
-        { bubbles: [], score: 0, nextId: model.nextId },
+        { ...model, bubbles: [], score: 0 },
         muted ? [] : [swoosh(SoundPlayed())],
       ],
+      BubblesSetRainbowMode: (msg) => [{ ...model, rainbowMode: msg.value }, []],
+      BubblesSetBatchCount: (msg) => [{ ...model, batchCount: msg.value }, []],
+      BubblesSetPopLabel: (msg) => [{ ...model, popLabel: msg.value }, []],
       BubblesSoundPlayed: () => [model, []],
     }),
   )
@@ -241,7 +311,7 @@ export const view = (model: Model, language: string = 'en') => {
         h.p([h.Class('bubbles-score')], [tf('popped', language, model.score)]),
         h.div([h.Class('buttons')], [
           h.button(
-            [h.OnClick(ClickedAdd()), h.Class('btn btn-primary')],
+            [h.OnPointerDown(() => { isHolding = true; holdStartTime = performance.now(); return O.none() }), h.OnPointerUp(() => { if (!isHolding) return O.none(); isHolding = false; return O.some(AddReleased({ duration: performance.now() - holdStartTime })) }), h.OnPointerLeave(() => { if (!isHolding) return O.none(); isHolding = false; return O.some(AddReleased({ duration: performance.now() - holdStartTime })) }), h.Class('btn btn-primary')],
             [t('addBubble', language)],
           ),
           model.score > 0 || model.bubbles.length > 0
@@ -258,10 +328,15 @@ export const view = (model: Model, language: string = 'en') => {
           model.bubbles.filter((b) => !b.popped).length === 0 && model.bubbles.length > 0
             ? h.p([h.Class('bubbles-done')], [t('allPopped', language)])
             : null,
+          model.score > 0 && (model.score % 25 === 0 || model.score === 10)
+            ? h.p([h.Class('bubbles-milestone'), h.Key('m-' + model.score)], [tf('bubblesMilestone', language, model.score)])
+            : null,
         ]),
         h.div([
           h.Class('bubbles-container'),
           h.Key('bubbles-container'),
+          h.Attribute('data-rainbow-mode', model.rainbowMode.toString()),
+          h.Attribute('data-pop-label', model.popLabel ? t('popText', language) : ''),
           h.OnMount({
             name: 'bubblesAnim',
             f: (element) => Stream.callback<never>(_queue =>
@@ -284,7 +359,8 @@ export const view = (model: Model, language: string = 'en') => {
                           const id = parseInt(node.getAttribute('data-id') ?? '', 10)
                           const ba = state.bubbles.get(id)
                           if (ba) {
-                            poof(ba.cx, ba.cy, ba.rectW, ba.color)
+                            const popLabelText = container.getAttribute('data-pop-label') ?? ''
+                            poof(ba.cx, ba.cy, ba.rectW, ba.color, popLabelText)
                             state.bubbles.delete(id)
                           }
                         }
@@ -318,6 +394,7 @@ export const view = (model: Model, language: string = 'en') => {
                   h.Class('bubble'),
                   h.Style({ backgroundColor: b.color }),
                   h.Attribute('data-id', b.id.toString()),
+                  h.Attribute('data-size', b.size.toString()),
                   h.Key(b.id.toString()),
                 ],
               [],
