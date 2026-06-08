@@ -1,4 +1,4 @@
-import { Effect, Match as M, Option, Schema as S } from 'effect'
+import { Effect, Match as M, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
@@ -30,7 +30,7 @@ interface KeyDef {
   type: 'white' | 'black'
 }
 
-const F: Record<string, number> = {
+export const FREQUENCIES: Record<string, number> = {
   C2: 65.41, 'C#2': 69.30, D2: 73.42, 'D#2': 77.78, E2: 82.41, F2: 87.31, 'F#2': 92.50,
   G2: 98.00, 'G#2': 103.83, A2: 110.00, 'A#2': 116.54, B2: 123.47,
   C3: 130.81, 'C#3': 138.59, D3: 146.83, 'D#3': 155.56, E3: 164.81, F3: 174.61,
@@ -72,8 +72,12 @@ const F: Record<string, number> = {
   return { keys, blacks }
 }
 
-const PIANO_TOP = buildKeyboard('C4', 'G5')
-const PIANO_BOTTOM = buildKeyboard('C2', 'G3')
+export const PianoKeys = {
+  TOP: buildKeyboard('C4', 'G5'),
+  BOTTOM: buildKeyboard('C2', 'G3'),
+}
+const PIANO_TOP = PianoKeys.TOP
+const PIANO_BOTTOM = PianoKeys.BOTTOM
 
 const WHITE_KEYS_TOP = PIANO_TOP.keys.filter(k => k.type === 'white')
 const BLACK_KEYS_TOP = PIANO_TOP.keys.filter(k => k.type === 'black')
@@ -83,7 +87,6 @@ const BLACK_KEYS_BOTTOM = PIANO_BOTTOM.keys.filter(k => k.type === 'black')
 const TOP_WHITE_COUNT = WHITE_KEYS_TOP.length
 
 const activeNotes = new Map<string, Array<{ osc: OscillatorNode; gain: GainNode }>>()
-let pointerDown = false
 let selectedInstrumentIndex = 0
 let keyboardBound = false
 
@@ -92,7 +95,7 @@ interface QWERTYKey {
   pitch: string
 }
 
-const QWERTY_WHITES: QWERTYKey[] = [
+export const QWERTY_WHITES: QWERTYKey[] = [
   { qwerty: 'A', pitch: 'C4' },
   { qwerty: 'S', pitch: 'D4' },
   { qwerty: 'D', pitch: 'E4' },
@@ -107,7 +110,7 @@ const QWERTY_WHITES: QWERTYKey[] = [
   { qwerty: '\\', pitch: 'G5' },
 ]
 
-const QWERTY_BLACKS: QWERTYKey[] = [
+export const QWERTY_BLACKS: QWERTYKey[] = [
   { qwerty: 'W', pitch: 'C#4' },
   { qwerty: 'E', pitch: 'D#4' },
   { qwerty: 'T', pitch: 'F#4' },
@@ -377,7 +380,7 @@ const playSongCmd = (
     for (let i = 0; i < song.notes.length; i++) {
       if (stopFlag) break
       const note = song.notes[i]!
-      const freq = F[note.pitch]
+      const freq = FREQUENCIES[note.pitch]
       if (freq) playNoteAudio(freq, note.dur, inst)
       highlightKey(note.pitch)
       yield* Effect.sleep(note.dur * 350)
@@ -390,7 +393,7 @@ const playSongCmd = (
 })
 
 const startNote = (pitch: string, inst: Instrument): void => {
-  const freq = F[pitch]
+  const freq = FREQUENCIES[pitch]
   if (!freq || activeNotes.has(pitch)) return
   const ctx = getCtx()
   if (!ctx) return
@@ -581,6 +584,75 @@ export const view = (model: Model, language: string = 'en') => {
 
 // ── Piano keyboard view helper ──────────────────────────────────────────
 
+const pointerStream = (element: Element): Stream.Stream<Message> => {
+  const activePointerPitch = new Map<number, string>()
+  const target = element as unknown as Stream.EventListener<PointerEvent>
+
+  const findPitch = (clientX: number, clientY: number): string | undefined => {
+    const els = document.elementsFromPoint(clientX, clientY)
+    for (const el of els) {
+      const elWithPitch = (el as HTMLElement).closest('[data-pitch]')
+      if (elWithPitch) return elWithPitch.getAttribute('data-pitch')!
+    }
+    return undefined
+  }
+
+  const onDown = Stream.fromEventListener(target, 'pointerdown', { passive: false }).pipe(
+    Stream.flatMap((e) => {
+      e.preventDefault()
+      const pitch = findPitch(e.clientX, e.clientY)
+      if (pitch) {
+        activePointerPitch.set(e.pointerId, pitch)
+        return Stream.make(NoteOn({ pitch }))
+      }
+      return Stream.empty
+    }),
+  )
+
+  const onMove = Stream.fromEventListener(target, 'pointermove', { passive: false }).pipe(
+    Stream.filter((e) => (e.buttons & 1) !== 0),
+    Stream.flatMap((e) => {
+      const pitch = findPitch(e.clientX, e.clientY)
+      const prev = activePointerPitch.get(e.pointerId)
+      if (!pitch && prev) {
+        activePointerPitch.delete(e.pointerId)
+        return Stream.make(NoteOff({ pitch: prev }))
+      }
+      if (pitch && pitch !== prev) {
+        activePointerPitch.set(e.pointerId, pitch)
+        return prev
+          ? Stream.make(NoteOff({ pitch: prev }), NoteOn({ pitch }))
+          : Stream.make(NoteOn({ pitch }))
+      }
+      return Stream.empty
+    }),
+  )
+
+  const onUp = Stream.fromEventListener(target, 'pointerup').pipe(
+    Stream.flatMap((e) => {
+      const pitch = activePointerPitch.get(e.pointerId)
+      if (pitch) {
+        activePointerPitch.delete(e.pointerId)
+        return Stream.make(NoteOff({ pitch }))
+      }
+      return Stream.empty
+    }),
+  )
+
+  const onCancel = Stream.fromEventListener(target, 'pointercancel').pipe(
+    Stream.flatMap((e) => {
+      const pitch = activePointerPitch.get(e.pointerId)
+      if (pitch) {
+        activePointerPitch.delete(e.pointerId)
+        return Stream.make(NoteOff({ pitch }))
+      }
+      return Stream.empty
+    }),
+  )
+
+  return Stream.mergeAll({ concurrency: 'unbounded' })([onDown, onMove, onUp, onCancel])
+}
+
 const renderPiano = (
   h: ReturnType<typeof html<Message>>,
   whiteKeys: KeyDef[],
@@ -590,7 +662,14 @@ const renderPiano = (
   prefix: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): any => {
-  return h.div([h.Class('piano-container')], [
+  return h.div([
+    h.Class('piano-container'),
+    h.Style({ touchAction: 'none' }),
+    h.OnMount({
+      name: `piano-${prefix}`,
+      f: pointerStream,
+    }),
+  ], [
     h.div([h.Class('piano-keys'), h.Style({ '--white-count': whiteCount.toString() })], [
       ...whiteKeys.map((k, i) =>
         h.div([
@@ -598,20 +677,6 @@ const renderPiano = (
           h.Attribute('data-pitch', k.pitch),
           h.Key(`${prefix}-${k.pitch}`),
           h.Style({ left: `calc(${i} / ${whiteCount} * 100%)`, width: `calc(100% / ${whiteCount})` }),
-          h.OnPointerDown(() => {
-            pointerDown = true
-            return Option.some(NoteOn({ pitch: k.pitch }))
-          }),
-          h.OnPointerMove(() =>
-            pointerDown && !activeNotes.has(k.pitch)
-              ? Option.some(NoteOn({ pitch: k.pitch }))
-              : Option.none()
-          ),
-          h.OnPointerUp(() => {
-            pointerDown = false
-            return Option.some(NoteOff({ pitch: k.pitch }))
-          }),
-          h.OnPointerLeave(() => Option.some(NoteOff({ pitch: k.pitch }))),
         ], [
           h.div([h.Class('piano-key-glow')], []),
         ]),
@@ -623,20 +688,6 @@ const renderPiano = (
           h.Attribute('data-pitch', k.pitch),
           h.Key(`${prefix}-${k.pitch}`),
           h.Style({ left: `calc(${boundary} / ${whiteCount} * 100%)` }),
-          h.OnPointerDown(() => {
-            pointerDown = true
-            return Option.some(NoteOn({ pitch: k.pitch }))
-          }),
-          h.OnPointerMove(() =>
-            pointerDown && !activeNotes.has(k.pitch)
-              ? Option.some(NoteOn({ pitch: k.pitch }))
-              : Option.none()
-          ),
-          h.OnPointerUp(() => {
-            pointerDown = false
-            return Option.some(NoteOff({ pitch: k.pitch }))
-          }),
-          h.OnPointerLeave(() => Option.some(NoteOff({ pitch: k.pitch }))),
         ], [
           h.div([h.Class('piano-key-glow')], []),
         ])
