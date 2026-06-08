@@ -15,6 +15,20 @@ body {
   min-height: 100vh;
 }
 
+.app.lang-fa {
+  font-family: 'Rubik', 'Comic Neue', cursive, sans-serif;
+}
+
+.app.lang-fa .btn,
+.app.lang-fa .count,
+.app.lang-fa .effect-buttons .btn {
+  font-size: 0.95rem;
+}
+
+.app.lang-fa .btn-large {
+  font-size: 1.35rem;
+}
+
 .app {
   min-height: 100vh;
   background: var(--bg-gradient);

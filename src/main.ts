@@ -352,7 +352,7 @@ export const view = (model: Model): Document => {
   return {
     title: pageTitle(model),
     body: h.div(
-      [h.Class(isDark ? 'app dark' : 'app'), h.OnMount({
+      [h.Class(`app${isDark ? ' dark' : ''} lang-${model.language}`), h.OnMount({
         name: 'watchDarkMode',
         f: () => Stream.fromEventListener(
           window.matchMedia('(prefers-color-scheme: dark)'),
