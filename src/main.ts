@@ -2,11 +2,12 @@ import { Effect, Match as M, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { Document, html } from 'foldkit/html'
 
-import { ClickedBubbles, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedGreeting, ClickedLanding, ClickedSettings, SetLanguage, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
+import { ClickedBubbles, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedGreeting, ClickedLanding, ClickedMusicBox, ClickedSettings, SetLanguage, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
 
-import { Page, PageBubbles, PageCounter, PageFindIt, PageGreeting, PageLanding } from './route'
+import { Page, PageBubbles, PageCounter, PageFindIt, PageGreeting, PageLanding, PageMusicBox } from './route'
 
 import * as FindIt from './games/findit'
+import * as MusicBox from './games/musicbox'
 import * as Counter from './games/counter'
 import * as Greeting from './games/greeting'
 import * as Bubbles from './games/bubbles'
@@ -100,6 +101,7 @@ export const Model = S.Struct({
   showSettings: S.Boolean,
   muted: S.Boolean,
   greeting: Greeting.Model,
+  musicBox: MusicBox.Model,
   counter: Counter.Model,
   findIt: FindIt.Model,
   bubbles: Bubbles.Model,
@@ -120,6 +122,7 @@ export const Message = S.Union([
   ClickedCounter,
   ClickedFindIt,
   ClickedBubbles,
+  ClickedMusicBox,
   Greeting.ClickedReset,
   Greeting.ClickedRecord,
   Greeting.ClickedStopRecording,
@@ -160,6 +163,13 @@ export const Message = S.Union([
   Bubbles.SetBatchCount,
   Bubbles.SetPopLabel,
   Bubbles.AddReleased,
+  MusicBox.Play,
+  MusicBox.Stop,
+  MusicBox.SetSong,
+  MusicBox.SetInstrument,
+  MusicBox.SongEnded,
+  MusicBox.NoteOn,
+  MusicBox.NoteOff,
   SettingsPersisted,
 ])
 
@@ -184,6 +194,7 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
       language: saved.language ?? 'en',
       showSettings: false,
       muted: saved.muted ?? false,
+      musicBox: MusicBox.init(),
       greeting: { ...Greeting.init, voiceEffect: saved.greetingVoiceEffect ?? 'normal' },
       counter: {
         ...Counter.init,
@@ -229,6 +240,14 @@ const updateFindIt = (
   return [{ ...model, findIt: next }, cmds]
 }
 
+const updateMusicBox = (
+  model: Model,
+  message: MusicBox.Message,
+): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
+  const [next, cmds] = MusicBox.update(model.musicBox, message)
+  return [{ ...model, musicBox: next }, cmds]
+}
+
 const updateBubbles = (
   model: Model,
   message: Bubbles.Message,
@@ -265,6 +284,7 @@ const _update = (
       ClickedCounter: () => [{ ...model, page: PageCounter() }, []],
       ClickedFindIt: () => [{ ...model, page: PageFindIt() }, []],
       ClickedBubbles: () => [{ ...model, page: PageBubbles() }, []],
+      ClickedMusicBox: () => [{ ...model, page: PageMusicBox() }, []],
       GreetingClickedRecord: (msg) => updateGreeting(model, msg),
       GreetingClickedStopRecording: (msg) => updateGreeting(model, msg),
       GreetingRecordedAudio: (msg) => updateGreeting(model, msg),
@@ -305,6 +325,13 @@ const _update = (
       BubblesSetBatchCount: (msg) => updateBubbles(model, msg),
       BubblesSetPopLabel: (msg) => updateBubbles(model, msg),
       BubblesAddReleased: (msg) => updateBubbles(model, msg),
+      MusicBoxPlay: (msg) => updateMusicBox(model, msg),
+      MusicBoxStop: (msg) => updateMusicBox(model, msg),
+      MusicBoxSetSong: (msg) => updateMusicBox(model, msg),
+      MusicBoxSetInstrument: (msg) => updateMusicBox(model, msg),
+      MusicBoxSongEnded: (msg) => updateMusicBox(model, msg),
+      MusicBoxNoteOn: (msg) => updateMusicBox(model, msg),
+      MusicBoxNoteOff: (msg) => updateMusicBox(model, msg),
       SettingsPersisted: () => [model, []],
     }),
   )
@@ -339,6 +366,7 @@ const pageTitle = (model: Model): string =>
       PageCounter: () => t('pageTitleCounter', model.language),
       PageFindIt: () => t('pageTitleFindIt', model.language),
       PageBubbles: () => t('pageTitleBubbles', model.language),
+      PageMusicBox: () => t('pageTitleMusicBox', model.language),
     }),
   )
 
@@ -573,6 +601,7 @@ export const view = (model: Model): Document => {
             PageCounter: () => Counter.view(model.counter, model.language),
             PageFindIt: () => FindIt.view(model.findIt, model.language),
             PageBubbles: () => Bubbles.view(model.bubbles, model.language),
+            PageMusicBox: () => MusicBox.view(model.musicBox, model.language),
           }),
         ),
       ],

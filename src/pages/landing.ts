@@ -1,12 +1,13 @@
 import { html } from 'foldkit/html'
 
-import { ClickedBubbles, ClickedCounter, ClickedFindIt, ClickedGreeting } from '../message'
+import { ClickedBubbles, ClickedCounter, ClickedFindIt, ClickedGreeting, ClickedMusicBox } from '../message'
 import { t } from '../i18n'
 
 type Message = ReturnType<typeof ClickedGreeting>
   | ReturnType<typeof ClickedCounter>
   | ReturnType<typeof ClickedFindIt>
   | ReturnType<typeof ClickedBubbles>
+  | ReturnType<typeof ClickedMusicBox>
 
 export const view = (language: string) => {
   const h = html<Message>()
@@ -45,6 +46,13 @@ export const view = (language: string) => {
           [
             h.div([h.Class('game-emoji')], ['🫧']),
             h.h2([h.Class('game-name')], [t('bubblesTitle', language)]),
+          ],
+        ),
+        h.div(
+          [h.OnClick(ClickedMusicBox()), h.Class('game-card')],
+          [
+            h.div([h.Class('game-emoji')], ['🎵']),
+            h.h2([h.Class('game-name')], [t('musicBoxTitle', language)]),
           ],
         ),
         h.a(
