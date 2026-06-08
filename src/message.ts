@@ -4,7 +4,7 @@ import { m } from 'foldkit/message'
 export const ClickedLanding = m('ClickedLanding')
 export const ClickedGreeting = m('ClickedGreeting')
 export const ClickedCounter = m('ClickedCounter')
-export const ClickedPeekaboo = m('ClickedPeekaboo')
+export const ClickedFindIt = m('ClickedFindIt')
 export const ClickedBubbles = m('ClickedBubbles')
 export const ClickedDarkMode = m('ClickedDarkMode')
 export const ClickedSettings = m('ClickedSettings')

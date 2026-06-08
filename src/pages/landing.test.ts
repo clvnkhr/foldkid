@@ -20,7 +20,7 @@ describe('Landing', () => {
       Scene.with(Main.init()[0]),
       Scene.expect(Scene.text('Say Hello')).toExist(),
       Scene.expect(Scene.text('Counter')).toExist(),
-      Scene.expect(Scene.text('Peek-a-Boo')).toExist(),
+      Scene.expect(Scene.text('Find It!')).toExist(),
       Scene.expect(Scene.text('Bubbles!')).toExist(),
       Scene.Command.expectNone(),
     )

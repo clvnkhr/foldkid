@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { Scene, Story } from 'foldkit/test'
-import * as Peekaboo from './peekaboo'
+import * as FindIt from './findit'
 
 const resolveWin = [
-  [{ name: 'PlayBoing' }, Peekaboo.SoundPlayed()] as const,
-  [{ name: 'Speak' }, Peekaboo.SoundPlayed()] as const,
+  [{ name: 'PlayBoing' }, FindIt.SoundPlayed()] as const,
+  [{ name: 'Speak' }, FindIt.SoundPlayed()] as const,
 ] as const
 
-describe('Peekaboo', () => {
+describe('FindIt', () => {
   it('init creates a valid game', () => {
-    const game = Peekaboo.init()
+    const game = FindIt.init()
     expect(game.grid).toHaveLength(9)
     expect(game.count).toBe(0)
     expect(game.shaking).toBe(-1)
@@ -19,12 +19,12 @@ describe('Peekaboo', () => {
   })
 
   it('correct cell shows win', () => {
-    const game = Peekaboo.init()
+    const game = FindIt.init()
     const cell = game.grid.find(c => c.emoji === game.target)!
     Story.story(
-      Peekaboo.update,
+      FindIt.update,
       Story.with(game),
-      Story.message(Peekaboo.ClickedCell({ id: cell.id })),
+      Story.message(FindIt.ClickedCell({ id: cell.id })),
       Story.model((model) => {
         expect(model.count).toBe(0)
         expect(model.won).toBe(true)
@@ -35,11 +35,11 @@ describe('Peekaboo', () => {
   })
 
   it('next advances to new game with incremented count', () => {
-    const game = Peekaboo.init()
+    const game = FindIt.init()
     Story.story(
-      Peekaboo.update,
+      FindIt.update,
       Story.with({ ...game, won: true }),
-      Story.message(Peekaboo.ClickedNext()),
+      Story.message(FindIt.ClickedNext()),
       Story.model((model) => {
         expect(model.count).toBe(1)
         expect(model.won).toBe(false)
@@ -50,12 +50,12 @@ describe('Peekaboo', () => {
   })
 
   it('wrong cell shakes without incrementing', () => {
-    const game = Peekaboo.init()
+    const game = FindIt.init()
     const wrong = game.grid.find(c => c.emoji !== game.target)!
     Story.story(
-      Peekaboo.update,
+      FindIt.update,
       Story.with(game),
-      Story.message(Peekaboo.ClickedCell({ id: wrong.id })),
+      Story.message(FindIt.ClickedCell({ id: wrong.id })),
       Story.model((model) => {
         expect(model.count).toBe(0)
         expect(model.won).toBe(false)
@@ -68,9 +68,9 @@ describe('Peekaboo', () => {
   })
 
   it('renders prompt and grid', () => {
-    const game = Peekaboo.init()
+    const game = FindIt.init()
     Scene.scene(
-      { update: Peekaboo.update, view: Peekaboo.view },
+      { update: FindIt.update, view: FindIt.view },
       Scene.with(game),
       Scene.expect(Scene.text(`Where is ${game.target}?`)).toExist(),
       Scene.Command.expectNone(),
@@ -78,10 +78,10 @@ describe('Peekaboo', () => {
   })
 
   it('clicking wrong cell shows wobble', () => {
-    const game = Peekaboo.init()
+    const game = FindIt.init()
     const wrong = game.grid.find(c => c.emoji !== game.target)!
     Scene.scene(
-      { update: Peekaboo.update, view: Peekaboo.view },
+      { update: FindIt.update, view: FindIt.view },
       Scene.with(game),
       Scene.click(Scene.text(wrong.emoji)),
       Scene.expect(Scene.text(`Where is ${game.target}?`)).toExist(),
@@ -90,24 +90,24 @@ describe('Peekaboo', () => {
   })
 
   it('clicking correct cell shows you win', () => {
-    const game = Peekaboo.init()
+    const game = FindIt.init()
     const cell = game.grid.find(c => c.emoji === game.target)!
     Scene.scene(
-      { update: Peekaboo.update, view: Peekaboo.view },
+      { update: FindIt.update, view: FindIt.view },
       Scene.with(game),
       Scene.click(Scene.text(cell.emoji)),
-      Scene.expect(Scene.text(`${Peekaboo.emojiName(cell.emoji)}!`)).toExist(),
+      Scene.expect(Scene.text(`${FindIt.emojiName(cell.emoji)}!`)).toExist(),
       Scene.Command.resolveAll(...resolveWin),
       Scene.Command.expectNone(),
     )
   })
 
   it('clicking cell after win does nothing', () => {
-    const game = { ...Peekaboo.init(), won: true }
+    const game = { ...FindIt.init(), won: true }
     Story.story(
-      Peekaboo.update,
+      FindIt.update,
       Story.with(game),
-      Story.message(Peekaboo.ClickedCell({ id: 0 })),
+      Story.message(FindIt.ClickedCell({ id: 0 })),
       Story.model((model) => {
         expect(model.won).toBe(true)
         expect(model.count).toBe(0)
@@ -117,16 +117,16 @@ describe('Peekaboo', () => {
   })
 
   it('hint appears after 3 wrong guesses', () => {
-    const game = Peekaboo.init()
+    const game = FindIt.init()
     const correctId = game.grid.find(c => c.emoji === game.target)!.id
     const wrongCells = game.grid.filter(c => c.emoji !== game.target)
 
     Story.story(
-      Peekaboo.update,
+      FindIt.update,
       Story.with(game),
-      Story.message(Peekaboo.ClickedCell({ id: wrongCells[0]!.id })),
-      Story.message(Peekaboo.ClickedCell({ id: wrongCells[1]!.id })),
-      Story.message(Peekaboo.ClickedCell({ id: wrongCells[2]!.id })),
+      Story.message(FindIt.ClickedCell({ id: wrongCells[0]!.id })),
+      Story.message(FindIt.ClickedCell({ id: wrongCells[1]!.id })),
+      Story.message(FindIt.ClickedCell({ id: wrongCells[2]!.id })),
       Story.model((model) => {
         expect(model.wrongCount).toBe(3)
         expect(model.hintId).toBe(correctId)
@@ -136,13 +136,13 @@ describe('Peekaboo', () => {
   })
 
   it('hint is cleared on correct answer', () => {
-    const game = Peekaboo.init()
+    const game = FindIt.init()
     const correctId = game.grid.find(c => c.emoji === game.target)!.id
 
     Story.story(
-      Peekaboo.update,
+      FindIt.update,
       Story.with({ ...game, wrongCount: 3, hintId: correctId }),
-      Story.message(Peekaboo.ClickedCell({ id: correctId })),
+      Story.message(FindIt.ClickedCell({ id: correctId })),
       Story.model((model) => {
         expect(model.hintId).toBeNull()
         expect(model.wrongCount).toBe(0)
@@ -153,12 +153,12 @@ describe('Peekaboo', () => {
   })
 
   it('anyWins makes any clicked cell win', () => {
-    const game = { ...Peekaboo.init(), anyWins: true }
+    const game = { ...FindIt.init(), anyWins: true }
     const cell = game.grid.find(c => c.emoji !== game.target)!
     Story.story(
-      Peekaboo.update,
+      FindIt.update,
       Story.with(game),
-      Story.message(Peekaboo.ClickedCell({ id: cell.id })),
+      Story.message(FindIt.ClickedCell({ id: cell.id })),
       Story.model((model) => {
         expect(model.won).toBe(true)
         expect(model.found).toContain(cell.emoji)
@@ -169,9 +169,9 @@ describe('Peekaboo', () => {
   })
 
   it('anyWins shows pickYourFavourite text', () => {
-    const game = { ...Peekaboo.init(), anyWins: true }
+    const game = { ...FindIt.init(), anyWins: true }
     Scene.scene(
-      { update: Peekaboo.update, view: Peekaboo.view },
+      { update: FindIt.update, view: FindIt.view },
       Scene.with(game),
       Scene.expect(Scene.text('Pick your favourite!')).toExist(),
       Scene.Command.expectNone(),
@@ -179,11 +179,11 @@ describe('Peekaboo', () => {
   })
 
   it('SetAnyWins updates the model', () => {
-    const game = Peekaboo.init()
+    const game = FindIt.init()
     Story.story(
-      Peekaboo.update,
+      FindIt.update,
       Story.with(game),
-      Story.message(Peekaboo.SetAnyWins({ value: true })),
+      Story.message(FindIt.SetAnyWins({ value: true })),
       Story.model((model) => {
         expect(model.anyWins).toBe(true)
       }),
@@ -192,11 +192,11 @@ describe('Peekaboo', () => {
   })
 
   it('anyWins persists through next round', () => {
-    const game = { ...Peekaboo.init(), anyWins: true, won: true }
+    const game = { ...FindIt.init(), anyWins: true, won: true }
     Story.story(
-      Peekaboo.update,
+      FindIt.update,
       Story.with(game),
-      Story.message(Peekaboo.ClickedNext()),
+      Story.message(FindIt.ClickedNext()),
       Story.model((model) => {
         expect(model.anyWins).toBe(true)
         expect(model.won).toBe(false)
@@ -206,11 +206,11 @@ describe('Peekaboo', () => {
   })
 
   it('SoundPlayed leaves model unchanged', () => {
-    const game = Peekaboo.init()
+    const game = FindIt.init()
     Story.story(
-      Peekaboo.update,
+      FindIt.update,
       Story.with(game),
-      Story.message(Peekaboo.SoundPlayed()),
+      Story.message(FindIt.SoundPlayed()),
       Story.model((model) => {
         expect(model).toStrictEqual(game)
       }),
@@ -219,28 +219,28 @@ describe('Peekaboo', () => {
   })
 
   it('ClickedCollectionEmoji sets tooltipEmoji and speaks the name', () => {
-    const game = Peekaboo.init()
+    const game = FindIt.init()
     const emoji = game.grid[0]!.emoji
     Story.story(
-      Peekaboo.update,
+      FindIt.update,
       Story.with(game),
-      Story.message(Peekaboo.ClickedCollectionEmoji({ emoji })),
+      Story.message(FindIt.ClickedCollectionEmoji({ emoji })),
       Story.model((model) => {
         expect(model.tooltipEmoji).toBe(emoji)
       }),
       Story.Command.resolveAll(
-        [{ name: 'Speak' }, Peekaboo.SoundPlayed()] as const,
+        [{ name: 'Speak' }, FindIt.SoundPlayed()] as const,
       ),
       Story.Command.expectNone(),
     )
   })
 
   it('DismissTooltip clears tooltipEmoji', () => {
-    const game = { ...Peekaboo.init(), tooltipEmoji: '🎈' }
+    const game = { ...FindIt.init(), tooltipEmoji: '🎈' }
     Story.story(
-      Peekaboo.update,
+      FindIt.update,
       Story.with(game),
-      Story.message(Peekaboo.DismissTooltip()),
+      Story.message(FindIt.DismissTooltip()),
       Story.model((model) => {
         expect(model.tooltipEmoji).toBeNull()
       }),
@@ -249,11 +249,11 @@ describe('Peekaboo', () => {
   })
 
   it('ClickedReset clears found and resets count', () => {
-    const game = { ...Peekaboo.init(), found: ['🎈', '🎉'], count: 2 }
+    const game = { ...FindIt.init(), found: ['🎈', '🎉'], count: 2 }
     Story.story(
-      Peekaboo.update,
+      FindIt.update,
       Story.with(game),
-      Story.message(Peekaboo.ClickedReset()),
+      Story.message(FindIt.ClickedReset()),
       Story.model((model) => {
         expect(model.found).toHaveLength(0)
         expect(model.count).toBe(0)
@@ -265,9 +265,9 @@ describe('Peekaboo', () => {
   })
 
   it('reset button renders when collection non-empty', () => {
-    const game = { ...Peekaboo.init(), found: ['🎈'] }
+    const game = { ...FindIt.init(), found: ['🎈'] }
     Scene.scene(
-      { update: Peekaboo.update, view: Peekaboo.view },
+      { update: FindIt.update, view: FindIt.view },
       Scene.with(game),
       Scene.expect(Scene.text('Reset')).toExist(),
       Scene.Command.expectNone(),
@@ -275,9 +275,9 @@ describe('Peekaboo', () => {
   })
 
   it('tooltip shows emoji name in floating popup when tooltipEmoji is set', () => {
-    const game = { ...Peekaboo.init(), tooltipEmoji: '🎈' }
+    const game = { ...FindIt.init(), tooltipEmoji: '🎈' }
     Scene.scene(
-      { update: Peekaboo.update, view: Peekaboo.view },
+      { update: FindIt.update, view: FindIt.view },
       Scene.with(game),
       Scene.expect(Scene.text('🎈 Balloon')).toExist(),
       Scene.Command.expectNone(),
@@ -285,9 +285,9 @@ describe('Peekaboo', () => {
   })
 
   it('tooltip not shown when tooltipEmoji is null', () => {
-    const game = Peekaboo.init()
+    const game = FindIt.init()
     Scene.scene(
-      { update: Peekaboo.update, view: Peekaboo.view },
+      { update: FindIt.update, view: FindIt.view },
       Scene.with(game),
       Scene.expect(Scene.text('🎈 Balloon')).not.toExist(),
       Scene.Command.expectNone(),
@@ -295,12 +295,12 @@ describe('Peekaboo', () => {
   })
 
   it('correct cell click clears tooltip', () => {
-    const game = Peekaboo.init()
+    const game = FindIt.init()
     const cell = game.grid.find(c => c.emoji === game.target)!
     Story.story(
-      Peekaboo.update,
+      FindIt.update,
       Story.with({ ...game, tooltipEmoji: cell.emoji }),
-      Story.message(Peekaboo.ClickedCell({ id: cell.id })),
+      Story.message(FindIt.ClickedCell({ id: cell.id })),
       Story.model((model) => {
         expect(model.tooltipEmoji).toBeNull()
       }),
@@ -310,9 +310,9 @@ describe('Peekaboo', () => {
   })
 
   it('reset button does not render when collection empty', () => {
-    const game = Peekaboo.init()
+    const game = FindIt.init()
     Scene.scene(
-      { update: Peekaboo.update, view: Peekaboo.view },
+      { update: FindIt.update, view: FindIt.view },
       Scene.with(game),
       Scene.expect(Scene.text('Reset')).not.toExist(),
       Scene.Command.expectNone(),
@@ -320,11 +320,11 @@ describe('Peekaboo', () => {
   })
 
   it('ClickedReset preserves anyWins setting', () => {
-    const game = { ...Peekaboo.init(), found: ['🎈'], anyWins: true }
+    const game = { ...FindIt.init(), found: ['🎈'], anyWins: true }
     Story.story(
-      Peekaboo.update,
+      FindIt.update,
       Story.with(game),
-      Story.message(Peekaboo.ClickedReset()),
+      Story.message(FindIt.ClickedReset()),
       Story.model((model) => {
         expect(model.anyWins).toBe(true)
       }),

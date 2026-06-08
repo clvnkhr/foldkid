@@ -2,12 +2,14 @@ import { Effect, Match as M, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { Document, html } from 'foldkit/html'
 
-import { ClickedBubbles, ClickedCounter, ClickedDarkMode, ClickedGreeting, ClickedLanding, ClickedPeekaboo, ClickedSettings, SetLanguage, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
-import { Page, PageBubbles, PageCounter, PageGreeting, PageLanding, PagePeekaboo } from './route'
-import * as Bubbles from './games/bubbles'
+import { ClickedBubbles, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedGreeting, ClickedLanding, ClickedSettings, SetLanguage, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
+
+import { Page, PageBubbles, PageCounter, PageFindIt, PageGreeting, PageLanding } from './route'
+
+import * as FindIt from './games/findit'
 import * as Counter from './games/counter'
 import * as Greeting from './games/greeting'
-import * as Peekaboo from './games/peekaboo'
+import * as Bubbles from './games/bubbles'
 import { view as landingView } from './pages/landing'
 import { t, tf } from './i18n'
 import { speak } from './speech'
@@ -28,9 +30,9 @@ interface PersistedSettings {
   counterRate: number
   counterPitch: number
   counterDisplayMode: string
-  peekabooAnyWins: boolean
-  peekabooVoiceMode: boolean
-  peekabooPairsMode: boolean
+  findItAnyWins: boolean
+  findItVoiceMode: boolean
+  findItPairsMode: boolean
   bubblesRainbowMode: boolean
   bubblesBatchCount: number
   bubblesPopLabel: boolean
@@ -64,9 +66,9 @@ const buildSettingsData = (model: Model): PersistedSettings => ({
   counterRate: model.counter.rate,
   counterPitch: model.counter.pitch,
   counterDisplayMode: model.counter.displayMode,
-  peekabooAnyWins: model.peekaboo.anyWins,
-  peekabooVoiceMode: model.peekaboo.voiceMode,
-  peekabooPairsMode: model.peekaboo.pairsMode,
+  findItAnyWins: model.findIt.anyWins,
+  findItVoiceMode: model.findIt.voiceMode,
+  findItPairsMode: model.findIt.pairsMode,
   bubblesRainbowMode: model.bubbles.rainbowMode,
   bubblesBatchCount: model.bubbles.batchCount,
   bubblesPopLabel: model.bubbles.popLabel,
@@ -97,7 +99,7 @@ export const Model = S.Struct({
   muted: S.Boolean,
   greeting: Greeting.Model,
   counter: Counter.Model,
-  peekaboo: Peekaboo.Model,
+  findIt: FindIt.Model,
   bubbles: Bubbles.Model,
 })
 
@@ -114,10 +116,11 @@ export const Message = S.Union([
   ToggleMute,
   ClickedGreeting,
   ClickedCounter,
-  ClickedPeekaboo,
+  ClickedFindIt,
   ClickedBubbles,
   Greeting.ClickedReset,
   Greeting.ClickedRecord,
+  Greeting.ClickedStopRecording,
   Greeting.RecordedAudio,
   Greeting.RecordingFailed,
   Greeting.ClickedPlay,
@@ -128,26 +131,26 @@ export const Message = S.Union([
   Counter.SetRate,
   Counter.SetPitch,
   Counter.SetDisplayMode,
-  Peekaboo.ClickedCell,
-  Peekaboo.ClickedNext,
-  Peekaboo.SetAnyWins,
-  Peekaboo.SetVoiceMode,
-  Peekaboo.SetPairsMode,
-  Peekaboo.ReplayQuestion,
-  Peekaboo.ClickedCollectionEmoji,
-  Peekaboo.SetDragIndex,
-  Peekaboo.DroppedOn,
-  Peekaboo.DragEnded,
-  Peekaboo.GridDragStarted,
-  Peekaboo.GridDroppedOn,
-  Peekaboo.GridDragEnded,
-  Peekaboo.ClickedReset,
-  Peekaboo.DismissTooltip,
+  FindIt.ClickedCell,
+  FindIt.ClickedNext,
+  FindIt.SetAnyWins,
+  FindIt.SetVoiceMode,
+  FindIt.SetPairsMode,
+  FindIt.ReplayQuestion,
+  FindIt.ClickedCollectionEmoji,
+  FindIt.SetDragIndex,
+  FindIt.DroppedOn,
+  FindIt.DragEnded,
+  FindIt.GridDragStarted,
+  FindIt.GridDroppedOn,
+  FindIt.GridDragEnded,
+  FindIt.ClickedReset,
+  FindIt.DismissTooltip,
   Bubbles.ClickedPop,
   Bubbles.ClickedReset,
   Greeting.SoundPlayed,
   Counter.SoundPlayed,
-  Peekaboo.SoundPlayed,
+  FindIt.SoundPlayed,
   Bubbles.SoundPlayed,
   Bubbles.SetRainbowMode,
   Bubbles.SetBatchCount,
@@ -162,12 +165,12 @@ export type Message = typeof Message.Type
 
 export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
   const saved = loadSettings()
-  const pairsMode = saved.peekabooPairsMode ?? false
-  const peekabooInit = Peekaboo.init(pairsMode)
+  const pairsMode = saved.findItPairsMode ?? false
+  const findItInit = FindIt.init(pairsMode)
   const cmds: Command.Command<Message>[] = []
-  const voiceMode = saved.peekabooVoiceMode ?? false
-  if (voiceMode && !saved.peekabooAnyWins && !saved.muted) {
-    cmds.push(speak(tf('whereIs', saved.language ?? 'en', Peekaboo.emojiName(peekabooInit.target, saved.language ?? 'en')), Peekaboo.SoundPlayed(), { lang: saved.language ?? 'en' }))
+  const voiceMode = saved.findItVoiceMode ?? false
+  if (voiceMode && !saved.findItAnyWins && !saved.muted) {
+    cmds.push(speak(tf('whereIs', saved.language ?? 'en', FindIt.emojiName(findItInit.target, saved.language ?? 'en')), FindIt.SoundPlayed(), { lang: saved.language ?? 'en' }))
   }
   const batchCount = BatchCountValues.includes(saved.bubblesBatchCount as typeof BatchCountValues[number]) ? saved.bubblesBatchCount as 1 | 3 | 5 : 1
   return [
@@ -184,7 +187,7 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
         pitch: saved.counterPitch ?? Counter.init.pitch,
         displayMode: sanitizeDisplayMode(saved.counterDisplayMode, Counter.init.displayMode),
       },
-      peekaboo: { ...peekabooInit, anyWins: saved.peekabooAnyWins ?? false, voiceMode, pairsMode },
+      findIt: { ...findItInit, anyWins: saved.findItAnyWins ?? false, voiceMode, pairsMode },
       bubbles: {
         ...Bubbles.init(),
         rainbowMode: saved.bubblesRainbowMode ?? false,
@@ -214,12 +217,12 @@ const updateCounter = (
   return [{ ...model, counter: next }, cmds]
 }
 
-const updatePeekaboo = (
+const updateFindIt = (
   model: Model,
-  message: Peekaboo.Message,
+  message: FindIt.Message,
 ): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
-  const [next, cmds] = Peekaboo.update(model.peekaboo, message, model.muted, model.language)
-  return [{ ...model, peekaboo: next }, cmds]
+  const [next, cmds] = FindIt.update(model.findIt, message, model.muted, model.language)
+  return [{ ...model, findIt: next }, cmds]
 }
 
 const updateBubbles = (
@@ -256,9 +259,10 @@ const _update = (
       ToggleMute: () => [{ ...model, muted: !model.muted }, []],
       ClickedGreeting: () => [{ ...model, page: PageGreeting() }, []],
       ClickedCounter: () => [{ ...model, page: PageCounter() }, []],
-      ClickedPeekaboo: () => [{ ...model, page: PagePeekaboo() }, []],
+      ClickedFindIt: () => [{ ...model, page: PageFindIt() }, []],
       ClickedBubbles: () => [{ ...model, page: PageBubbles() }, []],
       GreetingClickedRecord: (msg) => updateGreeting(model, msg),
+      GreetingClickedStopRecording: (msg) => updateGreeting(model, msg),
       GreetingRecordedAudio: (msg) => updateGreeting(model, msg),
       GreetingRecordingFailed: (msg) => updateGreeting(model, msg),
       GreetingClickedPlay: (msg) => updateGreeting(model, msg),
@@ -270,26 +274,26 @@ const _update = (
       CounterSetRate: (msg) => updateCounter(model, msg),
       CounterSetPitch: (msg) => updateCounter(model, msg),
       CounterSetDisplayMode: (msg) => updateCounter(model, msg),
-      PeekabooClickedCell: (msg) => updatePeekaboo(model, msg),
-      PeekabooClickedNext: (msg) => updatePeekaboo(model, msg),
-      PeekabooSetAnyWins: (msg) => updatePeekaboo(model, msg),
-      PeekabooSetVoiceMode: (msg) => updatePeekaboo(model, msg),
-      PeekabooSetPairsMode: (msg) => updatePeekaboo(model, msg),
-      PeekabooReplayQuestion: (msg) => updatePeekaboo(model, msg),
-      PeekabooClickedCollectionEmoji: (msg) => updatePeekaboo(model, msg),
-      PeekabooSetDragIndex: (msg) => updatePeekaboo(model, msg),
-      PeekabooDroppedOn: (msg) => updatePeekaboo(model, msg),
-      PeekabooDragEnded: (msg) => updatePeekaboo(model, msg),
-      PeekabooGridDragStarted: (msg) => updatePeekaboo(model, msg),
-      PeekabooGridDroppedOn: (msg) => updatePeekaboo(model, msg),
-      PeekabooGridDragEnded: (msg) => updatePeekaboo(model, msg),
-      PeekabooClickedReset: (msg) => updatePeekaboo(model, msg),
-      PeekabooDismissTooltip: (msg) => updatePeekaboo(model, msg),
+      FindItClickedCell: (msg) => updateFindIt(model, msg),
+      FindItClickedNext: (msg) => updateFindIt(model, msg),
+      FindItSetAnyWins: (msg) => updateFindIt(model, msg),
+      FindItSetVoiceMode: (msg) => updateFindIt(model, msg),
+      FindItSetPairsMode: (msg) => updateFindIt(model, msg),
+      FindItReplayQuestion: (msg) => updateFindIt(model, msg),
+      FindItClickedCollectionEmoji: (msg) => updateFindIt(model, msg),
+      FindItSetDragIndex: (msg) => updateFindIt(model, msg),
+      FindItDroppedOn: (msg) => updateFindIt(model, msg),
+      FindItDragEnded: (msg) => updateFindIt(model, msg),
+      FindItGridDragStarted: (msg) => updateFindIt(model, msg),
+      FindItGridDroppedOn: (msg) => updateFindIt(model, msg),
+      FindItGridDragEnded: (msg) => updateFindIt(model, msg),
+      FindItClickedReset: (msg) => updateFindIt(model, msg),
+      FindItDismissTooltip: (msg) => updateFindIt(model, msg),
       BubblesClickedPop: (msg) => updateBubbles(model, msg),
       BubblesClickedReset: (msg) => updateBubbles(model, msg),
       GreetingSoundPlayed: (msg) => updateGreeting(model, msg),
       CounterSoundPlayed: (msg) => updateCounter(model, msg),
-      PeekabooSoundPlayed: (msg) => updatePeekaboo(model, msg),
+      FindItSoundPlayed: (msg) => updateFindIt(model, msg),
       BubblesSoundPlayed: (msg) => updateBubbles(model, msg),
       BubblesSetRainbowMode: (msg) => updateBubbles(model, msg),
       BubblesSetBatchCount: (msg) => updateBubbles(model, msg),
@@ -302,7 +306,7 @@ const _update = (
 const SETTINGS_TAGS = new Set([
   'ClickedDarkMode', 'SetLanguage', 'ToggleMute',
   'CounterSetRate', 'CounterSetPitch', 'CounterSetDisplayMode',
-  'PeekabooSetAnyWins', 'PeekabooSetVoiceMode', 'PeekabooSetPairsMode',
+  'FindItSetAnyWins', 'FindItSetVoiceMode', 'FindItSetPairsMode',
   'BubblesSetRainbowMode', 'BubblesSetBatchCount', 'BubblesSetPopLabel',
 ])
 
@@ -326,7 +330,7 @@ const pageTitle = (model: Model): string =>
       PageLanding: () => t('pageTitleLanding', model.language),
       PageGreeting: () => t('pageTitleGreeting', model.language),
       PageCounter: () => t('pageTitleCounter', model.language),
-      PagePeekaboo: () => t('pageTitlePeekaboo', model.language),
+      PageFindIt: () => t('pageTitleFindIt', model.language),
       PageBubbles: () => t('pageTitleBubbles', model.language),
     }),
   )
@@ -478,9 +482,9 @@ export const view = (model: Model): Document => {
               ]),
             ])
             : null,
-          model.page._tag === 'PagePeekaboo'
+          model.page._tag === 'PageFindIt'
             ? h.div([h.Class('setting-section')], [
-              h.h3([], [t('peekabooTitle', model.language)]),
+              h.h3([], [t('findItTitle', model.language)]),
               h.div([h.Class('lang-buttons')], [
                 ...[
                   [false, t('findMode', model.language)] as const,
@@ -488,8 +492,8 @@ export const view = (model: Model): Document => {
                 ].map(([val, label]) =>
                   h.button(
                     [
-                      h.Class(val === model.peekaboo.anyWins ? 'btn btn-primary' : 'btn btn-secondary'),
-                      h.OnClick(Peekaboo.SetAnyWins({ value: val })),
+                      h.Class(val === model.findIt.anyWins ? 'btn btn-primary' : 'btn btn-secondary'),
+                      h.OnClick(FindIt.SetAnyWins({ value: val })),
                     ],
                     [label],
                   ),
@@ -497,21 +501,21 @@ export const view = (model: Model): Document => {
               ]),
               h.div([h.Class('lang-buttons'), h.Style({ marginTop: '0.5rem' })], [
                 h.button(
-                  [h.Class(!model.peekaboo.voiceMode ? 'btn btn-primary' : 'btn btn-secondary'), h.OnClick(Peekaboo.SetVoiceMode({ value: false }))],
+                  [h.Class(!model.findIt.voiceMode ? 'btn btn-primary' : 'btn btn-secondary'), h.OnClick(FindIt.SetVoiceMode({ value: false }))],
                   [ICON_TEXT_MODE],
                 ),
                 h.button(
-                  [h.Class(model.peekaboo.voiceMode ? 'btn btn-primary' : 'btn btn-secondary'), h.OnClick(Peekaboo.SetVoiceMode({ value: true }))],
+                  [h.Class(model.findIt.voiceMode ? 'btn btn-primary' : 'btn btn-secondary'), h.OnClick(FindIt.SetVoiceMode({ value: true }))],
                   [`${ICON_VOICE_MODE} ${t('voiceMode', model.language)}`],
                 ),
               ]),
               h.div([h.Class('lang-buttons'), h.Style({ marginTop: '0.5rem' })], [
                 h.button(
-                  [h.Class(!model.peekaboo.pairsMode ? 'btn btn-primary' : 'btn btn-secondary'), h.OnClick(Peekaboo.SetPairsMode({ value: false }))],
+                  [h.Class(!model.findIt.pairsMode ? 'btn btn-primary' : 'btn btn-secondary'), h.OnClick(FindIt.SetPairsMode({ value: false }))],
                   [t('singleMode', model.language)],
                 ),
                 h.button(
-                  [h.Class(model.peekaboo.pairsMode ? 'btn btn-primary' : 'btn btn-secondary'), h.OnClick(Peekaboo.SetPairsMode({ value: true }))],
+                  [h.Class(model.findIt.pairsMode ? 'btn btn-primary' : 'btn btn-secondary'), h.OnClick(FindIt.SetPairsMode({ value: true }))],
                   [t('pairsMode', model.language)],
                 ),
               ]),
@@ -560,7 +564,7 @@ export const view = (model: Model): Document => {
             PageLanding: () => landingView(model.language),
             PageGreeting: () => Greeting.view(model.greeting, model.language),
             PageCounter: () => Counter.view(model.counter, model.language),
-            PagePeekaboo: () => Peekaboo.view(model.peekaboo, model.language),
+            PageFindIt: () => FindIt.view(model.findIt, model.language),
             PageBubbles: () => Bubbles.view(model.bubbles, model.language),
           }),
         ),

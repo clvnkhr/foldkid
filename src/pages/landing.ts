@@ -1,11 +1,11 @@
 import { html } from 'foldkit/html'
 
-import { ClickedBubbles, ClickedCounter, ClickedGreeting, ClickedPeekaboo } from '../message'
+import { ClickedBubbles, ClickedCounter, ClickedFindIt, ClickedGreeting } from '../message'
 import { t } from '../i18n'
 
 type Message = ReturnType<typeof ClickedGreeting>
   | ReturnType<typeof ClickedCounter>
-  | ReturnType<typeof ClickedPeekaboo>
+  | ReturnType<typeof ClickedFindIt>
   | ReturnType<typeof ClickedBubbles>
 
 export const view = (language: string) => {
@@ -34,10 +34,10 @@ export const view = (language: string) => {
           ],
         ),
         h.div(
-          [h.OnClick(ClickedPeekaboo()), h.Class('game-card')],
+          [h.OnClick(ClickedFindIt()), h.Class('game-card')],
           [
-            h.div([h.Class('game-emoji')], ['🙈']),
-            h.h2([h.Class('game-name')], [t('peekabooTitle', language)]),
+            h.div([h.Class('game-emoji')], ['🔎']),
+            h.h2([h.Class('game-name')], [t('findItTitle', language)]),
           ],
         ),
         h.div(

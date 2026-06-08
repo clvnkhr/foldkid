@@ -3,7 +3,7 @@ import { Story } from 'foldkit/test'
 import * as Main from './main'
 import * as Greeting from './games/greeting'
 import { PageGreeting } from './route'
-import { ClickedLanding, ClickedGreeting, ClickedCounter, ClickedPeekaboo, ClickedBubbles, ClickedDarkMode, SettingsPersisted } from './message'
+import { ClickedLanding, ClickedGreeting, ClickedCounter, ClickedFindIt, ClickedBubbles, ClickedDarkMode, SettingsPersisted } from './message'
 
 const resolveSettings = [{ name: 'PersistSettings' }, SettingsPersisted()] as const
 
@@ -14,7 +14,7 @@ describe('Main', () => {
     expect(model.darkMode).toBe('auto')
     expect(model.language).toBe('en')
     expect(model.showSettings).toBe(false)
-    expect(model.greeting).toStrictEqual({ status: 'idle', audioUrl: '', playCount: 0, autoPlay: false, recordingId: 0 })
+    expect(model.greeting).toStrictEqual({ status: 'idle', audioUrl: '', playCount: 0, autoPlay: false, recordingId: 0, showingHello: false })
     expect(model.counter.count).toBe(0)
     expect(model.bubbles).toStrictEqual({ bubbles: [], score: 0, nextId: 0, rainbowMode: false, batchCount: 1, popLabel: false })
   })
@@ -58,13 +58,13 @@ describe('Main', () => {
     )
   })
 
-  it('ClickedPeekaboo sets page to peekaboo', () => {
+  it('ClickedFindIt sets page to find it', () => {
     Story.story(
       Main.update,
       Story.with(createModel()),
-      Story.message(ClickedPeekaboo()),
+      Story.message(ClickedFindIt()),
       Story.model((model) => {
-        expect(model.page._tag).toBe('PagePeekaboo')
+        expect(model.page._tag).toBe('PageFindIt')
       }),
       Story.Command.expectNone(),
     )
@@ -137,6 +137,6 @@ const createModel = (): Main.Model => {
   const init = Main.init()[0]
   return {
     ...init,
-    peekaboo: { grid: [], target: '🎈', count: 0, shaking: -1, shakeTick: 0, won: false, found: [], anyWins: false, voiceMode: false, pairsMode: false, tooltipEmoji: null, wrongCount: 0, hintId: null, dragIndex: null, gridDragIndex: null },
+    findIt: { grid: [], target: '🎈', count: 0, shaking: -1, shakeTick: 0, won: false, found: [], anyWins: false, voiceMode: false, pairsMode: false, tooltipEmoji: null, wrongCount: 0, hintId: null, dragIndex: null, gridDragIndex: null },
   }
 }

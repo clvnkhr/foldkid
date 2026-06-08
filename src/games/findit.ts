@@ -57,22 +57,22 @@ type EmojiCell = typeof EmojiCell.Type
 export const Model = S.Struct({ grid: S.Array(EmojiCell), target: S.String, count: S.Number, shaking: S.Number, shakeTick: S.Number, won: S.Boolean, found: S.Array(S.String), anyWins: S.Boolean, voiceMode: S.Boolean, pairsMode: S.Boolean, tooltipEmoji: S.Union([S.String, S.Null]), wrongCount: S.Number, hintId: S.Union([S.Number, S.Null]), dragIndex: S.Union([S.Number, S.Null]), gridDragIndex: S.Union([S.Number, S.Null]) })
 export type Model = typeof Model.Type
 
-export const ClickedCell = m('PeekabooClickedCell', { id: S.Number })
-export const ClickedNext = m('PeekabooClickedNext')
-export const SetAnyWins = m('PeekabooSetAnyWins', { value: S.Boolean })
-export const SetVoiceMode = m('PeekabooSetVoiceMode', { value: S.Boolean })
-export const SetPairsMode = m('PeekabooSetPairsMode', { value: S.Boolean })
-export const ReplayQuestion = m('PeekabooReplayQuestion')
-export const ClickedCollectionEmoji = m('PeekabooClickedCollectionEmoji', { emoji: S.String })
-export const ClickedReset = m('PeekabooClickedReset')
-export const DismissTooltip = m('PeekabooDismissTooltip')
-export const SoundPlayed = m('PeekabooSoundPlayed')
-export const SetDragIndex = m('PeekabooSetDragIndex', { index: S.Number })
-export const DroppedOn = m('PeekabooDroppedOn', { index: S.Number })
-export const DragEnded = m('PeekabooDragEnded')
-export const GridDragStarted = m('PeekabooGridDragStarted', { index: S.Number })
-export const GridDroppedOn = m('PeekabooGridDroppedOn', { index: S.Number })
-export const GridDragEnded = m('PeekabooGridDragEnded')
+export const ClickedCell = m('FindItClickedCell', { id: S.Number })
+export const ClickedNext = m('FindItClickedNext')
+export const SetAnyWins = m('FindItSetAnyWins', { value: S.Boolean })
+export const SetVoiceMode = m('FindItSetVoiceMode', { value: S.Boolean })
+export const SetPairsMode = m('FindItSetPairsMode', { value: S.Boolean })
+export const ReplayQuestion = m('FindItReplayQuestion')
+export const ClickedCollectionEmoji = m('FindItClickedCollectionEmoji', { emoji: S.String })
+export const ClickedReset = m('FindItClickedReset')
+export const DismissTooltip = m('FindItDismissTooltip')
+export const SoundPlayed = m('FindItSoundPlayed')
+export const SetDragIndex = m('FindItSetDragIndex', { index: S.Number })
+export const DroppedOn = m('FindItDroppedOn', { index: S.Number })
+export const DragEnded = m('FindItDragEnded')
+export const GridDragStarted = m('FindItGridDragStarted', { index: S.Number })
+export const GridDroppedOn = m('FindItGridDroppedOn', { index: S.Number })
+export const GridDragEnded = m('FindItGridDragEnded')
 
 export const Message = S.Union([ClickedCell, ClickedNext, SetAnyWins, SetVoiceMode, SetPairsMode, ReplayQuestion, ClickedCollectionEmoji, ClickedReset, DismissTooltip, SoundPlayed, SetDragIndex, DroppedOn, DragEnded, GridDragStarted, GridDroppedOn, GridDragEnded])
 export type Message = typeof Message.Type
@@ -129,7 +129,7 @@ export const update = (
   M.value(message).pipe(
     M.withReturnType<readonly [Model, ReadonlyArray<Command.Command<Message>>]>(),
     M.tagsExhaustive({
-      PeekabooClickedCell: (msg) => {
+      FindItClickedCell: (msg) => {
         if (model.won) return [model, []]
         const cell = model.grid.find(c => c.id === msg.id)
         if (cell && (cell.emoji === model.target || model.anyWins)) {
@@ -145,7 +145,7 @@ export const update = (
           [],
         ]
       },
-      PeekabooClickedNext: () => {
+      FindItClickedNext: () => {
         const next = generateGame([...model.found], model.anyWins, model.voiceMode, model.pairsMode)
         const cmds: Command.Command<Message>[] = []
         if (model.voiceMode && !model.anyWins && !muted) {
@@ -153,30 +153,30 @@ export const update = (
         }
         return [{ ...next, count: model.count + 1 }, cmds]
       },
-      PeekabooSoundPlayed: () => [model, []],
-      PeekabooSetAnyWins: (msg) => [
+      FindItSoundPlayed: () => [model, []],
+      FindItSetAnyWins: (msg) => [
         { ...model, anyWins: msg.value },
         [],
       ],
-      PeekabooSetVoiceMode: (msg) => [
+      FindItSetVoiceMode: (msg) => [
         { ...model, voiceMode: msg.value },
         [],
       ],
-      PeekabooSetPairsMode: (msg) => [
+      FindItSetPairsMode: (msg) => [
         generateGame([...model.found], model.anyWins, model.voiceMode, msg.value),
         [],
       ],
-      PeekabooReplayQuestion: () => [
+      FindItReplayQuestion: () => [
         model,
         model.voiceMode && !model.anyWins && !muted
           ? [speak(tf('whereIs', language, emojiName(model.target, language)), SoundPlayed(), { lang: language })]
           : [],
       ],
-      PeekabooSetDragIndex: (msg) => [
+      FindItSetDragIndex: (msg) => [
         { ...model, dragIndex: msg.index },
         [],
       ],
-      PeekabooDroppedOn: (msg) => {
+      FindItDroppedOn: (msg) => {
         if (model.dragIndex === null || model.dragIndex === msg.index) return [model, []]
         const found = [...model.found]
         const removed = found.splice(model.dragIndex, 1)
@@ -184,29 +184,29 @@ export const update = (
         found.splice(msg.index, 0, removed[0]!)
         return [{ ...model, found, dragIndex: null }, []]
       },
-      PeekabooDragEnded: () => [
+      FindItDragEnded: () => [
         { ...model, dragIndex: null },
         [],
       ],
-      PeekabooGridDragStarted: (msg) => [
+      FindItGridDragStarted: (msg) => [
         { ...model, gridDragIndex: msg.index },
         [],
       ],
-      PeekabooGridDroppedOn: (msg) => {
+      FindItGridDroppedOn: (msg) => {
         if (model.gridDragIndex === null || model.gridDragIndex === msg.index) return [model, []]
         const grid = [...model.grid]
         ;[grid[model.gridDragIndex]!, grid[msg.index]!] = [grid[msg.index]!, grid[model.gridDragIndex]!]
         return [{ ...model, grid, gridDragIndex: null }, []]
       },
-      PeekabooGridDragEnded: () => [
+      FindItGridDragEnded: () => [
         { ...model, gridDragIndex: null },
         [],
       ],
-      PeekabooClickedCollectionEmoji: (msg) => [
+      FindItClickedCollectionEmoji: (msg) => [
         { ...model, tooltipEmoji: msg.emoji },
         muted ? [] : [speak(emojiName(msg.emoji, language), SoundPlayed(), { lang: language })],
       ],
-      PeekabooClickedReset: () => {
+      FindItClickedReset: () => {
         const next = generateGame([], model.anyWins, model.voiceMode, model.pairsMode)
         const cmds: Command.Command<Message>[] = []
         if (model.voiceMode && !model.anyWins && !muted) {
@@ -214,7 +214,7 @@ export const update = (
         }
         return [next, cmds]
       },
-      PeekabooDismissTooltip: () => [
+      FindItDismissTooltip: () => [
         { ...model, tooltipEmoji: null },
         [],
       ],
@@ -229,13 +229,13 @@ export const view = (model: Model, language: string = 'en') => {
     [h.Class('page')],
     [
       h.div([h.Class('card')], [
-        h.div([h.Class('peekaboo-main')], [
+        h.div([h.Class('findit-main')], [
           model.anyWins
-            ? model.voiceMode ? null : h.p([h.Class('peekaboo-prompt')], [t('pickYourFavourite', language)])
+            ? model.voiceMode ? null : h.p([h.Class('findit-prompt')], [t('pickYourFavourite', language)])
             : model.voiceMode
               ? h.button([h.Class('replay-btn'), h.OnClick(ReplayQuestion())], [ICON_REPLAY])
-              : h.p([h.Class('peekaboo-prompt')], [tf('whereIs', language, model.target)]),
-          h.div([h.Class('peekaboo-game-area')], [
+              : h.p([h.Class('findit-prompt')], [tf('whereIs', language, model.target)]),
+          h.div([h.Class('findit-game-area')], [
             h.div([h.Class('emoji-grid')], [
               ...model.grid.map((cell, i) => {
                 const baseClass = model.pairsMode ? 'emoji-cell emoji-cell--pairs' : 'emoji-cell'
@@ -258,14 +258,14 @@ export const view = (model: Model, language: string = 'en') => {
                 )
               }),
             ]),
-            h.p([h.Class('peekaboo-count')], [tf('found', language, model.count)]),
+            h.p([h.Class('findit-count')], [tf('found', language, model.count)]),
           ]),
           model.won
-            ? h.div([h.Class('peekaboo-overlay'), h.Key('win-' + model.count)], [
-              h.div([h.Class('peekaboo-win')], [
+            ? h.div([h.Class('findit-overlay'), h.Key('win-' + model.count)], [
+              h.div([h.Class('findit-win')], [
                 h.div([h.Class('win-emoji')], [winEmoji]),
                 h.h2([h.Class('win-title')], [`${emojiName(winEmoji, language)}!`]),
-                h.p([h.Class('peekaboo-count')], [tf('found', language, model.count)]),
+                h.p([h.Class('findit-count')], [tf('found', language, model.count)]),
                 h.button(
                   [h.OnClick(ClickedNext()), h.Class('btn btn-primary')],
                   [t('next', language)],

@@ -186,6 +186,12 @@ body {
   color: var(--btn-secondary-text);
 }
 
+.btn-large {
+  font-size: 1.5rem;
+  padding: 1.2rem 2.5rem;
+  width: 20rem;
+}
+
 .counter-actions {
   flex-wrap: nowrap;
   position: relative;
@@ -212,6 +218,10 @@ body {
   25% { transform: scale(1.06) rotate(-2deg); }
   50% { transform: scale(1) rotate(0deg); }
   75% { transform: scale(1.06) rotate(2deg); }
+}
+
+.btn.recording {
+  animation: pulse 0.8s ease-in-out infinite;
 }
 
 /* ── Landing Page ────────────────────────────────────── */
@@ -302,6 +312,7 @@ body {
   min-height: 180px;
   max-height: 50vh;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   overflow: visible;
@@ -364,6 +375,13 @@ body {
 
 /* ── Greeting / Recording ────────────────────────────── */
 
+.hello-text {
+  font-size: 2rem;
+  font-weight: 800;
+  color: #667eea;
+  margin-bottom: 0.25rem;
+}
+
 .count {
   color: var(--text-secondary);
   font-size: 1rem;
@@ -389,19 +407,19 @@ body {
 
 /* ── Peek-a-boo ──────────────────────────────────────── */
 
-.peekaboo-prompt {
+.findit-prompt {
   font-size: 2.5rem;
   font-weight: 800;
   color: var(--text-primary);
   margin-bottom: 1rem;
 }
 
-.peekaboo-main {
+.findit-main {
   width: 100%;
   position: relative;
 }
 
-.peekaboo-game-area {
+.findit-game-area {
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -409,7 +427,7 @@ body {
   position: relative;
 }
 
-.peekaboo-overlay {
+.findit-overlay {
   position: fixed;
   inset: 0;
   display: flex;
@@ -422,7 +440,7 @@ body {
   -webkit-backdrop-filter: blur(8px);
 }
 
-.peekaboo-count {
+.findit-count {
   font-size: 0.9rem;
   color: var(--text-muted);
   margin-top: 1rem;
@@ -551,7 +569,7 @@ body {
 
 /* win */
 
-.peekaboo-win {
+.findit-win {
   background: color-mix(in srgb, var(--card-bg) 95%, transparent);
   border-radius: 1.5rem;
   padding: 2rem;

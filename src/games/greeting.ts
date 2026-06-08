@@ -5,11 +5,11 @@ import { m } from 'foldkit/message'
 import { t, tf } from '../i18n'
 import { findVoice } from '../speech'
 
-const MAX_RECORDING_MS = 10_000
-const SILENCE_THRESHOLD = 3
-const SILENCE_FRAMES_LIMIT = 90
 const TRIM_THRESHOLD = 0.02
 const TRIM_PADDING_SAMPLES = 200
+
+let activeMediaRecorder: MediaRecorder | null = null
+let activeMediaStream: MediaStream | null = null
 
 const StatusType = S.Union([S.Literal('idle'), S.Literal('recording')])
 
@@ -19,20 +19,22 @@ export const Model = S.Struct({
   playCount: S.Number,
   autoPlay: S.Boolean,
   recordingId: S.Number,
+  showingHello: S.Boolean,
 })
 export type Model = typeof Model.Type
 
 export const ClickedRecord = m('GreetingClickedRecord')
+export const ClickedStopRecording = m('GreetingClickedStopRecording')
 export const RecordedAudio = m('GreetingRecordedAudio', { audioUrl: S.String })
 export const RecordingFailed = m('GreetingRecordingFailed')
 export const ClickedPlay = m('GreetingClickedPlay')
 export const ClickedReset = m('GreetingClickedReset')
 export const SoundPlayed = m('GreetingSoundPlayed')
 
-export const Message = S.Union([ClickedRecord, RecordedAudio, RecordingFailed, ClickedPlay, ClickedReset, SoundPlayed])
+export const Message = S.Union([ClickedRecord, ClickedStopRecording, RecordedAudio, RecordingFailed, ClickedPlay, ClickedReset, SoundPlayed])
 export type Message = typeof Message.Type
 
-export const init: Model = { status: 'idle', audioUrl: '', playCount: 0, autoPlay: false, recordingId: 0 }
+export const init: Model = { status: 'idle', audioUrl: '', playCount: 0, autoPlay: false, recordingId: 0, showingHello: false }
 
 const trimSilence = (samples: Float32Array): Float32Array => {
   const threshold = TRIM_THRESHOLD * (2 ** 0.5)
@@ -76,8 +78,6 @@ const record = (): Command.Command<Message> => ({
   name: 'Record',
   effect: Effect.callback<Message>((resume) => {
     let cancelled = false
-    let rafId = 0
-    let timeoutId: ReturnType<typeof setTimeout> | null = null
     let audioCtx: AudioContext | null = null
     let mediaRecorder: MediaRecorder | null = null
     let stream: MediaStream | null = null
@@ -93,6 +93,7 @@ const record = (): Command.Command<Message> => ({
           return
         }
         stream = ms
+        activeMediaStream = ms
         audioCtx = new AudioContext()
         const source = audioCtx.createMediaStreamSource(ms)
         const analyser = audioCtx.createAnalyser()
@@ -101,6 +102,7 @@ const record = (): Command.Command<Message> => ({
 
         const recorder = new MediaRecorder(ms)
         mediaRecorder = recorder
+        activeMediaRecorder = recorder
         const chunks: Blob[] = []
 
         recorder.ondataavailable = (e) => {
@@ -108,9 +110,10 @@ const record = (): Command.Command<Message> => ({
         }
 
         const processAudio = (): void => {
-          if (timeoutId !== null) clearTimeout(timeoutId)
           source.disconnect()
           ms.getTracks().forEach((t) => t.stop())
+          activeMediaRecorder = null
+          activeMediaStream = null
 
           const blob = new Blob(chunks, { type: recorder.mimeType })
           blob.arrayBuffer().then((arrayBuffer) => {
@@ -139,39 +142,13 @@ const record = (): Command.Command<Message> => ({
         recorder.onerror = () => {
           source.disconnect()
           ms.getTracks().forEach((t) => t.stop())
+          activeMediaRecorder = null
+          activeMediaStream = null
           if (audioCtx) audioCtx.close()
           fail()
         }
 
-        let silentFrames = 0
-        const data = new Uint8Array(analyser.frequencyBinCount)
-
-        const detectSilence = (): void => {
-          if (cancelled) return
-          analyser.getByteTimeDomainData(data)
-          let sum = 0
-          for (let i = 0; i < data.length; i++) {
-            sum += ((data[i] as number) - 128) ** 2
-          }
-          const rms = Math.sqrt(sum / data.length)
-          if (rms < SILENCE_THRESHOLD) {
-            silentFrames++
-            if (silentFrames >= SILENCE_FRAMES_LIMIT) {
-              if (recorder.state === 'recording') recorder.stop()
-              return
-            }
-          } else {
-            silentFrames = 0
-          }
-          rafId = requestAnimationFrame(detectSilence)
-        }
-
-        timeoutId = setTimeout(() => {
-          if (recorder.state === 'recording') recorder.stop()
-        }, MAX_RECORDING_MS)
-
         recorder.start()
-        rafId = requestAnimationFrame(detectSilence)
       })
       .catch(() => {
         fail()
@@ -179,8 +156,6 @@ const record = (): Command.Command<Message> => ({
 
     return Effect.sync(() => {
       cancelled = true
-      cancelAnimationFrame(rafId)
-      if (timeoutId !== null) clearTimeout(timeoutId)
       if (mediaRecorder && mediaRecorder.state === 'recording') {
         mediaRecorder.stop()
       } else if (stream) {
@@ -228,6 +203,20 @@ const playGreeting = (audioUrl: string, language: string): Command.Command<Messa
   }).pipe(Effect.as(SoundPlayed())),
 })
 
+const stopRecordingCmd = (): Command.Command<Message> => ({
+  name: 'Stop',
+  effect: Effect.sync(() => {
+    if (activeMediaRecorder && activeMediaRecorder.state === 'recording') {
+      activeMediaRecorder.stop()
+    } else if (activeMediaStream) {
+      activeMediaStream.getTracks().forEach((t) => t.stop())
+      activeMediaStream = null
+    }
+    activeMediaRecorder = null
+    return SoundPlayed()
+  }),
+})
+
 export const update = (
   model: Model,
   message: Message,
@@ -238,8 +227,12 @@ export const update = (
     M.withReturnType<readonly [Model, ReadonlyArray<Command.Command<Message>>]>(),
     M.tagsExhaustive({
       GreetingClickedRecord: () => [
-        { ...model, status: 'recording', autoPlay: false },
+        { ...model, status: 'recording', autoPlay: false, showingHello: false },
         [record()],
+      ],
+      GreetingClickedStopRecording: () => [
+        model,
+        [stopRecordingCmd()],
       ],
       GreetingRecordedAudio: (msg) => [
         { ...model, status: 'idle', audioUrl: msg.audioUrl, autoPlay: true, recordingId: (model.recordingId ?? 0) + 1 },
@@ -250,11 +243,11 @@ export const update = (
         [],
       ],
       GreetingClickedPlay: () => [
-        { ...model, autoPlay: false, playCount: model.playCount + 1 },
+        { ...model, autoPlay: false, playCount: model.playCount + 1, showingHello: true },
         muted ? [] : [playGreeting(model.audioUrl, language)],
       ],
       GreetingClickedReset: () => [
-        { status: 'idle', audioUrl: '', playCount: 0, autoPlay: false, recordingId: 0 },
+        { status: 'idle', audioUrl: '', playCount: 0, autoPlay: false, recordingId: (model.recordingId ?? 0) + 1, showingHello: false },
         [],
       ],
       GreetingSoundPlayed: () => [model, []],
@@ -264,52 +257,69 @@ export const update = (
 export const view = (model: Model, language: string = 'en') => {
   const h = html<Message>()
 
+  const hasState = model.audioUrl || model.playCount > 0
+
+  const mainText = model.status === 'recording'
+    ? t('stopRecording', language)
+    : model.audioUrl
+      ? t('sayHello', language)
+      : t('recording', language)
+
+  const mainClass = 'btn btn-primary btn-large' + (model.status === 'recording' ? ' recording' : '')
+
   return h.div(
     [h.Class('page')],
     [
       h.div([h.Class('card')], [
-        h.h1([h.Class('title')], [t('greetingTitle', language)]),
-        model.status === 'recording'
-          ? h.p([h.Class('recording-indicator')], [t('recording', language)])
-          : null,
         h.div([h.Class('buttons')], [
-          model.status === 'idle' && model.audioUrl
-            ? h.button(
-              [
-                h.OnClick(ClickedPlay()),
-                h.Class('btn btn-primary'),
-                h.Key('say-hello-' + model.recordingId),
-                ...(model.autoPlay ? [h.OnMount({
+          h.button(
+            [
+              h.Class(mainClass),
+              h.Key('main-action-' + model.recordingId),
+              ...(model.status === 'recording'
+                ? [h.OnClick(ClickedStopRecording())]
+                : model.audioUrl
+                  ? [h.OnClick(ClickedPlay())]
+                  : [h.OnClick(ClickedRecord())]),
+              ...(model.status === 'idle' && !model.audioUrl
+                ? [h.OnMount({
+                  name: 'speakPrompt',
+                  f: () => {
+                    const hello = new SpeechSynthesisUtterance(t('recording', language))
+                    hello.rate = 0.85
+                    hello.pitch = 1.1
+                    hello.lang = language
+                    const voice = findVoice(language)
+                    if (voice) hello.voice = voice
+                    speechSynthesis.speak(hello)
+                    return Stream.empty
+                  },
+                })]
+                : []),
+              ...(model.status === 'idle' && model.audioUrl && model.autoPlay
+                ? [h.OnMount({
                   name: 'autoPlayGreeting',
                   f: (el) => {
                     requestAnimationFrame(() => (el as HTMLElement).click())
                     return Stream.empty
                   },
-                })] : []),
-              ],
-              [t('sayHello', language)],
-            )
-            : null,
-          model.status === 'idle'
-            ? h.button(
-              [h.OnClick(ClickedRecord()), h.Class('btn btn-primary')],
-              [t('recordName', language)],
-            )
-            : null,
-          model.audioUrl || model.playCount > 0
-            ? h.button(
-              [h.OnClick(ClickedReset()), h.Class('btn btn-secondary')],
-              [t('reset', language)],
-            )
-            : null,
+                })]
+                : []),
+            ],
+            [mainText],
+          ),
+          h.button(
+            [
+              h.Class('btn btn-secondary'),
+              h.Key('reset-btn'),
+              ...(hasState ? [h.OnClick(ClickedReset())] : []),
+            ],
+            [t('reset', language)],
+          ),
         ]),
         h.div([h.Class('display-area')], [
-          model.status === 'recording'
-            ? h.p([h.Class('recording-animation')], ['⏺'])
-            : null,
-          model.playCount > 0
-            ? h.p([h.Class('count')], [tf('greeted', language, model.playCount)])
-            : null,
+          model.showingHello ? h.p([h.Class('hello-text')], ['Hello! 😊']) : null,
+          h.p([h.Class('count')], [tf('greeted', language, model.playCount)]),
         ]),
       ]),
     ],
