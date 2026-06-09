@@ -1,4 +1,4 @@
-import { Effect, Match as M, Option as O, Schema as S, Stream } from 'effect'
+import { Effect, Match as M, Option as O, Queue, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
@@ -8,28 +8,26 @@ import { t, tf } from '../i18n'
 const Bubble = S.Struct({ id: S.Number, color: S.String, popped: S.Boolean, size: S.Number })
 type Bubble = typeof Bubble.Type
 
-const COLORS = ['#FF6B6B', '#4ECDC4', '#FFE66D', '#A8E6CF', '#FF8B94', '#95E1D3']
+const COLORS = ['#FF4757', '#FF6348', '#FFA502', '#2ED573', '#1E90FF', '#A855F7', '#FF6B81']
 
 const randomColor = (): string => COLORS[Math.floor(Math.random() * COLORS.length)] as string
 
-let isHolding = false
-let holdStartTime = 0
+let isPointerDown = false
 
-export const Model = S.Struct({ bubbles: S.Array(Bubble), score: S.Number, nextId: S.Number, rainbowMode: S.Boolean, batchCount: S.Number, popLabel: S.Boolean })
+export const Model = S.Struct({ bubbles: S.Array(Bubble), score: S.Number, nextId: S.Number, rainbowMode: S.Boolean, popLabel: S.Boolean, selectedColor: S.String })
 export type Model = typeof Model.Type
 
 export const ClickedPop = m('BubblesClickedPop', { id: S.Number })
 export const ClickedReset = m('BubblesClickedReset')
+export const ClickedColor = m('BubblesClickedColor', { color: S.String, duration: S.Number })
 export const SoundPlayed = m('BubblesSoundPlayed')
 export const SetRainbowMode = m('BubblesSetRainbowMode', { value: S.Boolean })
-export const SetBatchCount = m('BubblesSetBatchCount', { value: S.Number })
 export const SetPopLabel = m('BubblesSetPopLabel', { value: S.Boolean })
-export const AddReleased = m('BubblesAddReleased', { duration: S.Number })
 
-export const Message = S.Union([ClickedPop, ClickedReset, SoundPlayed, SetRainbowMode, SetBatchCount, SetPopLabel, AddReleased])
+export const Message = S.Union([ClickedPop, ClickedReset, ClickedColor, SoundPlayed, SetRainbowMode, SetPopLabel])
 export type Message = typeof Message.Type
 
-export const init = (): Model => ({ bubbles: [], score: 0, nextId: 0, rainbowMode: false, batchCount: 1, popLabel: false })
+export const init = (): Model => ({ bubbles: [], score: 0, nextId: 0, rainbowMode: false, popLabel: false, selectedColor: '' })
 
 const poof = (cx: number, cy: number, w: number, color: string, popLabelText: string): void => {
   const s = w / 16
@@ -171,7 +169,6 @@ interface BubbleAnim {
   cy: number
   rectW: number
   color: string
-  hue: number
 }
 
 interface AnimState {
@@ -184,7 +181,6 @@ const tick = (state: AnimState, container: HTMLElement): void => {
   const w = window.innerWidth
   const h = window.innerHeight
   const dt = 1 / 60
-  const rainbow = container.getAttribute('data-rainbow-mode') === 'true'
 
   const els = container.querySelectorAll(':scope > .bubble') as NodeListOf<HTMLElement>
   const currentIds = new Set<number>()
@@ -208,7 +204,6 @@ const tick = (state: AnimState, container: HTMLElement): void => {
         cy: 0,
         rectW: 0,
         color: el.style.backgroundColor || '#667eea',
-        hue: Math.random() * 360,
       }
       state.bubbles.set(id, ba)
     }
@@ -249,10 +244,7 @@ const tick = (state: AnimState, container: HTMLElement): void => {
     ba.el.style.height = `${size}px`
     ba.el.style.transform = `translate3d(${ba.x - ba.r}px,${ba.y - ba.r}px,0)`
 
-    if (rainbow) {
-      ba.hue = (ba.hue + 60 * dt) % 360
-      ba.el.style.backgroundColor = `hsl(${ba.hue}, 75%, 60%)`
-    }
+
   }
 }
 
@@ -264,37 +256,43 @@ export const update = (
   M.value(message).pipe(
     M.withReturnType<readonly [Model, ReadonlyArray<Command.Command<Message>>]>(),
     M.tagsExhaustive({
-      BubblesClickedPop: (msg) => [
-        {
-          ...model,
-          bubbles: model.bubbles.map((b) =>
-            b.id === msg.id ? { ...b, popped: true } : b,
-          ),
-          score: model.score + 1,
-        },
-        muted ? [] : [pop(SoundPlayed())],
-      ],
-      BubblesAddReleased: (msg) => {
-        const size = Math.min(10 + msg.duration * 0.07, 200)
-        const newBubbles: Bubble[] = []
-        for (let i = 0; i < model.batchCount; i++) {
-          newBubbles.push({ id: model.nextId + i, color: randomColor(), popped: false, size })
-        }
+      BubblesClickedPop: (msg) => {
+        const bubble = model.bubbles.find((b) => b.id === msg.id)
+        if (!bubble || bubble.popped) return [model, []]
         return [
           {
             ...model,
-            bubbles: [...model.bubbles, ...newBubbles],
-            nextId: model.nextId + model.batchCount,
+            bubbles: model.bubbles.map((b) =>
+              b.id === msg.id ? { ...b, popped: true } : b,
+            ),
+            score: model.score + 1,
+          },
+          muted ? [] : [pop(SoundPlayed())],
+        ]
+      },
+      BubblesClickedColor: (msg) => {
+        const color = msg.color === 'rainbow' ? randomColor() : msg.color
+        const size = Math.min(10 + msg.duration * 0.07, 200)
+        const newBubble: Bubble = { id: model.nextId, color, popped: false, size }
+        return [
+          {
+            ...model,
+            bubbles: [...model.bubbles, newBubble],
+            nextId: model.nextId + 1,
+            selectedColor: msg.color,
+            rainbowMode: msg.color === 'rainbow',
           },
           muted ? [] : [chime(SoundPlayed())],
         ]
       },
-      BubblesClickedReset: () => [
-        { ...model, bubbles: [], score: 0 },
-        muted ? [] : [swoosh(SoundPlayed())],
-      ],
-      BubblesSetRainbowMode: (msg) => [{ ...model, rainbowMode: msg.value }, []],
-      BubblesSetBatchCount: (msg) => [{ ...model, batchCount: msg.value }, []],
+      BubblesClickedReset: () => {
+        if (model.bubbles.length === 0 && model.score === 0) return [model, []]
+        return [
+          { ...model, bubbles: [], score: 0 },
+          muted ? [] : [swoosh(SoundPlayed())],
+        ]
+      },
+      BubblesSetRainbowMode: (msg) => [{ ...model, rainbowMode: msg.value, selectedColor: msg.value ? 'rainbow' : model.selectedColor }, []],
       BubblesSetPopLabel: (msg) => [{ ...model, popLabel: msg.value }, []],
       BubblesSoundPlayed: () => [model, []],
     }),
@@ -311,15 +309,73 @@ export const view = (model: Model, language: string = 'en') => {
         h.p([h.Class('bubbles-score')], [tf('popped', language, model.score)]),
         h.div([h.Class('buttons')], [
           h.button(
-            [h.OnPointerDown(() => { isHolding = true; holdStartTime = performance.now(); return O.none() }), h.OnPointerUp(() => { if (!isHolding) return O.none(); isHolding = false; return O.some(AddReleased({ duration: performance.now() - holdStartTime })) }), h.OnPointerLeave(() => { if (!isHolding) return O.none(); isHolding = false; return O.some(AddReleased({ duration: performance.now() - holdStartTime })) }), h.Class('btn btn-primary')],
-            [t('addBubble', language)],
+            [h.OnClick(ClickedReset()), h.Class('btn btn-secondary')],
+            [t('clear', language)],
           ),
-          model.score > 0 || model.bubbles.length > 0
-            ? h.button(
-              [h.OnClick(ClickedReset()), h.Class('btn btn-secondary')],
-              [t('clear', language)],
-            )
-            : null,
+        ]),
+        h.div([h.Class('color-selector'), h.Key('color-selector'), h.OnMount({
+          name: 'colorSelector',
+          f: (element) => Stream.callback<Message>(queue =>
+            Effect.gen(function* () {
+              yield* Effect.acquireRelease(
+                Effect.sync(() => {
+                  const el = element as HTMLElement
+                  const colorMap = new Map<number, { startTime: number; color: string }>()
+
+                  const onDown = (e: PointerEvent): void => {
+                    const target = e.target as HTMLElement
+                    const colorBtn = target.closest('.color-btn') as HTMLElement | null
+                    if (!colorBtn) return
+                    const color = colorBtn.getAttribute('data-color') ?? ''
+                    if (!color) return
+                    el.setPointerCapture(e.pointerId)
+                    colorMap.set(e.pointerId, { startTime: performance.now(), color })
+                  }
+
+                  const onUp = (e: PointerEvent): void => {
+                    const entry = colorMap.get(e.pointerId)
+                    if (!entry) return
+                    colorMap.delete(e.pointerId)
+                    el.releasePointerCapture(e.pointerId)
+                    Queue.offerUnsafe(queue, ClickedColor({ color: entry.color, duration: performance.now() - entry.startTime }))
+                  }
+
+                  el.addEventListener('pointerdown', onDown)
+                  el.addEventListener('pointerup', onUp)
+                  el.addEventListener('pointerleave', onUp)
+                  el.addEventListener('pointercancel', onUp)
+
+                  return { el, onDown, onUp }
+                }),
+                ({ el, onDown, onUp }) => Effect.sync(() => {
+                  el.removeEventListener('pointerdown', onDown)
+                  el.removeEventListener('pointerup', onUp)
+                  el.removeEventListener('pointerleave', onUp)
+                  el.removeEventListener('pointercancel', onUp)
+                }),
+              )
+              return yield* Effect.never
+            }),
+          ),
+        })], [
+          ...COLORS.map((c) =>
+            h.button(
+              [
+                h.Class(c === model.selectedColor ? 'color-btn color-btn--active' : 'color-btn'),
+                h.Style({ backgroundColor: c }),
+                h.Attribute('data-color', c),
+                h.Key(c),
+              ],
+              [],
+            ),
+          ),
+          h.button(
+            [
+              h.Class(model.selectedColor === 'rainbow' ? 'color-btn color-btn--active color-btn--rainbow' : 'color-btn color-btn--rainbow'),
+              h.Attribute('data-color', 'rainbow'),
+            ],
+            ['🌈'],
+          ),
         ]),
         h.div([h.Class('display-area')], [
           model.bubbles.length === 0
@@ -335,7 +391,6 @@ export const view = (model: Model, language: string = 'en') => {
         h.div([
           h.Class('bubbles-container'),
           h.Key('bubbles-container'),
-          h.Attribute('data-rainbow-mode', model.rainbowMode.toString()),
           h.Attribute('data-pop-label', model.popLabel ? t('popText', language) : ''),
           h.OnMount({
             name: 'bubblesAnim',
@@ -349,6 +404,12 @@ export const view = (model: Model, language: string = 'en') => {
                       running: true,
                       id: 0,
                     }
+
+                    const onPointerDown = (): void => { isPointerDown = true }
+                    const onPointerUp = (): void => { isPointerDown = false }
+                    document.addEventListener('pointerdown', onPointerDown)
+                    document.addEventListener('pointerup', onPointerUp)
+                    document.addEventListener('pointerleave', onPointerUp)
 
                     const observer = new MutationObserver((mutations) => {
                       for (const mutation of mutations) {
@@ -374,12 +435,15 @@ export const view = (model: Model, language: string = 'en') => {
                       state.id = requestAnimationFrame(loop)
                     }
                     state.id = requestAnimationFrame(loop)
-                    return { state, observer }
+                    return { state, observer, onPointerDown, onPointerUp }
                   }),
-                  ({ state, observer }) => Effect.sync(() => {
+                  ({ state, observer, onPointerDown, onPointerUp }) => Effect.sync(() => {
                     state.running = false
                     cancelAnimationFrame(state.id)
                     observer.disconnect()
+                    document.removeEventListener('pointerdown', onPointerDown)
+                    document.removeEventListener('pointerup', onPointerUp)
+                    document.removeEventListener('pointerleave', onPointerUp)
                   }),
                 )
                 return yield* Effect.never
@@ -390,7 +454,8 @@ export const view = (model: Model, language: string = 'en') => {
           ...model.bubbles.filter((b) => !b.popped).map((b) =>
             h.div(
               [
-                  h.OnClick(ClickedPop({ id: b.id })),
+                  h.OnPointerDown(() => O.some(ClickedPop({ id: b.id }))),
+                  h.OnPointerMove(() => isPointerDown ? O.some(ClickedPop({ id: b.id })) : O.none()),
                   h.Class('bubble'),
                   h.Style({ backgroundColor: b.color }),
                   h.Attribute('data-id', b.id.toString()),

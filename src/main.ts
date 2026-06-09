@@ -34,16 +34,14 @@ interface PersistedSettings {
   findItAnyWins: boolean
   findItVoiceMode: boolean
   findItPairsMode: boolean
-  bubblesRainbowMode: boolean
-  bubblesBatchCount: number
   bubblesPopLabel: boolean
+  bubblesSelectedColor: string
   greetingVoiceEffect: string
 }
 
 const DarkModeValues = ['auto', 'light', 'dark'] as const
 type DarkMode = typeof DarkModeValues[number]
 const DisplayModeValues = ['number', 'word', 'both'] as const
-const BatchCountValues = [1, 3, 5] as const
 
 const loadSettings = (): Partial<PersistedSettings> => {
   try {
@@ -71,9 +69,8 @@ const buildSettingsData = (model: Model): PersistedSettings => ({
   findItAnyWins: model.findIt.anyWins,
   findItVoiceMode: model.findIt.voiceMode,
   findItPairsMode: model.findIt.pairsMode,
-  bubblesRainbowMode: model.bubbles.rainbowMode,
-  bubblesBatchCount: model.bubbles.batchCount,
   bubblesPopLabel: model.bubbles.popLabel,
+  bubblesSelectedColor: model.bubbles.selectedColor,
   greetingVoiceEffect: model.greeting.voiceEffect,
 })
 
@@ -160,9 +157,8 @@ export const Message = S.Union([
   FindIt.SoundPlayed,
   Bubbles.SoundPlayed,
   Bubbles.SetRainbowMode,
-  Bubbles.SetBatchCount,
   Bubbles.SetPopLabel,
-  Bubbles.AddReleased,
+  Bubbles.ClickedColor,
   MusicBox.Play,
   MusicBox.Stop,
   MusicBox.SetSong,
@@ -186,7 +182,7 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
   if (voiceMode && !saved.findItAnyWins && !saved.muted) {
     cmds.push(speak(tf('whereIs', saved.language ?? 'en', FindIt.emojiName(findItInit.target, saved.language ?? 'en')), FindIt.SoundPlayed(), { lang: saved.language ?? 'en' }))
   }
-  const batchCount = BatchCountValues.includes(saved.bubblesBatchCount as typeof BatchCountValues[number]) ? saved.bubblesBatchCount as 1 | 3 | 5 : 1
+  const bubblesSelectedColor = saved.bubblesSelectedColor ?? ''
   return [
     {
       page: PageLanding(),
@@ -205,8 +201,8 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
       findIt: { ...findItInit, anyWins: saved.findItAnyWins ?? false, voiceMode, pairsMode },
       bubbles: {
         ...Bubbles.init(),
-        rainbowMode: saved.bubblesRainbowMode ?? false,
-        batchCount,
+        selectedColor: bubblesSelectedColor,
+        rainbowMode: bubblesSelectedColor === 'rainbow',
         popLabel: saved.bubblesPopLabel ?? false,
       },
     },
@@ -321,10 +317,9 @@ const _update = (
       CounterSoundPlayed: (msg) => updateCounter(model, msg),
       FindItSoundPlayed: (msg) => updateFindIt(model, msg),
       BubblesSoundPlayed: (msg) => updateBubbles(model, msg),
+      BubblesClickedColor: (msg) => updateBubbles(model, msg),
       BubblesSetRainbowMode: (msg) => updateBubbles(model, msg),
-      BubblesSetBatchCount: (msg) => updateBubbles(model, msg),
       BubblesSetPopLabel: (msg) => updateBubbles(model, msg),
-      BubblesAddReleased: (msg) => updateBubbles(model, msg),
       MusicBoxPlay: (msg) => updateMusicBox(model, msg),
       MusicBoxStop: (msg) => updateMusicBox(model, msg),
       MusicBoxSetSong: (msg) => updateMusicBox(model, msg),
@@ -340,7 +335,7 @@ const SETTINGS_TAGS = new Set([
   'ClickedDarkMode', 'SetLanguage', 'ToggleMute',
   'CounterSetRate', 'CounterSetPitch', 'CounterSetDisplayMode',
   'FindItSetAnyWins', 'FindItSetVoiceMode', 'FindItSetPairsMode',
-  'BubblesSetRainbowMode', 'BubblesSetBatchCount', 'BubblesSetPopLabel',
+  'BubblesSetPopLabel',
   'GreetingSetVoiceEffect',
 ])
 
@@ -560,27 +555,6 @@ export const view = (model: Model): Document => {
             ? h.div([h.Class('setting-section')], [
               h.h3([], [t('bubblesTitle', model.language)]),
               h.div([h.Class('lang-buttons')], [
-                h.button(
-                  [h.Class(!model.bubbles.rainbowMode ? 'btn btn-primary' : 'btn btn-secondary'), h.OnClick(Bubbles.SetRainbowMode({ value: false }))],
-                  [t('normal', model.language)],
-                ),
-                h.button(
-                  [h.Class(model.bubbles.rainbowMode ? 'btn btn-primary' : 'btn btn-secondary'), h.OnClick(Bubbles.SetRainbowMode({ value: true }))],
-                  [t('rainbowMode', model.language)],
-                ),
-              ]),
-              h.div([h.Class('lang-buttons'), h.Style({ marginTop: '0.5rem' })], [
-                ...[1, 3, 5].map((val) =>
-                  h.button(
-                    [
-                      h.Class(val === model.bubbles.batchCount ? 'btn btn-primary' : 'btn btn-secondary'),
-                      h.OnClick(Bubbles.SetBatchCount({ value: val })),
-                    ],
-                    [val.toString()],
-                  ),
-                ),
-              ]),
-              h.div([h.Class('lang-buttons'), h.Style({ marginTop: '0.5rem' })], [
                 h.button(
                   [h.Class(!model.bubbles.popLabel ? 'btn btn-primary' : 'btn btn-secondary'), h.OnClick(Bubbles.SetPopLabel({ value: false }))],
                   [t('normal', model.language)],
