@@ -91,14 +91,14 @@ describe('MusicBox', () => {
   describe('keyboard structure', () => {
     it('top keyboard starts at C4 and ends at G5', () => {
       const keys = MusicBox.PianoKeys.TOP.keys
-      expect(keys[0].pitch).toBe('C4')
-      expect(keys[keys.length - 1].pitch).toBe('G5')
+      expect(keys[0]!.pitch).toBe('C4')
+      expect(keys[keys.length - 1]!.pitch).toBe('G5')
     })
 
     it('bottom keyboard starts at C2 and ends at G3', () => {
       const keys = MusicBox.PianoKeys.BOTTOM.keys
-      expect(keys[0].pitch).toBe('C2')
-      expect(keys[keys.length - 1].pitch).toBe('G3')
+      expect(keys[0]!.pitch).toBe('C2')
+      expect(keys[keys.length - 1]!.pitch).toBe('G3')
     })
 
     it('top keyboard white count equals keys minus blacks', () => {
