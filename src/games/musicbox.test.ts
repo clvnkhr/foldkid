@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { Scene, Story } from 'foldkit/test'
 import * as MusicBox from './musicbox'
 
-const resolvePianoTop = [{ name: 'piano-top' as const }, MusicBox.NoteOn({ pitch: 'C4' })]
-const resolvePianoBot = [{ name: 'piano-bot' as const }, MusicBox.NoteOn({ pitch: 'C2' })]
+const resolvePianoTop = [{ name: 'piano-top' as const }, MusicBox.NoteOn({ pitch: 'C4' })] as const
+const resolvePianoBot = [{ name: 'piano-bot' as const }, MusicBox.NoteOn({ pitch: 'C2' })] as const
 const resolveMount = [resolvePianoTop, resolvePianoBot]
 
 describe('MusicBox', () => {

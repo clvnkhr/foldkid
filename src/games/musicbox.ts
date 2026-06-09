@@ -321,22 +321,6 @@ export const SONGS: Song[] = [
 
 export const INSTRUMENTS: Instrument[] = [
   {
-    key: 'piano',
-    type: 'sine',
-    gain: 0.12,
-    attack: 0.005,
-    decay: 0.25,
-    sustain: 0.25,
-    release: 0.4,
-    harmonics: [
-      { ratio: 1, gain: 1 },
-      { ratio: 2, gain: 0.5 },
-      { ratio: 3, gain: 0.2 },
-      { ratio: 4, gain: 0.08 },
-      { ratio: 5, gain: 0.03 },
-    ],
-  },
-  {
     key: 'bell',
     type: 'sine',
     gain: 0.22,
@@ -364,6 +348,23 @@ export const INSTRUMENTS: Instrument[] = [
       { ratio: 2, gain: 0.2 },
     ],
     detune: 4,
+  },
+  {
+    key: 'brass',
+    type: 'sawtooth',
+    gain: 0.1,
+    attack: 0.02,
+    decay: 0.2,
+    sustain: 0.6,
+    release: 0.35,
+    harmonics: [
+      { ratio: 1, gain: 1 },
+      { ratio: 2, gain: 0.5 },
+      { ratio: 3, gain: 0.25 },
+    ],
+    filterType: 'lowpass',
+    filterFreq: 2000,
+    filterQ: 0.5,
   },
   {
     key: 'organ',
@@ -394,19 +395,6 @@ export const INSTRUMENTS: Instrument[] = [
       { ratio: 3, gain: 0.15 },
     ],
   },
-  {
-    key: 'vibes',
-    type: 'triangle',
-    gain: 0.12,
-    attack: 0.025,
-    decay: 0.7,
-    sustain: 0.4,
-    release: 1.0,
-    harmonics: [
-      { ratio: 1, gain: 1 },
-      { ratio: 2, gain: 0.15 },
-    ],
-  },
 ]
 
 const SONG_TKEYS: Record<string, TranslationKey> = {
@@ -419,12 +407,11 @@ const SONG_TKEYS: Record<string, TranslationKey> = {
 }
 
 const INST_TKEYS: Record<string, TranslationKey> = {
-  piano: 'musicBoxPiano',
   bell: 'musicBoxBell',
   flute: 'musicBoxFlute',
+  brass: 'musicBoxBrass',
   organ: 'musicBoxOrgan',
   guitar: 'musicBoxGuitar',
-  vibes: 'musicBoxVibes',
 }
 
 let sharedCtx: AudioContext | undefined
