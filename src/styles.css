@@ -902,7 +902,7 @@ body {
 .musicbox-dropdown-label {
   font-size: 0.8rem;
   font-weight: 600;
-  color: var(--text-color);
+  color: var(--text-secondary);
 }
 
 .musicbox-select {
@@ -910,7 +910,7 @@ body {
   border-radius: 0.5rem;
   border: 1px solid var(--border-color, rgba(0,0,0,0.15));
   background: var(--card-bg);
-  color: var(--text-color);
+  color: var(--text-primary);
   font-size: 0.9rem;
   cursor: pointer;
   width: 100%;
