@@ -15,14 +15,26 @@ interface Song {
   notes: Note[]
 }
 
+interface HarmonicDef {
+  ratio: number
+  gain: number
+}
+
 interface Instrument {
   key: string
   type: OscillatorType
   gain: number
+  attack: number
+  decay: number
+  sustain: number
+  release: number
+  harmonics: HarmonicDef[]
   filterType?: BiquadFilterType
   filterFreq?: number
+  filterQ?: number
   detune?: number
-  harmonics?: number[]
+  tremoloFreq?: number
+  tremoloDepth?: number
 }
 
 interface KeyDef {
@@ -86,7 +98,11 @@ const BLACK_KEYS_BOTTOM = PIANO_BOTTOM.keys.filter(k => k.type === 'black')
 
 const TOP_WHITE_COUNT = WHITE_KEYS_TOP.length
 
-const activeNotes = new Map<string, Array<{ osc: OscillatorNode; gain: GainNode }>>()
+const activeNotes = new Map<string, {
+  nodes: Array<{ osc: OscillatorNode; gain: GainNode }>
+  masterGain: GainNode
+  release: number
+}>()
 let selectedInstrumentIndex = 0
 let keyboardBound = false
 
@@ -146,6 +162,16 @@ const bindKeyboard = (): void => {
   keyboardBound = true
   document.addEventListener('keydown', handleKeyDown)
   document.addEventListener('keyup', handleKeyUp)
+  // Safari: AudioContext must be created/resumed from a user gesture.
+  // Foldkit's message dispatch may run async, so we eagerly init the
+  // AudioContext on the first raw DOM interaction before any message.
+  const firstTouch = () => {
+    getCtx()
+    document.removeEventListener('pointerdown', firstTouch)
+    document.removeEventListener('keydown', firstTouch)
+  }
+  document.addEventListener('pointerdown', firstTouch)
+  document.addEventListener('keydown', firstTouch)
 }
 
 
@@ -176,7 +202,7 @@ const unhighlightAllKeys = (): void => {
   })
 }
 
-const SONGS: Song[] = [
+export const SONGS: Song[] = [
   {
     key: 'twinkle',
     emoji: '⭐',
@@ -293,13 +319,94 @@ const SONGS: Song[] = [
   },
 ]
 
-const INSTRUMENTS: Instrument[] = [
-  { key: 'piano', type: 'sine', gain: 0.12, harmonics: [1, 0.5, 0.25] },
-  { key: 'bell', type: 'sine', gain: 0.1, harmonics: [1, 0.3, 0.15], filterType: 'highpass', filterFreq: 2000 },
-  { key: 'flute', type: 'sine', gain: 0.1, harmonics: [1, 0.3] },
-  { key: 'organ', type: 'sawtooth', gain: 0.06, harmonics: [1, 0.4, 0.2] },
-  { key: 'guitar', type: 'triangle', gain: 0.1, harmonics: [1, 0.4] },
-  { key: 'vibes', type: 'sine', gain: 0.08, harmonics: [1, 0.2], detune: 5 },
+export const INSTRUMENTS: Instrument[] = [
+  {
+    key: 'piano',
+    type: 'sine',
+    gain: 0.12,
+    attack: 0.005,
+    decay: 0.25,
+    sustain: 0.25,
+    release: 0.4,
+    harmonics: [
+      { ratio: 1, gain: 1 },
+      { ratio: 2, gain: 0.5 },
+      { ratio: 3, gain: 0.2 },
+      { ratio: 4, gain: 0.08 },
+      { ratio: 5, gain: 0.03 },
+    ],
+  },
+  {
+    key: 'bell',
+    type: 'sine',
+    gain: 0.22,
+    attack: 0.008,
+    decay: 0.4,
+    sustain: 0.55,
+    release: 1.0,
+    harmonics: [
+      { ratio: 1, gain: 1 },
+      { ratio: 2, gain: 0.6 },
+      { ratio: 3, gain: 0.35 },
+      { ratio: 4, gain: 0.15 },
+    ],
+  },
+  {
+    key: 'flute',
+    type: 'sine',
+    gain: 0.1,
+    attack: 0.08,
+    decay: 0.05,
+    sustain: 0.95,
+    release: 0.15,
+    harmonics: [
+      { ratio: 1, gain: 1 },
+      { ratio: 2, gain: 0.2 },
+    ],
+    detune: 4,
+  },
+  {
+    key: 'organ',
+    type: 'sawtooth',
+    gain: 0.05,
+    attack: 0.01,
+    decay: 0.02,
+    sustain: 1.0,
+    release: 0.05,
+    harmonics: [
+      { ratio: 1, gain: 1 },
+      { ratio: 2, gain: 0.4 },
+      { ratio: 3, gain: 0.2 },
+      { ratio: 4, gain: 0.1 },
+    ],
+  },
+  {
+    key: 'guitar',
+    type: 'triangle',
+    gain: 0.1,
+    attack: 0.002,
+    decay: 0.3,
+    sustain: 0.1,
+    release: 0.2,
+    harmonics: [
+      { ratio: 1, gain: 1 },
+      { ratio: 2, gain: 0.4 },
+      { ratio: 3, gain: 0.15 },
+    ],
+  },
+  {
+    key: 'vibes',
+    type: 'triangle',
+    gain: 0.12,
+    attack: 0.025,
+    decay: 0.7,
+    sustain: 0.4,
+    release: 1.0,
+    harmonics: [
+      { ratio: 1, gain: 1 },
+      { ratio: 2, gain: 0.15 },
+    ],
+  },
 ]
 
 const SONG_TKEYS: Record<string, TranslationKey> = {
@@ -332,41 +439,74 @@ const getCtx = (): AudioContext | undefined => {
   return sharedCtx
 }
 
+const SAFETY_MARGIN = 0.03
+
 const playNoteAudio = (freq: number, dur: number, inst: Instrument): void => {
   const ctx = getCtx()
   if (!ctx) return
-  const now = ctx.currentTime
+  const now = ctx.currentTime + SAFETY_MARGIN
+  const totalTime = Math.max(dur * 0.45, inst.attack + inst.release + 0.02)
+  const relStart = now + totalTime - inst.release
+
   const masterGain = ctx.createGain()
+
   masterGain.gain.setValueAtTime(0, now)
-  masterGain.gain.linearRampToValueAtTime(inst.gain, now + 0.02)
-  masterGain.gain.exponentialRampToValueAtTime(0.001, now + dur * 0.45)
+  masterGain.gain.linearRampToValueAtTime(inst.gain, now + inst.attack)
+  const decEnd = now + inst.attack + inst.decay
+  masterGain.gain.linearRampToValueAtTime(inst.gain * inst.sustain, decEnd)
+  if (relStart > decEnd) {
+    masterGain.gain.setValueAtTime(inst.gain * inst.sustain, relStart)
+  }
+  const end = now + totalTime
+  masterGain.gain.linearRampToValueAtTime(0, end)
 
   if (inst.filterType && inst.filterFreq) {
     const filter = ctx.createBiquadFilter()
     filter.type = inst.filterType
     filter.frequency.value = inst.filterFreq
+    filter.Q.value = inst.filterQ ?? 1
     masterGain.connect(filter)
     filter.connect(ctx.destination)
   } else {
     masterGain.connect(ctx.destination)
   }
 
-  const harms = inst.harmonics ?? [1]
-  for (const h of harms) {
+  const nodes: Array<{ osc: OscillatorNode; gain: GainNode }> = []
+  for (const h of inst.harmonics) {
     const osc = ctx.createOscillator()
     osc.type = inst.type
-    osc.frequency.value = freq * h
+    osc.frequency.value = freq * h.ratio
     if (inst.detune) osc.detune.value = inst.detune
     const hGain = ctx.createGain()
-    hGain.gain.value = h === 1 ? 1 : 0.5
+    hGain.gain.value = h.gain
     osc.connect(hGain)
     hGain.connect(masterGain)
     osc.start(now)
-    osc.stop(now + dur * 0.45)
-    osc.onended = () => { osc.disconnect(); hGain.disconnect() }
+    osc.stop(end + 0.01)
+    nodes.push({ osc, gain: hGain })
   }
 
-  masterGain.gain.setValueAtTime(0, now + dur * 0.45)
+  if (inst.tremoloFreq && inst.tremoloDepth) {
+    const lfo = ctx.createOscillator()
+    lfo.type = 'sine'
+    lfo.frequency.value = inst.tremoloFreq
+    const lfoGain = ctx.createGain()
+    lfoGain.gain.value = inst.tremoloDepth
+    lfo.connect(lfoGain)
+    lfoGain.connect(masterGain.gain)
+    lfo.start()
+    lfo.stop(end + 0.01)
+    nodes.push({ osc: lfo, gain: lfoGain })
+  }
+
+  setTimeout(() => {
+    for (const { osc, gain } of nodes) {
+      try { osc.stop() } catch { /* already stopped */ }
+      osc.disconnect()
+      gain.disconnect()
+    }
+    masterGain.disconnect()
+  }, totalTime * 1000 + 100)
 }
 
 const playSongCmd = (
@@ -397,50 +537,76 @@ const startNote = (pitch: string, inst: Instrument): void => {
   if (!freq || activeNotes.has(pitch)) return
   const ctx = getCtx()
   if (!ctx) return
-  const now = ctx.currentTime
+  const now = ctx.currentTime + SAFETY_MARGIN
   const masterGain = ctx.createGain()
+
   masterGain.gain.setValueAtTime(0, now)
-  masterGain.gain.linearRampToValueAtTime(inst.gain, now + 0.02)
+  masterGain.gain.linearRampToValueAtTime(inst.gain, now + inst.attack)
+  const decEnd = now + inst.attack + inst.decay
+  masterGain.gain.linearRampToValueAtTime(inst.gain * inst.sustain, decEnd)
 
   if (inst.filterType && inst.filterFreq) {
     const filter = ctx.createBiquadFilter()
     filter.type = inst.filterType
     filter.frequency.value = inst.filterFreq
+    filter.Q.value = inst.filterQ ?? 1
     masterGain.connect(filter)
     filter.connect(ctx.destination)
   } else {
     masterGain.connect(ctx.destination)
   }
 
-  const harms = inst.harmonics ?? [1]
   const nodes: Array<{ osc: OscillatorNode; gain: GainNode }> = []
-  for (const h of harms) {
+  for (const h of inst.harmonics) {
     const osc = ctx.createOscillator()
     osc.type = inst.type
-    osc.frequency.value = freq * h
+    osc.frequency.value = freq * h.ratio
     if (inst.detune) osc.detune.value = inst.detune
     const hGain = ctx.createGain()
-    hGain.gain.value = h === 1 ? 1 : 0.5
+    hGain.gain.value = h.gain
     osc.connect(hGain)
     hGain.connect(masterGain)
     osc.start(now)
     nodes.push({ osc, gain: hGain })
   }
 
-  activeNotes.set(pitch, nodes)
+  if (inst.tremoloFreq && inst.tremoloDepth) {
+    const lfo = ctx.createOscillator()
+    lfo.type = 'sine'
+    lfo.frequency.value = inst.tremoloFreq
+    const lfoGain = ctx.createGain()
+    lfoGain.gain.value = inst.tremoloDepth
+    lfo.connect(lfoGain)
+    lfoGain.connect(masterGain.gain)
+    lfo.start()
+    nodes.push({ osc: lfo, gain: lfoGain })
+  }
+
+  activeNotes.set(pitch, { nodes, masterGain, release: inst.release })
   highlightKey(pitch)
 }
 
 const stopNote = (pitch: string): void => {
-  const nodes = activeNotes.get(pitch)
-  if (!nodes) return
-  for (const { osc, gain } of nodes) {
-    try { osc.stop() } catch { /* already stopped */ }
-    osc.disconnect()
-    gain.disconnect()
-  }
+  const entry = activeNotes.get(pitch)
+  if (!entry) return
+  const { nodes, masterGain, release } = entry
   activeNotes.delete(pitch)
   unhighlightKey(pitch)
+  const ctx = getCtx()
+  const now = (ctx?.currentTime ?? performance.now() / 1000) + SAFETY_MARGIN
+
+  masterGain.gain.cancelScheduledValues(now)
+  masterGain.gain.setValueAtTime(masterGain.gain.value, now)
+  masterGain.gain.linearRampToValueAtTime(0, now + release)
+
+  setTimeout(() => {
+    for (const { osc, gain } of nodes) {
+      try { osc.stop() } catch { /* already stopped */ }
+      osc.disconnect()
+      gain.disconnect()
+    }
+    masterGain.disconnect()
+  }, release * 1000 + 50)
 }
 
 const stopAllNotes = (): void => {
@@ -479,14 +645,17 @@ export const update = (
   M.value(message).pipe(
     M.withReturnType<readonly [Model, ReadonlyArray<Command.Command<Message>>]>(),
     M.tagsExhaustive({
-      MusicBoxPlay: () => [
-        { ...model, isPlaying: true },
-        [playSongCmd(
-          SONGS[model.selectedSong]!,
-          INSTRUMENTS[model.selectedInstrument]!,
-          SongEnded(),
-        )],
-      ],
+      MusicBoxPlay: () => {
+        getCtx() // Safari: AudioContext must be created within a user gesture
+        return [
+          { ...model, isPlaying: true },
+          [playSongCmd(
+            SONGS[model.selectedSong]!,
+            INSTRUMENTS[model.selectedInstrument]!,
+            SongEnded(),
+          )],
+        ]
+      },
       MusicBoxStop: () => {
         stopFlag = true
         stopAllNotes()
@@ -500,6 +669,7 @@ export const update = (
 },
       MusicBoxSongEnded: () => [{ ...model, isPlaying: false }, []],
       MusicBoxNoteOn: (msg) => {
+        getCtx() // Safari: ensure AudioContext from user gesture
         startNote(msg.pitch, INSTRUMENTS[model.selectedInstrument]!)
         return [model, []]
       },
