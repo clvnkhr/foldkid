@@ -234,8 +234,16 @@ const highlightLyricLine = (index: number): void => {
     })
   }
   currentLyricLine = index
-  document.querySelectorAll(`[data-lyric-index="${index}"]`).forEach(el => {
+  const els = document.querySelectorAll(`[data-lyric-index="${index}"]`)
+  els.forEach(el => {
     el.classList.add('lyrics-line--active')
+    const container = el.closest('.lyrics-box')
+    if (container && el instanceof HTMLElement && container instanceof HTMLElement) {
+      const containerRect = container.getBoundingClientRect()
+      const elRect = el.getBoundingClientRect()
+      const isVisible = elRect.top >= containerRect.top && elRect.bottom <= containerRect.bottom
+      if (!isVisible) container.scrollTop = el.offsetTop - container.offsetTop
+    }
   })
 }
 
@@ -431,25 +439,41 @@ export const SONGS: Song[] = [
     key: 'oldMac',
     emoji: '🐷',
     lyrics: [
-      'Old MacDonald had a farm, E-I-E-I-O,',
-      'And on his farm he had a pig, E-I-E-I-O,',
+      'Old MacDonald had a farm,',
+      'E-I-E-I-O,',
+      'And on his farm he had a pig,',
+      'E-I-E-I-O,',
       'With an oink oink here and an oink oink there,',
       'Here an oink, there an oink, everywhere an oink oink.',
+      'Old MacDonald had a farm,',
+      'E-I-E-I-O,',
       '',
-      'Old MacDonald had a farm, E-I-E-I-O,',
-      'And on his farm he had a cow, E-I-E-I-O,',
+      'Old MacDonald had a farm,',
+      'E-I-E-I-O,',
+      'And on his farm he had a cow,',
+      'E-I-E-I-O,',
       'With a moo moo here and a moo moo there,',
       'Here a moo, there a moo, everywhere a moo moo.',
+      'Old MacDonald had a farm,',
+      'E-I-E-I-O,',
       '',
-      'Old MacDonald had a farm, E-I-E-I-O,',
-      'And on his farm he had a duck, E-I-E-I-O,',
+      'Old MacDonald had a farm,',
+      'E-I-E-I-O,',
+      'And on his farm he had a duck,',
+      'E-I-E-I-O,',
       'With a quack quack here and a quack quack there,',
       'Here a quack, there a quack, everywhere a quack quack.',
+      'Old MacDonald had a farm,',
+      'E-I-E-I-O,',
       '',
-      'Old MacDonald had a farm, E-I-E-I-O,',
-      'And on his farm he had a horse, E-I-E-I-O,',
+      'Old MacDonald had a farm,',
+      'E-I-E-I-O,',
+      'And on his farm he had a horse,',
+      'E-I-E-I-O,',
       'With a neigh neigh here and a neigh neigh there,',
       'Here a neigh, there a neigh, everywhere a neigh neigh.',
+      'Old MacDonald had a farm,',
+      'E-I-E-I-O,',
     ],
     notes: repeat([
       { pitch: 'G4', dur: 1 }, { pitch: 'G4', dur: 1 },
@@ -458,11 +482,34 @@ export const SONGS: Song[] = [
       { pitch: 'D4', dur: 2 },
       { pitch: 'B4', dur: 1 }, { pitch: 'B4', dur: 1 },
       { pitch: 'A4', dur: 1 }, { pitch: 'A4', dur: 1 },
-      { pitch: 'G4', dur: 3 }, { pitch: 'D4', dur: 1 }, 
-      { pitch: 'G4', dur: 1 }, { pitch: 'G4', dur: 1 }, 
-      { pitch: 'G4', dur: 1 },
-      { pitch: 'D4', dur: 1 }, { pitch: 'A4', dur: 1 },
-      { pitch: 'G4', dur: 2 },
+      { pitch: 'G4', dur: 3 }, { pitch: 'D4', dur: 1 },
+      { pitch: 'G4', dur: 1 }, { pitch: 'G4', dur: 1 },
+      { pitch: 'G4', dur: 1 }, { pitch: 'D4', dur: 1 },
+      { pitch: 'E4', dur: 1 }, { pitch: 'E4', dur: 1 },
+      { pitch: 'D4', dur: 2 },
+      { pitch: 'B4', dur: 1 }, { pitch: 'B4', dur: 1 },
+      { pitch: 'A4', dur: 1 }, { pitch: 'A4', dur: 1 },
+      { pitch: 'G4', dur: 3 }, { pitch: 'D4', dur: 0.5 }, { pitch: 'D4', dur: 0.5 },
+      { pitch: 'G4', dur: 1 }, { pitch: 'G4', dur: 1 },
+      { pitch: 'G4', dur: 1 }, { pitch: 'D4', dur: 0.5 }, { pitch: 'D4', dur: 0.5 },
+      { pitch: 'G4', dur: 1 }, { pitch: 'G4', dur: 1 },
+      { pitch: 'G4', dur: 1 }, { pitch: '', dur: 1 },
+      { pitch: 'G4', dur: 0.5 }, { pitch: 'G4', dur: 0.5 },
+      { pitch: 'G4', dur: 0.5 }, { pitch: '', dur: 0.5 },
+      { pitch: 'G4', dur: 0.5 }, { pitch: 'G4', dur: 0.5 },
+      { pitch: 'G4', dur: 0.5 }, { pitch: '', dur: 0.5 },
+
+      { pitch: 'G4', dur: 0.5 }, { pitch: 'G4', dur: 0.5 },
+      { pitch: 'G4', dur: 0.5 }, { pitch: 'G4', dur: 0.5 },
+
+      { pitch: 'G4', dur: 1 }, { pitch: 'G4', dur: 1 },
+      { pitch: 'G4', dur: 1 }, { pitch: 'G4', dur: 1 },
+      { pitch: 'G4', dur: 1 }, { pitch: 'D4', dur: 1 },
+      { pitch: 'E4', dur: 1 }, { pitch: 'E4', dur: 1 },
+      { pitch: 'D4', dur: 2 },
+      { pitch: 'B4', dur: 1 }, { pitch: 'B4', dur: 1 },
+      { pitch: 'A4', dur: 1 }, { pitch: 'A4', dur: 1 },
+      { pitch: 'G4', dur: 4 },
     ], 4),
   },
   {
@@ -749,9 +796,11 @@ const playSongCmd = (
     for (let i = 0; i < song.notes.length; i++) {
       if (stopFlag) break
       const note = song.notes[i]!
-      const freq = FREQUENCIES[note.pitch]
-      if (freq) playNoteAudio(freq, note.dur, inst)
-      highlightKey(note.pitch)
+      if (note.pitch) {
+        const freq = FREQUENCIES[note.pitch]
+        if (freq) playNoteAudio(freq, note.dur, inst)
+        highlightKey(note.pitch)
+      }
       const rawIdx = Math.min(Math.floor(cumDur / beatsPerLine), nonEmptyIndices.length - 1)
       highlightLyricLine(nonEmptyIndices[rawIdx]!)
       cumDur += note.dur
@@ -860,6 +909,7 @@ export const Model = S.Struct({
   octaveOffset: S.Number,
   bottomShift: S.Number,
   tempo: S.Number,
+  lyricsExpanded: S.Boolean,
 })
 export type Model = typeof Model.Type
 
@@ -878,13 +928,14 @@ export const ToggleBottomKeyboard = m('MusicBoxToggleBottomKeyboard')
 export const ShiftBottom = m('MusicBoxShiftBottom', { delta: S.Number })
 export const TempoUp = m('MusicBoxTempoUp')
 export const TempoDown = m('MusicBoxTempoDown')
+export const ToggleLyrics = m('MusicBoxToggleLyrics')
 
-export const Message = S.Union([Play, Stop, SetSong, SetInstrument, SongEnded, NoteOn, NoteOff, AddKey, RemoveKey, OctaveUp, OctaveDown, ToggleBottomKeyboard, ShiftBottom, TempoUp, TempoDown])
+export const Message = S.Union([Play, Stop, SetSong, SetInstrument, SongEnded, NoteOn, NoteOff, AddKey, RemoveKey, OctaveUp, OctaveDown, ToggleBottomKeyboard, ShiftBottom, TempoUp, TempoDown, ToggleLyrics])
 export type Message = typeof Message.Type
 
 export const init = (): Model => {
   bindKeyboard()
-  return { selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 8, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0, tempo: 1 }
+  return { selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 8, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0, tempo: 1, lyricsExpanded: false }
 }
 
 export const update = (
@@ -967,6 +1018,9 @@ export const update = (
         if (next.tempo !== model.tempo) playbackTempo = next.tempo
         return [next, []]
       },
+      MusicBoxToggleLyrics: () => {
+        return [{ ...model, lyricsExpanded: !model.lyricsExpanded }, []]
+      },
     }),
   )
 
@@ -1024,13 +1078,14 @@ export const view = (model: Model, language: string = 'en') => {
             ]),
           ]),
 
-          h.div([h.Class('lyrics-box')], [
-            ...SONGS[model.selectedSong]!.lyrics.map((line, idx) =>
+          h.div(
+            [h.Class('lyrics-box' + (model.lyricsExpanded ? '' : ' lyrics-box--compact')), h.OnClick(ToggleLyrics())],
+            SONGS[model.selectedSong]!.lyrics.map((line, idx) =>
               line === ''
                 ? h.div([h.Class('lyrics-gap')], [])
                 : h.p([h.Class('lyrics-line'), h.Attribute('data-lyric-index', idx.toString())], [line]),
             ),
-          ]),
+          ),
 
         ]),
 
