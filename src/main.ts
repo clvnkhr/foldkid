@@ -173,6 +173,7 @@ export const Message = S.Union([
   MusicBox.OctaveUp,
   MusicBox.OctaveDown,
   MusicBox.ToggleBottomKeyboard,
+  MusicBox.ShiftBottom,
   SettingsPersisted,
 ])
 
@@ -339,6 +340,7 @@ const _update = (
       MusicBoxRemoveKey: (msg) => updateMusicBox(model, msg),
       MusicBoxOctaveUp: (msg) => updateMusicBox(model, msg),
       MusicBoxOctaveDown: (msg) => updateMusicBox(model, msg),
+      MusicBoxShiftBottom: (msg) => updateMusicBox(model, msg),
       MusicBoxToggleBottomKeyboard: (msg) => updateMusicBox(model, msg),
       SettingsPersisted: () => [model, []],
     }),

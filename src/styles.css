@@ -1261,4 +1261,20 @@ body {
   z-index: 999;
 }
 
+.bottom-shift-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0;
+}
+
+.bottom-shift-label {
+  font-size: 0.75rem;
+  color: #888;
+  min-width: 2rem;
+  text-align: center;
+  font-family: monospace;
+}
+
 

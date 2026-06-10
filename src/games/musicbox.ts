@@ -67,14 +67,25 @@ const getBlackBetween = (whiteNote: string): string | null => {
   return map[whiteNote] ?? null
 }
 
-const buildKeyboard = (start: string, whiteCount: number, octaveOffset = 0): { keys: KeyDef[]; blacks: Record<string, number> } => {
+export const shiftStart = (start: string, shift: number): string => {
+  const whiteNote = start[0]!
+  const octave = parseInt(start.slice(-1))
+  const whiteIdx = WHITE_NOTES.indexOf(whiteNote)
+  const totalIdx = whiteIdx + shift
+  const newWhiteNote = WHITE_NOTES[((totalIdx % 7) + 7) % 7]!
+  return `${newWhiteNote}${octave + Math.floor(totalIdx / 7)}`
+}
+
+export const buildKeyboard = (start: string, whiteCount: number, octaveOffset = 0): { keys: KeyDef[]; blacks: Record<string, number> } => {
+  const startWhiteNote = start[0]!
   const startOctave = parseInt(start.slice(-1)) + octaveOffset
+  const startWhiteIdx = WHITE_NOTES.indexOf(startWhiteNote)
   const keys: KeyDef[] = []
   const blacks: Record<string, number> = {}
 
   for (let i = 0; i < whiteCount; i++) {
-    const wi = i % 7
-    const oct = startOctave + Math.floor(i / 7)
+    const wi = (startWhiteIdx + i) % 7
+    const oct = startOctave + Math.floor((startWhiteIdx + i) / 7)
     keys.push({ pitch: `${WHITE_NOTES[wi]}${oct}`, type: 'white' })
 
     const black = getBlackBetween(WHITE_NOTES[wi]!)
@@ -175,7 +186,7 @@ const bindKeyboard = (): void => {
     } catch { /* ignore */ }
     // Playing a silent WAV during a gesture upgrades the audio session from
     // "ambient" to "playback" on older iOS versions (Babylon.js #18366).
-    try { new Audio(SILENT_WAV).play().catch(() => {}) } catch { /* ignore */ }
+    try { new Audio(SILENT_WAV).play().catch(() => { }) } catch { /* ignore */ }
     getCtx()
     document.removeEventListener('pointerup', firstTouch, { capture: true })
     document.removeEventListener('keydown', firstTouch)
@@ -333,15 +344,15 @@ export const SONGS: Song[] = [
       { pitch: 'E4', dur: 1 }, { pitch: 'F4', dur: 1 },
       { pitch: 'G4', dur: 2 },
       { pitch: 'D4', dur: 1 }, { pitch: 'E4', dur: 1 },
-      { pitch: 'F4', dur: 1 }, { pitch: 'E4', dur: 1 },
-      { pitch: 'F4', dur: 1 }, { pitch: 'G4', dur: 1 },
-      { pitch: 'D4', dur: 2 },
+      { pitch: 'F4', dur: 2 },
+      { pitch: 'E4', dur: 1 }, { pitch: 'F4', dur: 1 },
+      { pitch: 'G4', dur: 2 },
       { pitch: 'G4', dur: 1.5 }, { pitch: 'A4', dur: 0.5 },
       { pitch: 'G4', dur: 1 }, { pitch: 'F4', dur: 1 },
       { pitch: 'E4', dur: 1 }, { pitch: 'F4', dur: 1 },
       { pitch: 'G4', dur: 2 },
-      { pitch: 'D4', dur: 1 }, { pitch: 'G4', dur: 1 },
-      { pitch: 'E4', dur: 1 }, { pitch: 'C4', dur: 2 },
+      { pitch: 'D4', dur: 2 }, { pitch: 'G4', dur: 2 },
+      { pitch: 'E4', dur: 1 }, { pitch: 'C4', dur: 3 },
     ], 3),
   },
   {
@@ -597,7 +608,7 @@ const getCtx = (): AudioContext | undefined => {
     try { sharedCtx = new AudioContext() } catch { return }
   }
   if (sharedCtx.state === 'suspended') {
-    sharedCtx.resume().catch(() => {})
+    sharedCtx.resume().catch(() => { })
   }
   return sharedCtx
 }
@@ -812,6 +823,7 @@ export const Model = S.Struct({
   whiteKeys: S.Number,
   showBottomKeyboard: S.Boolean,
   octaveOffset: S.Number,
+  bottomShift: S.Number,
 })
 export type Model = typeof Model.Type
 
@@ -827,13 +839,14 @@ export const RemoveKey = m('MusicBoxRemoveKey')
 export const OctaveUp = m('MusicBoxOctaveUp')
 export const OctaveDown = m('MusicBoxOctaveDown')
 export const ToggleBottomKeyboard = m('MusicBoxToggleBottomKeyboard')
+export const ShiftBottom = m('MusicBoxShiftBottom', { delta: S.Number })
 
-export const Message = S.Union([Play, Stop, SetSong, SetInstrument, SongEnded, NoteOn, NoteOff, AddKey, RemoveKey, OctaveUp, OctaveDown, ToggleBottomKeyboard])
+export const Message = S.Union([Play, Stop, SetSong, SetInstrument, SongEnded, NoteOn, NoteOff, AddKey, RemoveKey, OctaveUp, OctaveDown, ToggleBottomKeyboard, ShiftBottom])
 export type Message = typeof Message.Type
 
 export const init = (): Model => {
   bindKeyboard()
-  return { selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 8, showBottomKeyboard: false, octaveOffset: 0 }
+  return { selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 8, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0 }
 }
 
 export const update = (
@@ -889,6 +902,10 @@ export const update = (
       },
       MusicBoxOctaveDown: () => {
         return model.octaveOffset > MIN_OCTAVE ? [{ ...model, octaveOffset: model.octaveOffset - 1 }, []] : [model, []]
+      },
+      MusicBoxShiftBottom: (msg) => {
+        const newShift = model.bottomShift + msg.delta
+        return newShift < -7 || newShift > 7 ? [model, []] : [{ ...model, bottomShift: newShift }, []]
       },
     }),
   )
@@ -987,14 +1004,28 @@ export const view = (model: Model, language: string = 'en') => {
           ),
         ]),
         renderPiano(h, topWhite, topBlack, topKb.blacks, model.whiteKeys, 'top'),
-        model.showBottomKeyboard
+        ...(model.showBottomKeyboard
           ? (() => {
-            const botKb = buildKeyboard('C3', model.whiteKeys, model.octaveOffset)
+            const bottomStart = shiftStart('C3', model.bottomShift)
+            const botKb = buildKeyboard(bottomStart, model.whiteKeys, model.octaveOffset)
             const botWhite = botKb.keys.filter(k => k.type === 'white')
             const botBlack = botKb.keys.filter(k => k.type === 'black')
-            return renderPiano(h, botWhite, botBlack, botKb.blacks, model.whiteKeys, 'bot')
+            return [
+              renderPiano(h, botWhite, botBlack, botKb.blacks, model.whiteKeys, 'bot'),
+              h.div([h.Class('bottom-shift-controls')], [
+                h.button(
+                  [h.OnClick(ShiftBottom({ delta: -1 })), h.Class('btn btn-tiny'), h.Disabled(model.bottomShift <= -7)],
+                  ['−'],
+                ),
+                h.span([h.Class('bottom-shift-label')], [bottomStart]),
+                h.button(
+                  [h.OnClick(ShiftBottom({ delta: 1 })), h.Class('btn btn-tiny'), h.Disabled(model.bottomShift >= 7)],
+                  ['+'],
+                ),
+              ]),
+            ]
           })()
-          : h.empty,
+          : []),
       ]),
     ],
   )

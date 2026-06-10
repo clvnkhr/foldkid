@@ -10,7 +10,7 @@ describe('MusicBox', () => {
   it('init state', () => {
     expect(MusicBox.init()).toStrictEqual({
       selectedSong: 0, selectedInstrument: 0, isPlaying: false,
-      whiteKeys: 8, showBottomKeyboard: false, octaveOffset: 0,
+      whiteKeys: 8, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0,
     })
   })
 
@@ -192,7 +192,7 @@ describe('MusicBox', () => {
     it('ToggleBottomKeyboard toggles back to true', () => {
       Story.story(
         MusicBox.update,
-        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 12, showBottomKeyboard: false, octaveOffset: 0, }),
+        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 12, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0, }),
         Story.message(MusicBox.ToggleBottomKeyboard()),
         Story.model((model) => {
           expect(model.showBottomKeyboard).toBe(true)
@@ -267,7 +267,7 @@ describe('MusicBox', () => {
       expect(keys[keys.length - 1]!.pitch).toBe('G#5')
     })
 
-    it('bottom keyboard starts at C3 and last white key is A3', () => {
+    it('bottom keyboard starts at C3 and last white key is G4', () => {
       const keys = MusicBox.PianoKeys.BOTTOM.keys
       const whiteKeys = keys.filter(k => k.type === 'white')
       expect(keys[0]!.pitch).toBe('C3')
@@ -288,6 +288,36 @@ describe('MusicBox', () => {
       expect(white.length + black.length).toBe(MusicBox.PianoKeys.BOTTOM.keys.length)
       expect(white).toHaveLength(12)
       expect(black).toHaveLength(9)
+    })
+
+    it('shiftStart shifts by white key positions', () => {
+      expect(MusicBox.shiftStart('C3', 0)).toBe('C3')
+      expect(MusicBox.shiftStart('C3', 1)).toBe('D3')
+      expect(MusicBox.shiftStart('C3', 2)).toBe('E3')
+      expect(MusicBox.shiftStart('C3', 6)).toBe('B3')
+      expect(MusicBox.shiftStart('C3', 7)).toBe('C4')
+      expect(MusicBox.shiftStart('C3', -1)).toBe('B2')
+      expect(MusicBox.shiftStart('C3', -7)).toBe('C2')
+      expect(MusicBox.shiftStart('E3', 1)).toBe('F3')
+      expect(MusicBox.shiftStart('E3', -1)).toBe('D3')
+    })
+
+    it('buildKeyboard starts from any white key', () => {
+      const kb = MusicBox.buildKeyboard('D3', 3)
+      const whitePitches = kb.keys.filter(k => k.type === 'white').map(k => k.pitch)
+      expect(whitePitches).toEqual(['D3', 'E3', 'F3'])
+    })
+
+    it('buildKeyboard with non-C start includes correct black keys', () => {
+      const kb = MusicBox.buildKeyboard('D3', 4)
+      const blackPitches = kb.keys.filter(k => k.type === 'black').map(k => k.pitch)
+      expect(blackPitches).toEqual(['D#3', 'F#3', 'G#3'])
+    })
+
+    it('buildKeyboard with negative shift wraps octave correctly', () => {
+      const kb = MusicBox.buildKeyboard('B3', 3)
+      const whitePitches = kb.keys.filter(k => k.type === 'white').map(k => k.pitch)
+      expect(whitePitches).toEqual(['B3', 'C4', 'D4'])
     })
   })
 
@@ -395,7 +425,7 @@ describe('MusicBox', () => {
     it('does not render bottom keyboard when toggled off', () => {
       Scene.scene(
         { update: MusicBox.update, view: MusicBox.view },
-        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 12, showBottomKeyboard: false, octaveOffset: 0, }),
+        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 12, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0, }),
         Scene.Mount.resolveAll(resolvePianoTop),
         Scene.expect(Scene.text('Bottom keyboard')).toExist(),
         Scene.Command.expectNone(),
