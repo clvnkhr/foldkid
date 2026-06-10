@@ -498,7 +498,7 @@ export const INSTRUMENTS: Instrument[] = [
   {
     key: 'bell',
     type: 'sine',
-    gain: 0.22,
+    gain: 0.06,
     attack: 0.008,
     decay: 0.4,
     sustain: 0.55,
@@ -544,7 +544,7 @@ export const INSTRUMENTS: Instrument[] = [
   {
     key: 'organ',
     type: 'sawtooth',
-    gain: 0.05,
+    gain: 0.08,
     attack: 0.01,
     decay: 0.02,
     sustain: 1.0,
