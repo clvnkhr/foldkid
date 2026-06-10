@@ -603,6 +603,7 @@ export const Model = S.Struct({
   selectedInstrument: S.Number,
   isPlaying: S.Boolean,
   whiteKeys: S.Number,
+  showBottomKeyboard: S.Boolean,
 })
 export type Model = typeof Model.Type
 
@@ -615,13 +616,14 @@ export const NoteOn = m('MusicBoxNoteOn', { pitch: S.String })
 export const NoteOff = m('MusicBoxNoteOff', { pitch: S.String })
 export const AddKey = m('MusicBoxAddKey')
 export const RemoveKey = m('MusicBoxRemoveKey')
+export const ToggleBottomKeyboard = m('MusicBoxToggleBottomKeyboard')
 
-export const Message = S.Union([Play, Stop, SetSong, SetInstrument, SongEnded, NoteOn, NoteOff, AddKey, RemoveKey])
+export const Message = S.Union([Play, Stop, SetSong, SetInstrument, SongEnded, NoteOn, NoteOff, AddKey, RemoveKey, ToggleBottomKeyboard])
 export type Message = typeof Message.Type
 
 export const init = (): Model => {
   bindKeyboard()
-  return { selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 12 }
+  return { selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 12, showBottomKeyboard: true }
 }
 
 export const update = (
@@ -669,17 +671,17 @@ export const update = (
       MusicBoxRemoveKey: () => {
         return model.whiteKeys > MIN_WHITE_KEYS ? [{ ...model, whiteKeys: model.whiteKeys - 1 }, []] : [model, []]
       },
+      MusicBoxToggleBottomKeyboard: () => {
+        return [{ ...model, showBottomKeyboard: !model.showBottomKeyboard }, []]
+      },
     }),
   )
 
 export const view = (model: Model, language: string = 'en') => {
   const h = html<Message>()
   const topKb = buildKeyboard('C4', model.whiteKeys)
-  const botKb = buildKeyboard('C2', model.whiteKeys)
   const topWhite = topKb.keys.filter(k => k.type === 'white')
   const topBlack = topKb.keys.filter(k => k.type === 'black')
-  const botWhite = botKb.keys.filter(k => k.type === 'white')
-  const botBlack = botKb.keys.filter(k => k.type === 'black')
 
   return h.div(
     [h.Class('page')],
@@ -753,9 +755,20 @@ export const view = (model: Model, language: string = 'en') => {
               [h.OnClick(AddKey()), h.Class('btn btn-small'), h.Disabled(model.whiteKeys >= MAX_WHITE_KEYS)],
               ['+'],
             ),
+            h.label([h.Class('piano-toggle-label')], [
+              h.input([h.Type('checkbox'), h.Checked(model.showBottomKeyboard), h.OnChange(() => ToggleBottomKeyboard())]),
+              t('musicBoxShowBottom', language),
+            ]),
           ]),
           renderPiano(h, topWhite, topBlack, topKb.blacks, model.whiteKeys, 'top'),
-          renderPiano(h, botWhite, botBlack, botKb.blacks, model.whiteKeys, 'bot'),
+          model.showBottomKeyboard
+            ? (() => {
+              const botKb = buildKeyboard('C2', model.whiteKeys)
+              const botWhite = botKb.keys.filter(k => k.type === 'white')
+              const botBlack = botKb.keys.filter(k => k.type === 'black')
+              return renderPiano(h, botWhite, botBlack, botKb.blacks, model.whiteKeys, 'bot')
+            })()
+            : h.empty,
         ]),
       ],
     )

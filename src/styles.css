@@ -1005,6 +1005,16 @@ body {
   text-align: center;
 }
 
+.piano-toggle-label {
+  font-size: 0.85rem;
+  color: #666;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-left: 1rem;
+}
+
 /* Piano keyboard */
 .piano-container {
   position: relative;
