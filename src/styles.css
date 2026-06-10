@@ -1,13 +1,16 @@
 /* ── Reset & Base ────────────────────────────────────── */
 
 * {
-  touch-action: manipulation;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
   margin: 0;
   padding: 0;
   box-sizing: border-box;
-  -webkit-user-select: none;
-  user-select: none;
-  -webkit-touch-callout: none;
+}
+
+html, body {
+  touch-action: manipulation;
 }
 
 body {
@@ -984,6 +987,22 @@ body {
 
 .musicbox-card-inner {
   padding: 0 3rem;
+}
+
+/* Piano keyboard controls */
+.piano-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+}
+
+.piano-range-label {
+  font-size: 0.85rem;
+  color: #666;
+  min-width: 3rem;
+  text-align: center;
 }
 
 /* Piano keyboard */

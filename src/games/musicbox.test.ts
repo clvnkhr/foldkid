@@ -10,6 +10,7 @@ describe('MusicBox', () => {
   it('init state', () => {
     expect(MusicBox.init()).toStrictEqual({
       selectedSong: 0, selectedInstrument: 0, isPlaying: false,
+      whiteKeys: 12,
     })
   })
 
@@ -83,7 +84,7 @@ describe('MusicBox', () => {
     it('Stop sets isPlaying to false', () => {
       Story.story(
         MusicBox.update,
-        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: true }),
+        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: true, whiteKeys: 12 }),
         Story.message(MusicBox.Stop()),
         Story.model((model) => {
           expect(model.isPlaying).toBe(false)
@@ -95,10 +96,82 @@ describe('MusicBox', () => {
     it('SongEnded sets isPlaying to false', () => {
       Story.story(
         MusicBox.update,
-        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: true }),
+        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: true, whiteKeys: 12 }),
         Story.message(MusicBox.SongEnded()),
         Story.model((model) => {
           expect(model.isPlaying).toBe(false)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('AddKey increments whiteKeys', () => {
+      Story.story(
+        MusicBox.update,
+        Story.with(MusicBox.init()),
+        Story.message(MusicBox.AddKey()),
+        Story.model((model) => {
+          expect(model.whiteKeys).toBe(13)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('RemoveKey decrements whiteKeys', () => {
+      Story.story(
+        MusicBox.update,
+        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 12 }),
+        Story.message(MusicBox.RemoveKey()),
+        Story.model((model) => {
+          expect(model.whiteKeys).toBe(11)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('AddKey is capped at MAX_WHITE_KEYS', () => {
+      Story.story(
+        MusicBox.update,
+        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MAX_WHITE_KEYS }),
+        Story.message(MusicBox.AddKey()),
+        Story.model((model) => {
+          expect(model.whiteKeys).toBe(MusicBox.MAX_WHITE_KEYS)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('RemoveKey is capped at MIN_WHITE_KEYS', () => {
+      Story.story(
+        MusicBox.update,
+        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MIN_WHITE_KEYS }),
+        Story.message(MusicBox.RemoveKey()),
+        Story.model((model) => {
+          expect(model.whiteKeys).toBe(MusicBox.MIN_WHITE_KEYS)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('AddKey works at boundary MAX_WHITE_KEYS - 1', () => {
+      Story.story(
+        MusicBox.update,
+        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MAX_WHITE_KEYS - 1 }),
+        Story.message(MusicBox.AddKey()),
+        Story.model((model) => {
+          expect(model.whiteKeys).toBe(MusicBox.MAX_WHITE_KEYS)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('RemoveKey works at boundary MIN_WHITE_KEYS + 1', () => {
+      Story.story(
+        MusicBox.update,
+        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MIN_WHITE_KEYS + 1 }),
+        Story.message(MusicBox.RemoveKey()),
+        Story.model((model) => {
+          expect(model.whiteKeys).toBe(MusicBox.MIN_WHITE_KEYS)
         }),
         Story.Command.expectNone(),
       )
@@ -180,16 +253,17 @@ describe('MusicBox', () => {
   })
 
   describe('keyboard structure', () => {
-    it('top keyboard starts at C4 and ends at G5', () => {
+    it('top keyboard starts at C4 and ends at G#5', () => {
       const keys = MusicBox.PianoKeys.TOP.keys
       expect(keys[0]!.pitch).toBe('C4')
-      expect(keys[keys.length - 1]!.pitch).toBe('G5')
+      expect(keys[keys.length - 1]!.pitch).toBe('G#5')
     })
 
-    it('bottom keyboard starts at C2 and ends at G3', () => {
+    it('bottom keyboard starts at C2 and last white key is G3', () => {
       const keys = MusicBox.PianoKeys.BOTTOM.keys
+      const whiteKeys = keys.filter(k => k.type === 'white')
       expect(keys[0]!.pitch).toBe('C2')
-      expect(keys[keys.length - 1]!.pitch).toBe('G3')
+      expect(whiteKeys[whiteKeys.length - 1]!.pitch).toBe('G3')
     })
 
     it('top keyboard has correct white/black split', () => {
@@ -197,7 +271,7 @@ describe('MusicBox', () => {
       const black = MusicBox.PianoKeys.TOP.keys.filter(k => k.type === 'black')
       expect(white.length + black.length).toBe(MusicBox.PianoKeys.TOP.keys.length)
       expect(white).toHaveLength(12)
-      expect(black).toHaveLength(8)
+      expect(black).toHaveLength(9)
     })
 
     it('bottom keyboard has correct white/black split', () => {
@@ -205,7 +279,7 @@ describe('MusicBox', () => {
       const black = MusicBox.PianoKeys.BOTTOM.keys.filter(k => k.type === 'black')
       expect(white.length + black.length).toBe(MusicBox.PianoKeys.BOTTOM.keys.length)
       expect(white).toHaveLength(12)
-      expect(black).toHaveLength(8)
+      expect(black).toHaveLength(9)
     })
   })
 
@@ -223,7 +297,7 @@ describe('MusicBox', () => {
     it('renders stop button when playing', () => {
       Scene.scene(
         { update: MusicBox.update, view: MusicBox.view },
-        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: true }),
+        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: true, whiteKeys: 12 }),
         Scene.Mount.resolveAll(...resolveMount),
         Scene.expect(Scene.text('⏹ Stop')).toExist(),
         Scene.Command.expectNone(),
@@ -233,7 +307,7 @@ describe('MusicBox', () => {
     it('play button absent when playing', () => {
       Scene.scene(
         { update: MusicBox.update, view: MusicBox.view },
-        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: true }),
+        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: true, whiteKeys: 12 }),
         Scene.Mount.resolveAll(...resolveMount),
         Scene.expect(Scene.text('▶ Play')).not.toExist(),
         Scene.Command.expectNone(),
@@ -246,6 +320,56 @@ describe('MusicBox', () => {
         Scene.with(MusicBox.init()),
         Scene.Mount.resolveAll(...resolveMount),
         Scene.expect(Scene.text('Music Box')).toExist(),
+        Scene.Command.expectNone(),
+      )
+    })
+
+    it('renders + button', () => {
+      Scene.scene(
+        { update: MusicBox.update, view: MusicBox.view },
+        Scene.with(MusicBox.init()),
+        Scene.Mount.resolveAll(...resolveMount),
+        Scene.expect(Scene.text('+')).toExist(),
+        Scene.Command.expectNone(),
+      )
+    })
+
+    it('renders - button', () => {
+      Scene.scene(
+        { update: MusicBox.update, view: MusicBox.view },
+        Scene.with(MusicBox.init()),
+        Scene.Mount.resolveAll(...resolveMount),
+        Scene.expect(Scene.text('−')).toExist(),
+        Scene.Command.expectNone(),
+      )
+    })
+
+    it('- button exists at MIN_WHITE_KEYS', () => {
+      Scene.scene(
+        { update: MusicBox.update, view: MusicBox.view },
+        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MIN_WHITE_KEYS }),
+        Scene.Mount.resolveAll(...resolveMount),
+        Scene.expect(Scene.text('−')).toExist(),
+        Scene.Command.expectNone(),
+      )
+    })
+
+    it('+ button exists at MAX_WHITE_KEYS', () => {
+      Scene.scene(
+        { update: MusicBox.update, view: MusicBox.view },
+        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MAX_WHITE_KEYS }),
+        Scene.Mount.resolveAll(...resolveMount),
+        Scene.expect(Scene.text('+')).toExist(),
+        Scene.Command.expectNone(),
+      )
+    })
+
+    it('renders Keys label', () => {
+      Scene.scene(
+        { update: MusicBox.update, view: MusicBox.view },
+        Scene.with(MusicBox.init()),
+        Scene.Mount.resolveAll(...resolveMount),
+        Scene.expect(Scene.text('Keys')).toExist(),
         Scene.Command.expectNone(),
       )
     })

@@ -50,53 +50,49 @@ export const FREQUENCIES: Record<string, number> = {
   C4: 261.63, 'C#4': 277.18, D4: 293.66, 'D#4': 311.13, E4: 329.63, F4: 349.23,
   'F#4': 369.99, G4: 392.00, 'G#4': 415.30, A4: 440.00, 'A#4': 466.16, B4: 493.88,
   C5: 523.25, 'C#5': 554.37, D5: 587.33, 'D#5': 622.25, E5: 659.25, F5: 698.46,
-  'F#5': 739.99, G5: 783.99, A5: 880.00, B5: 987.77,
-  C6: 1046.50,
+  'F#5': 739.99, G5: 783.99, 'G#5': 830.61, A5: 880.00, 'A#5': 932.33, B5: 987.77,
+  C6: 1046.50, 'C#6': 1108.73, D6: 1174.66, 'D#6': 1244.51, E6: 1318.51, F6: 1396.91,
+  'F#6': 1479.98, G6: 1567.98, 'G#6': 1661.22, A6: 1760.00, 'A#6': 1864.66, B6: 1975.53,
 }
 
-  const buildKeyboard = (start: string, end: string): { keys: KeyDef[]; blacks: Record<string, number> } => {
-    const allNotes: string[] = []
-    let current = start
-    const noteOrder = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
-    while (true) {
-      allNotes.push(current)
-      if (current === end) break
-      const note = current.slice(0, -1)
-      const oct = parseInt(current.slice(-1))
-      const idx = noteOrder.indexOf(note)
-      const next = idx === noteOrder.length - 1
-        ? `C${oct + 1}`
-        : `${noteOrder[idx + 1]}${oct}`
-      current = next
-    }
+const WHITE_NOTES = ['C', 'D', 'E', 'F', 'G', 'A', 'B']
+export const MIN_WHITE_KEYS = 1
+export const MAX_WHITE_KEYS = 15
+
+const getBlackBetween = (whiteNote: string): string | null => {
+  const map: Record<string, string> = {
+    C: 'C#', D: 'D#', F: 'F#', G: 'G#', A: 'A#',
+  }
+  return map[whiteNote] ?? null
+}
+
+const buildKeyboard = (start: string, whiteCount: number): { keys: KeyDef[]; blacks: Record<string, number> } => {
+  const startOctave = parseInt(start.slice(-1))
   const keys: KeyDef[] = []
   const blacks: Record<string, number> = {}
-  let whiteIdx = 0
-  for (const n of allNotes) {
-    const isBlack = n.includes('#')
-    keys.push({ pitch: n, type: isBlack ? 'black' : 'white' })
-    if (isBlack) {
-      blacks[n] = whiteIdx
-    } else {
-      whiteIdx++
+
+  for (let i = 0; i < whiteCount; i++) {
+    const wi = i % 7
+    const oct = startOctave + Math.floor(i / 7)
+    keys.push({ pitch: `${WHITE_NOTES[wi]}${oct}`, type: 'white' })
+
+    const black = getBlackBetween(WHITE_NOTES[wi]!)
+    if (black) {
+      const bp = `${black}${oct}`
+      if (FREQUENCIES[bp]) {
+        keys.push({ pitch: bp, type: 'black' })
+        blacks[bp] = i + 1
+      }
     }
   }
+
   return { keys, blacks }
 }
 
 export const PianoKeys = {
-  TOP: buildKeyboard('C4', 'G5'),
-  BOTTOM: buildKeyboard('C2', 'G3'),
+  TOP: buildKeyboard('C4', 12),
+  BOTTOM: buildKeyboard('C2', 12),
 }
-const PIANO_TOP = PianoKeys.TOP
-const PIANO_BOTTOM = PianoKeys.BOTTOM
-
-const WHITE_KEYS_TOP = PIANO_TOP.keys.filter(k => k.type === 'white')
-const BLACK_KEYS_TOP = PIANO_TOP.keys.filter(k => k.type === 'black')
-const WHITE_KEYS_BOTTOM = PIANO_BOTTOM.keys.filter(k => k.type === 'white')
-const BLACK_KEYS_BOTTOM = PIANO_BOTTOM.keys.filter(k => k.type === 'black')
-
-const TOP_WHITE_COUNT = WHITE_KEYS_TOP.length
 
 const activeNotes = new Map<string, {
   nodes: Array<{ osc: OscillatorNode; gain: GainNode }>
@@ -606,6 +602,7 @@ export const Model = S.Struct({
   selectedSong: S.Number,
   selectedInstrument: S.Number,
   isPlaying: S.Boolean,
+  whiteKeys: S.Number,
 })
 export type Model = typeof Model.Type
 
@@ -616,13 +613,15 @@ export const SetInstrument = m('MusicBoxSetInstrument', { value: S.Number })
 export const SongEnded = m('MusicBoxSongEnded')
 export const NoteOn = m('MusicBoxNoteOn', { pitch: S.String })
 export const NoteOff = m('MusicBoxNoteOff', { pitch: S.String })
+export const AddKey = m('MusicBoxAddKey')
+export const RemoveKey = m('MusicBoxRemoveKey')
 
-export const Message = S.Union([Play, Stop, SetSong, SetInstrument, SongEnded, NoteOn, NoteOff])
+export const Message = S.Union([Play, Stop, SetSong, SetInstrument, SongEnded, NoteOn, NoteOff, AddKey, RemoveKey])
 export type Message = typeof Message.Type
 
 export const init = (): Model => {
   bindKeyboard()
-  return { selectedSong: 0, selectedInstrument: 0, isPlaying: false }
+  return { selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 12 }
 }
 
 export const update = (
@@ -664,11 +663,23 @@ export const update = (
         stopNote(msg.pitch)
         return [model, []]
       },
+      MusicBoxAddKey: () => {
+        return model.whiteKeys < MAX_WHITE_KEYS ? [{ ...model, whiteKeys: model.whiteKeys + 1 }, []] : [model, []]
+      },
+      MusicBoxRemoveKey: () => {
+        return model.whiteKeys > MIN_WHITE_KEYS ? [{ ...model, whiteKeys: model.whiteKeys - 1 }, []] : [model, []]
+      },
     }),
   )
 
 export const view = (model: Model, language: string = 'en') => {
   const h = html<Message>()
+  const topKb = buildKeyboard('C4', model.whiteKeys)
+  const botKb = buildKeyboard('C2', model.whiteKeys)
+  const topWhite = topKb.keys.filter(k => k.type === 'white')
+  const topBlack = topKb.keys.filter(k => k.type === 'black')
+  const botWhite = botKb.keys.filter(k => k.type === 'white')
+  const botBlack = botKb.keys.filter(k => k.type === 'black')
 
   return h.div(
     [h.Class('page')],
@@ -732,8 +743,19 @@ export const view = (model: Model, language: string = 'en') => {
 
           ]),
 
-          renderPiano(h, WHITE_KEYS_TOP, BLACK_KEYS_TOP, PIANO_TOP.blacks, TOP_WHITE_COUNT, 'top'),
-          renderPiano(h, WHITE_KEYS_BOTTOM, BLACK_KEYS_BOTTOM, PIANO_BOTTOM.blacks, WHITE_KEYS_BOTTOM.length, 'bot'),
+          h.div([h.Class('piano-controls')], [
+            h.button(
+              [h.OnClick(RemoveKey()), h.Class('btn btn-small'), h.Disabled(model.whiteKeys <= MIN_WHITE_KEYS)],
+              ['−'],
+            ),
+            h.span([h.Class('piano-range-label')], [t('musicBoxPianoRange', language)]),
+            h.button(
+              [h.OnClick(AddKey()), h.Class('btn btn-small'), h.Disabled(model.whiteKeys >= MAX_WHITE_KEYS)],
+              ['+'],
+            ),
+          ]),
+          renderPiano(h, topWhite, topBlack, topKb.blacks, model.whiteKeys, 'top'),
+          renderPiano(h, botWhite, botBlack, botKb.blacks, model.whiteKeys, 'bot'),
         ]),
       ],
     )
