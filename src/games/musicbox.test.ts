@@ -245,34 +245,18 @@ describe('MusicBox', () => {
     })
   })
 
-  describe('frequency coverage', () => {
-    const allTopPitches = MusicBox.PianoKeys.TOP.keys.map(k => k.pitch)
-    const allBottomPitches = MusicBox.PianoKeys.BOTTOM.keys.map(k => k.pitch)
-
-    for (const pitch of allTopPitches) {
-      it(`top keyboard has frequency for ${pitch}`, () => {
-        expect(MusicBox.FREQUENCIES[pitch]).toBeDefined()
-      })
-    }
-
-    for (const pitch of allBottomPitches) {
-      it(`bottom keyboard has frequency for ${pitch}`, () => {
-        expect(MusicBox.FREQUENCIES[pitch]).toBeDefined()
-      })
+  it('every keyboard pitch has a frequency entry', () => {
+    const top = MusicBox.PianoKeys.TOP.keys.map(k => k.pitch)
+    const bot = MusicBox.PianoKeys.BOTTOM.keys.map(k => k.pitch)
+    for (const pitch of [...top, ...bot]) {
+      expect(MusicBox.FREQUENCIES[pitch]).toBeDefined()
     }
   })
 
-  describe('QWERTY mapping frequency coverage', () => {
-    for (const { qwerty, pitch } of MusicBox.QWERTY_WHITES) {
-      it(`Qwerty ${qwerty} -> ${pitch} has frequency`, () => {
-        expect(MusicBox.FREQUENCIES[pitch]).toBeDefined()
-      })
-    }
-
-    for (const { qwerty, pitch } of MusicBox.QWERTY_BLACKS) {
-      it(`Qwerty ${qwerty} -> ${pitch} has frequency`, () => {
-        expect(MusicBox.FREQUENCIES[pitch]).toBeDefined()
-      })
+  it('every QWERTY mapped pitch has a frequency entry', () => {
+    const all = [...MusicBox.QWERTY_WHITES, ...MusicBox.QWERTY_BLACKS]
+    for (const { qwerty, pitch } of all) {
+      expect(MusicBox.FREQUENCIES[pitch]).toBeDefined()
     }
   })
 

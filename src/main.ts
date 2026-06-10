@@ -2,9 +2,9 @@ import { Effect, Match as M, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { Document, html } from 'foldkit/html'
 
-import { ClickedBubbles, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedGreeting, ClickedLanding, ClickedMusicBox, ClickedSettings, SetLanguage, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
+import { ClickedAudioTest, ClickedBubbles, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedGreeting, ClickedLanding, ClickedMusicBox, ClickedSettings, SetLanguage, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
 
-import { Page, PageBubbles, PageCounter, PageFindIt, PageGreeting, PageLanding, PageMusicBox } from './route'
+import { Page, PageAudioTest, PageBubbles, PageCounter, PageFindIt, PageGreeting, PageLanding, PageMusicBox } from './route'
 
 import * as FindIt from './games/findit'
 import * as MusicBox from './games/musicbox'
@@ -12,6 +12,7 @@ import * as Counter from './games/counter'
 import * as Greeting from './games/greeting'
 import * as Bubbles from './games/bubbles'
 import { view as landingView } from './pages/landing'
+import { view as audioTestView } from './pages/audiotest'
 import { t, tf } from './i18n'
 import { speak } from './speech'
 
@@ -120,6 +121,7 @@ export const Message = S.Union([
   ClickedFindIt,
   ClickedBubbles,
   ClickedMusicBox,
+  ClickedAudioTest,
   Greeting.ClickedReset,
   Greeting.ClickedRecord,
   Greeting.ClickedStopRecording,
@@ -284,6 +286,7 @@ const _update = (
       ClickedFindIt: () => [{ ...model, page: PageFindIt() }, []],
       ClickedBubbles: () => [{ ...model, page: PageBubbles() }, []],
       ClickedMusicBox: () => [{ ...model, page: PageMusicBox() }, []],
+      ClickedAudioTest: () => [{ ...model, page: PageAudioTest() }, []],
       GreetingClickedRecord: (msg) => updateGreeting(model, msg),
       GreetingClickedStopRecording: (msg) => updateGreeting(model, msg),
       GreetingRecordedAudio: (msg) => updateGreeting(model, msg),
@@ -368,6 +371,7 @@ const pageTitle = (model: Model): string =>
       PageFindIt: () => t('pageTitleFindIt', model.language),
       PageBubbles: () => t('pageTitleBubbles', model.language),
       PageMusicBox: () => t('pageTitleMusicBox', model.language),
+      PageAudioTest: () => t('pageTitleAudioTest', model.language),
     }),
   )
 
@@ -582,6 +586,7 @@ export const view = (model: Model): Document => {
             PageFindIt: () => FindIt.view(model.findIt, model.language),
             PageBubbles: () => Bubbles.view(model.bubbles, model.language),
             PageMusicBox: () => MusicBox.view(model.musicBox, model.language),
+            PageAudioTest: () => audioTestView(model.language),
           }),
         ),
       ],

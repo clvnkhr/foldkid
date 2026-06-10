@@ -154,20 +154,33 @@ const handleKeyUp = (e: KeyboardEvent): void => {
   }
 }
 
+const SILENT_WAV = 'data:audio/wav;base64,UklGRiYAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQIAAAAAAA=='
+
 const bindKeyboard = (): void => {
   if (keyboardBound) return
   keyboardBound = true
   document.addEventListener('keydown', handleKeyDown)
   document.addEventListener('keyup', handleKeyUp)
-  // Safari: AudioContext must be created/resumed from a user gesture.
-  // Foldkit's message dispatch may run async, so we eagerly init the
-  // AudioContext on the first raw DOM interaction before any message.
+  // iOS Safari: AudioContext must be created/resumed within a qualifying user
+  // gesture. pointerdown with pointerType "touch" does NOT qualify (Apple Dev
+  // Forums, WebKit blog). pointerup and click DO qualify for touch events.
+  // foldkit dispatches messages asynchronously through a queue, so we eagerly
+  // init the AudioContext on the first qualifying gesture in CAPTURE phase.
   const firstTouch = () => {
+    // iOS 26+ mute switch silences Web Audio oscillators while HTML <audio>
+    // still works. Upgrade the audio session to "playback" to bypass this.
+    try {
+      const nav = navigator as { audioSession?: { type: string } }
+      if (nav.audioSession) nav.audioSession.type = 'playback'
+    } catch { /* ignore */ }
+    // Playing a silent WAV during a gesture upgrades the audio session from
+    // "ambient" to "playback" on older iOS versions (Babylon.js #18366).
+    try { new Audio(SILENT_WAV).play().catch(() => {}) } catch { /* ignore */ }
     getCtx()
-    document.removeEventListener('pointerdown', firstTouch)
+    document.removeEventListener('pointerup', firstTouch, { capture: true })
     document.removeEventListener('keydown', firstTouch)
   }
-  document.addEventListener('pointerdown', firstTouch)
+  document.addEventListener('pointerup', firstTouch, { capture: true })
   document.addEventListener('keydown', firstTouch)
 }
 
@@ -594,12 +607,41 @@ let sharedCtx: AudioContext | undefined
 let stopFlag = false
 
 const getCtx = (): AudioContext | undefined => {
-  if (sharedCtx?.state === 'closed') sharedCtx = undefined
+  if (sharedCtx?.state === 'closed' || sharedCtx?.state === 'interrupted') {
+    try { sharedCtx.close() } catch { /* ignore */ }
+    sharedCtx = undefined
+  }
   if (!sharedCtx) {
     try { sharedCtx = new AudioContext() } catch { return }
   }
-  if (sharedCtx.state === 'suspended') sharedCtx.resume()
+  if (sharedCtx.state === 'suspended') {
+    sharedCtx.resume().catch(() => {})
+  }
   return sharedCtx
+}
+
+if (typeof window !== 'undefined') {
+  // Recreate AudioContext after sleep/wake. Safari's context becomes a zombie
+  // (state==="running" but no audio) or gets interrupted. Closing and letting
+  // the next user gesture recreate is the only reliable fix.
+  const recreateCtx = (): void => {
+    if (sharedCtx) {
+      try { sharedCtx.close() } catch { /* ignore */ }
+      sharedCtx = undefined
+    }
+  }
+  // pageshow with persisted=true fires on bfcache restore (includes wake)
+  window.addEventListener('pageshow', (e) => {
+    if (e.persisted) recreateCtx()
+  })
+  // Time-jump polling: catches ALL sleep/wake scenarios including Power Nap
+  // and external display wake where visibilitychange may not fire.
+  let lastWakeCheck = Date.now()
+  setInterval(() => {
+    const now = Date.now()
+    if (now - lastWakeCheck > 15_000) recreateCtx()
+    lastWakeCheck = now
+  }, 5_000)
 }
 
 const SAFETY_MARGIN = 0.03

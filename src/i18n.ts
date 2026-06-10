@@ -95,6 +95,7 @@ const translations = {
     play: 'Play',
     stop: 'Stop',
     pageTitleMusicBox: 'Music Box - FoldKid',
+    pageTitleAudioTest: 'Audio Test - FoldKid',
   },
   zh: {
     appName: '折纸娃',
@@ -192,6 +193,7 @@ const translations = {
     play: '播放',
     stop: '停止',
     pageTitleMusicBox: '音乐盒 - 折纸娃',
+    pageTitleAudioTest: '音频测试 - 折纸娃',
   },
   fr: {
     appName: 'PliEnfant',
@@ -289,6 +291,7 @@ const translations = {
     play: 'Jouer',
     stop: 'Arrêter',
     pageTitleMusicBox: 'Boîte à Musique - PliEnfant',
+    pageTitleAudioTest: 'Test Audio - PliEnfant',
   },
   de: {
     appName: 'FaltKind',
@@ -386,6 +389,7 @@ const translations = {
     play: 'Spielen',
     stop: 'Stopp',
     pageTitleMusicBox: 'Spieluhr - FaltKind',
+    pageTitleAudioTest: 'Audio Test - FaltKind',
   },
   fa: {
     appName: 'بچهاوری',
@@ -483,6 +487,7 @@ const translations = {
     play: 'پخش',
     stop: 'ایست',
     pageTitleMusicBox: 'جعبه موسیقی - بچهاوری',
+    pageTitleAudioTest: 'تست صدا - بچهاوری',
   },
   ms: {
     appName: 'LipatBudak',
@@ -580,6 +585,7 @@ const translations = {
     play: 'Main',
     stop: 'Berhenti',
     pageTitleMusicBox: 'Kotak Muzik - LipatBudak',
+    pageTitleAudioTest: 'Ujian Audio - LipatBudak',
   },
   'zh-HK': {
     appName: '摺紙細路',
@@ -677,6 +683,7 @@ const translations = {
     play: '播放',
     stop: '停止',
     pageTitleMusicBox: '音樂盒 - 摺紙細路',
+    pageTitleAudioTest: '音頻測試 - 摺紙細路',
   },
   ja: {
     appName: '折り紙っ子',
@@ -774,6 +781,7 @@ const translations = {
     play: 'ながす',
     stop: 'とめる',
     pageTitleMusicBox: 'オルゴール - 折り紙っ子',
+    pageTitleAudioTest: 'オーディオテスト - 折り紙っ子',
   },
 } as const
 

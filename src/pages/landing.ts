@@ -1,6 +1,6 @@
 import { html } from 'foldkit/html'
 
-import { ClickedBubbles, ClickedCounter, ClickedFindIt, ClickedGreeting, ClickedMusicBox } from '../message'
+import { ClickedAudioTest, ClickedBubbles, ClickedCounter, ClickedFindIt, ClickedGreeting, ClickedMusicBox } from '../message'
 import { t } from '../i18n'
 
 type Message = ReturnType<typeof ClickedGreeting>
@@ -8,6 +8,7 @@ type Message = ReturnType<typeof ClickedGreeting>
   | ReturnType<typeof ClickedFindIt>
   | ReturnType<typeof ClickedBubbles>
   | ReturnType<typeof ClickedMusicBox>
+  | ReturnType<typeof ClickedAudioTest>
 
 export const view = (language: string) => {
   const h = html<Message>()
@@ -56,9 +57,15 @@ export const view = (language: string) => {
           ],
         ),
       ]      ),
+      h.div([h.Class('landing-footer')], [
+        h.a(
+          [h.Href('http://foldkit.dev'), h.Class('built-with'), h.Target('_blank')],
+          [t('builtWithFoldkit', language)],
+        ),
+      ]),
       h.a(
-        [h.Href('http://foldkit.dev'), h.Class('built-with'), h.Target('_blank')],
-        [t('builtWithFoldkit', language)],
+        [h.OnClick(ClickedAudioTest()), h.Class('diag-link')],
+        ['diag'],
       ),
     ],
   )

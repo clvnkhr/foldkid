@@ -1109,4 +1109,95 @@ body {
   height: 0.5rem;
 }
 
+.test-container {
+  padding: 1rem;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.test-container h1 {
+  font-size: 1.3rem;
+  margin-bottom: 0.3rem;
+}
+
+.test-container > p {
+  font-size: 0.85rem;
+  color: #666;
+  margin-bottom: 1rem;
+}
+
+.test-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.test-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.test-btn {
+  flex-shrink: 0;
+  padding: 0.5rem 0.8rem;
+  background: #4a90d9;
+  color: #fff;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  user-select: none;
+  touch-action: manipulation;
+  white-space: nowrap;
+}
+
+.test-btn:active {
+  background: #357abd;
+}
+
+.test-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  font-size: 0.8rem;
+}
+
+.test-desc {
+  color: #888;
+  font-size: 0.7rem;
+}
+
+.test-note {
+  margin-top: 1rem;
+  font-size: 0.8rem;
+  color: #666;
+}
+
+.back-link {
+  display: inline-block;
+  margin-bottom: 0.5rem;
+  color: #4a90d9;
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.landing-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.diag-link {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  color: transparent;
+  font-size: 0;
+  text-decoration: none;
+  width: 8px;
+  height: 8px;
+  z-index: 999;
+}
+
 
