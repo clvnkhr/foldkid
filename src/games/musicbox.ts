@@ -195,7 +195,7 @@ const unhighlightKey = (pitch: string): void => {
 
 const unhighlightAllKeys = (): void => {
   document.querySelectorAll('.piano-key-glow--active').forEach(el => {
-    ;(el as HTMLElement).classList.remove('piano-key-glow--active')
+    ; (el as HTMLElement).classList.remove('piano-key-glow--active')
   })
 }
 
@@ -252,22 +252,33 @@ export const SONGS: Song[] = [
     key: 'mary',
     emoji: '🐑',
     lyrics: [
-      'Mary had a little lamb,',
-      'Its fleece was white as snow;',
-      'And everywhere that Mary went,',
-      'The lamb was sure to go.',
-      'It followed her to school one day,',
-      'Which was against the rules;',
-      'It made the children laugh and play,',
-      'To see a lamb at school.',
+      "Mary had a little lamb,",
+      "Little lamb, little lamb,",
+      "Mary had a little lamb,",
+      "Its fleece was white as snow.",
       '',
-      'Why does the lamb love Mary so?',
-      'Love Mary so? Love Mary so?',
-      'Why does the lamb love Mary so?',
-      'The eager children cry.',
+      "And everywhere that Mary went,",
+      "Mary went, Mary went,",
+      "And everywhere that Mary went,",
+      "The lamb was sure to go.",
+      '',
+      "It followed her to school one day,",
+      "School one day, school one day,",
+      "It followed her to school one day,",
+      "Which was against the rules.",
+      '',
+      "It made the children laugh and play,",
+      "Laugh and play, laugh and play,",
+      "It made the children laugh and play,",
+      "To see a lamb at school.",
+      '',
+      "Why does the lamb love Mary so?",
+      "Love Mary so? Love Mary so?",
+      "Why does the lamb love Mary so?",
+      "The eager children cry.",
     ],
     notes: repeat([
-      { pitch: 'E4', dur: 1 }, { pitch: 'D4', dur: 1 },
+      { pitch: 'E4', dur: 1.5 }, { pitch: 'D4', dur: 0.5 },
       { pitch: 'C4', dur: 1 }, { pitch: 'D4', dur: 1 },
       { pitch: 'E4', dur: 1 }, { pitch: 'E4', dur: 1 },
       { pitch: 'E4', dur: 2 },
@@ -275,14 +286,14 @@ export const SONGS: Song[] = [
       { pitch: 'D4', dur: 2 },
       { pitch: 'E4', dur: 1 }, { pitch: 'G4', dur: 1 },
       { pitch: 'G4', dur: 2 },
-      { pitch: 'E4', dur: 1 }, { pitch: 'D4', dur: 1 },
+      { pitch: 'E4', dur: 1.5 }, { pitch: 'D4', dur: 0.5 },
       { pitch: 'C4', dur: 1 }, { pitch: 'D4', dur: 1 },
       { pitch: 'E4', dur: 1 }, { pitch: 'E4', dur: 1 },
       { pitch: 'E4', dur: 1 }, { pitch: 'E4', dur: 1 },
       { pitch: 'D4', dur: 1 }, { pitch: 'D4', dur: 1 },
       { pitch: 'E4', dur: 1 }, { pitch: 'D4', dur: 1 },
-      { pitch: 'C4', dur: 2 },
-    ], 2),
+      { pitch: 'C4', dur: 4 },
+    ], 5),
   },
   {
     key: 'london',
@@ -304,7 +315,7 @@ export const SONGS: Song[] = [
       'My fair lady.',
     ],
     notes: repeat([
-      { pitch: 'G4', dur: 1 }, { pitch: 'A4', dur: 1 },
+      { pitch: 'G4', dur: 1.5 }, { pitch: 'A4', dur: 0.5 },
       { pitch: 'G4', dur: 1 }, { pitch: 'F4', dur: 1 },
       { pitch: 'E4', dur: 1 }, { pitch: 'F4', dur: 1 },
       { pitch: 'G4', dur: 2 },
@@ -312,7 +323,7 @@ export const SONGS: Song[] = [
       { pitch: 'F4', dur: 1 }, { pitch: 'E4', dur: 1 },
       { pitch: 'F4', dur: 1 }, { pitch: 'G4', dur: 1 },
       { pitch: 'D4', dur: 2 },
-      { pitch: 'G4', dur: 1 }, { pitch: 'A4', dur: 1 },
+      { pitch: 'G4', dur: 1.5 }, { pitch: 'A4', dur: 0.5 },
       { pitch: 'G4', dur: 1 }, { pitch: 'F4', dur: 1 },
       { pitch: 'E4', dur: 1 }, { pitch: 'F4', dur: 1 },
       { pitch: 'G4', dur: 2 },
@@ -336,22 +347,22 @@ export const SONGS: Song[] = [
     ],
     notes: repeat([
       { pitch: 'C4', dur: 1 }, { pitch: 'C4', dur: 1 },
-      { pitch: 'C4', dur: 1 }, { pitch: 'D4', dur: 1 },
-      { pitch: 'E4', dur: 2 },
-      { pitch: 'E4', dur: 1 }, { pitch: 'D4', dur: 1 },
-      { pitch: 'E4', dur: 1 }, { pitch: 'F4', dur: 1 },
+      { pitch: 'C4', dur: 2 / 3 }, { pitch: 'D4', dur: 1 / 3 },
+      { pitch: 'E4', dur: 1 },
+      { pitch: 'E4', dur: 2 / 3 }, { pitch: 'D4', dur: 1 / 3 },
+      { pitch: 'E4', dur: 2 / 3 }, { pitch: 'F4', dur: 1 / 3 },
       { pitch: 'G4', dur: 2 },
-      { pitch: 'C5', dur: 1.5 }, { pitch: 'C5', dur: 0.5 },
-      { pitch: 'C5', dur: 2 },
-      { pitch: 'G4', dur: 1.5 }, { pitch: 'G4', dur: 0.5 },
-      { pitch: 'G4', dur: 2 },
-      { pitch: 'E4', dur: 1.5 }, { pitch: 'E4', dur: 0.5 },
-      { pitch: 'E4', dur: 2 },
-      { pitch: 'C4', dur: 1.5 }, { pitch: 'C4', dur: 0.5 },
+      { pitch: 'C5', dur: 1 / 3 }, { pitch: 'C5', dur: 1 / 3 },
+      { pitch: 'C5', dur: 1 / 3 },
+      { pitch: 'G4', dur: 1 / 3 }, { pitch: 'G4', dur: 1 / 3 },
+      { pitch: 'G4', dur: 1 / 3 },
+      { pitch: 'E4', dur: 1 / 3 }, { pitch: 'E4', dur: 1 / 3 },
+      { pitch: 'E4', dur: 1 / 3 },
+      { pitch: 'C4', dur: 1 / 3 }, { pitch: 'C4', dur: 1 / 3 },
+      { pitch: 'C4', dur: 1 / 3 },
+      { pitch: 'G4', dur: 2 / 3 }, { pitch: 'F4', dur: 1 / 3 },
+      { pitch: 'E4', dur: 2 / 3 }, { pitch: 'D4', dur: 1 / 3 },
       { pitch: 'C4', dur: 2 },
-      { pitch: 'G4', dur: 1 }, { pitch: 'F4', dur: 1 },
-      { pitch: 'E4', dur: 1 }, { pitch: 'D4', dur: 1 },
-      { pitch: 'C4', dur: 3 },
     ], 2),
   },
   {
@@ -806,9 +817,9 @@ export const update = (
       },
       MusicBoxSetSong: (msg) => [{ ...model, selectedSong: msg.value }, []],
       MusicBoxSetInstrument: (msg) => {
-  selectedInstrumentIndex = msg.value
-  return [{ ...model, selectedInstrument: msg.value }, []]
-},
+        selectedInstrumentIndex = msg.value
+        return [{ ...model, selectedInstrument: msg.value }, []]
+      },
       MusicBoxSongEnded: () => [{ ...model, isPlaying: false }, []],
       MusicBoxNoteOn: (msg) => {
         getCtx() // Safari: ensure AudioContext from user gesture
@@ -840,8 +851,8 @@ export const view = (model: Model, language: string = 'en') => {
   return h.div(
     [h.Class('page')],
     [
-        h.div([h.Class('card musicbox-card')], [
-          h.div([h.Class('musicbox-card-inner')], [
+      h.div([h.Class('card musicbox-card')], [
+        h.div([h.Class('musicbox-card-inner')], [
           h.h1([h.Class('title')], [t('musicBoxTitle', language)]),
 
           h.div([h.Class('musicbox-controls')], [
@@ -899,40 +910,42 @@ export const view = (model: Model, language: string = 'en') => {
 
           h.div([h.Class('lyrics-box')], [
             ...SONGS[model.selectedSong]!.lyrics.map(line =>
-              h.p([h.Class('lyrics-line')], [line]),
+              line === ''
+                ? h.div([h.Class('lyrics-gap')], [])
+                : h.p([h.Class('lyrics-line')], [line]),
             ),
           ]),
 
-          ]),
-
-          h.div([h.Class('piano-controls')], [
-            h.button(
-              [h.OnClick(RemoveKey()), h.Class('btn btn-small'), h.Disabled(model.whiteKeys <= MIN_WHITE_KEYS)],
-              ['−'],
-            ),
-            h.span([h.Class('piano-range-label')], [t('musicBoxPianoRange', language)]),
-            h.button(
-              [h.OnClick(AddKey()), h.Class('btn btn-small'), h.Disabled(model.whiteKeys >= MAX_WHITE_KEYS)],
-              ['+'],
-            ),
-            h.label([h.Class('piano-toggle-label')], [
-              h.input([h.Type('checkbox'), h.Checked(model.showBottomKeyboard), h.OnChange(() => ToggleBottomKeyboard())]),
-              t('musicBoxShowBottom', language),
-            ]),
-          ]),
-          renderPiano(h, topWhite, topBlack, topKb.blacks, model.whiteKeys, 'top'),
-          model.showBottomKeyboard
-            ? (() => {
-              const botKb = buildKeyboard('C2', model.whiteKeys)
-              const botWhite = botKb.keys.filter(k => k.type === 'white')
-              const botBlack = botKb.keys.filter(k => k.type === 'black')
-              return renderPiano(h, botWhite, botBlack, botKb.blacks, model.whiteKeys, 'bot')
-            })()
-            : h.empty,
         ]),
-      ],
-    )
-  }
+
+        h.div([h.Class('piano-controls')], [
+          h.button(
+            [h.OnClick(RemoveKey()), h.Class('btn btn-small'), h.Disabled(model.whiteKeys <= MIN_WHITE_KEYS)],
+            ['−'],
+          ),
+          h.span([h.Class('piano-range-label')], [t('musicBoxPianoRange', language)]),
+          h.button(
+            [h.OnClick(AddKey()), h.Class('btn btn-small'), h.Disabled(model.whiteKeys >= MAX_WHITE_KEYS)],
+            ['+'],
+          ),
+          h.label([h.Class('piano-toggle-label')], [
+            h.input([h.Type('checkbox'), h.Checked(model.showBottomKeyboard), h.OnChange(() => ToggleBottomKeyboard())]),
+            t('musicBoxShowBottom', language),
+          ]),
+        ]),
+        renderPiano(h, topWhite, topBlack, topKb.blacks, model.whiteKeys, 'top'),
+        model.showBottomKeyboard
+          ? (() => {
+            const botKb = buildKeyboard('C2', model.whiteKeys)
+            const botWhite = botKb.keys.filter(k => k.type === 'white')
+            const botBlack = botKb.keys.filter(k => k.type === 'black')
+            return renderPiano(h, botWhite, botBlack, botKb.blacks, model.whiteKeys, 'bot')
+          })()
+          : h.empty,
+      ]),
+    ],
+  )
+}
 
 // ── Piano keyboard view helper ──────────────────────────────────────────
 
