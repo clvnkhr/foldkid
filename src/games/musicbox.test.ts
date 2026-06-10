@@ -3,14 +3,14 @@ import { Scene, Story } from 'foldkit/test'
 import * as MusicBox from './musicbox'
 
 const resolvePianoTop = [{ name: 'piano-top' as const }, MusicBox.NoteOn({ pitch: 'C4' })] as const
-const resolvePianoBot = [{ name: 'piano-bot' as const }, MusicBox.NoteOn({ pitch: 'C2' })] as const
-const resolveMount = [resolvePianoTop, resolvePianoBot]
+const resolvePianoBot = [{ name: 'piano-bot' as const }, MusicBox.NoteOn({ pitch: 'C3' })] as const
+const resolveMount = [resolvePianoTop]
 
 describe('MusicBox', () => {
   it('init state', () => {
     expect(MusicBox.init()).toStrictEqual({
       selectedSong: 0, selectedInstrument: 0, isPlaying: false,
-      whiteKeys: 12, showBottomKeyboard: true,
+      whiteKeys: 8, showBottomKeyboard: false, octaveOffset: 0,
     })
   })
 
@@ -111,7 +111,7 @@ describe('MusicBox', () => {
         Story.with(MusicBox.init()),
         Story.message(MusicBox.AddKey()),
         Story.model((model) => {
-          expect(model.whiteKeys).toBe(13)
+          expect(model.whiteKeys).toBe(9)
         }),
         Story.Command.expectNone(),
       )
@@ -183,7 +183,7 @@ describe('MusicBox', () => {
         Story.with(MusicBox.init()),
         Story.message(MusicBox.ToggleBottomKeyboard()),
         Story.model((model) => {
-          expect(model.showBottomKeyboard).toBe(false)
+          expect(model.showBottomKeyboard).toBe(true)
         }),
         Story.Command.expectNone(),
       )
@@ -192,7 +192,7 @@ describe('MusicBox', () => {
     it('ToggleBottomKeyboard toggles back to true', () => {
       Story.story(
         MusicBox.update,
-        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 12, showBottomKeyboard: false }),
+        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 12, showBottomKeyboard: false, octaveOffset: 0, }),
         Story.message(MusicBox.ToggleBottomKeyboard()),
         Story.model((model) => {
           expect(model.showBottomKeyboard).toBe(true)
@@ -267,11 +267,11 @@ describe('MusicBox', () => {
       expect(keys[keys.length - 1]!.pitch).toBe('G#5')
     })
 
-    it('bottom keyboard starts at C2 and last white key is G3', () => {
+    it('bottom keyboard starts at C3 and last white key is A3', () => {
       const keys = MusicBox.PianoKeys.BOTTOM.keys
       const whiteKeys = keys.filter(k => k.type === 'white')
-      expect(keys[0]!.pitch).toBe('C2')
-      expect(whiteKeys[whiteKeys.length - 1]!.pitch).toBe('G3')
+      expect(keys[0]!.pitch).toBe('C3')
+      expect(whiteKeys[whiteKeys.length - 1]!.pitch).toBe('G4')
     })
 
     it('top keyboard has correct white/black split', () => {
@@ -306,7 +306,7 @@ describe('MusicBox', () => {
       Scene.scene(
         { update: MusicBox.update, view: MusicBox.view },
         Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: true, whiteKeys: 12, showBottomKeyboard: true }),
-        Scene.Mount.resolveAll(...resolveMount),
+        Scene.Mount.resolveAll(resolvePianoTop, resolvePianoBot),
         Scene.expect(Scene.text('⏹ Stop')).toExist(),
         Scene.Command.expectNone(),
       )
@@ -316,7 +316,7 @@ describe('MusicBox', () => {
       Scene.scene(
         { update: MusicBox.update, view: MusicBox.view },
         Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: true, whiteKeys: 12, showBottomKeyboard: true }),
-        Scene.Mount.resolveAll(...resolveMount),
+        Scene.Mount.resolveAll(resolvePianoTop, resolvePianoBot),
         Scene.expect(Scene.text('▶ Play')).not.toExist(),
         Scene.Command.expectNone(),
       )
@@ -356,7 +356,7 @@ describe('MusicBox', () => {
       Scene.scene(
         { update: MusicBox.update, view: MusicBox.view },
         Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MIN_WHITE_KEYS, showBottomKeyboard: true }),
-        Scene.Mount.resolveAll(...resolveMount),
+        Scene.Mount.resolveAll(resolvePianoTop, resolvePianoBot),
         Scene.expect(Scene.text('−')).toExist(),
         Scene.Command.expectNone(),
       )
@@ -366,7 +366,7 @@ describe('MusicBox', () => {
       Scene.scene(
         { update: MusicBox.update, view: MusicBox.view },
         Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MAX_WHITE_KEYS, showBottomKeyboard: true }),
-        Scene.Mount.resolveAll(...resolveMount),
+        Scene.Mount.resolveAll(resolvePianoTop, resolvePianoBot),
         Scene.expect(Scene.text('+')).toExist(),
         Scene.Command.expectNone(),
       )
@@ -395,7 +395,7 @@ describe('MusicBox', () => {
     it('does not render bottom keyboard when toggled off', () => {
       Scene.scene(
         { update: MusicBox.update, view: MusicBox.view },
-        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 12, showBottomKeyboard: false }),
+        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 12, showBottomKeyboard: false, octaveOffset: 0, }),
         Scene.Mount.resolveAll(resolvePianoTop),
         Scene.expect(Scene.text('Bottom keyboard')).toExist(),
         Scene.Command.expectNone(),

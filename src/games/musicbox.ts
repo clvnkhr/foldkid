@@ -67,8 +67,8 @@ const getBlackBetween = (whiteNote: string): string | null => {
   return map[whiteNote] ?? null
 }
 
-const buildKeyboard = (start: string, whiteCount: number): { keys: KeyDef[]; blacks: Record<string, number> } => {
-  const startOctave = parseInt(start.slice(-1))
+const buildKeyboard = (start: string, whiteCount: number, octaveOffset = 0): { keys: KeyDef[]; blacks: Record<string, number> } => {
+  const startOctave = parseInt(start.slice(-1)) + octaveOffset
   const keys: KeyDef[] = []
   const blacks: Record<string, number> = {}
 
@@ -92,7 +92,7 @@ const buildKeyboard = (start: string, whiteCount: number): { keys: KeyDef[]; bla
 
 export const PianoKeys = {
   TOP: buildKeyboard('C4', 12),
-  BOTTOM: buildKeyboard('C2', 12),
+  BOTTOM: buildKeyboard('C3', 12),
 }
 
 const activeNotes = new Map<string, {
@@ -538,24 +538,7 @@ export const INSTRUMENTS: Instrument[] = [
     detune: 4,
   },
   {
-    key: 'brass',
-    type: 'sawtooth',
-    gain: 0.1,
-    attack: 0.02,
-    decay: 0.2,
-    sustain: 0.6,
-    release: 0.35,
-    harmonics: [
-      { ratio: 1, gain: 1 },
-      { ratio: 2, gain: 0.5 },
-      { ratio: 3, gain: 0.25 },
-    ],
-    filterType: 'lowpass',
-    filterFreq: 2000,
-    filterQ: 0.5,
-  },
-  {
-    key: 'organ',
+    key: 'sawtooth',
     type: 'sawtooth',
     gain: 0.08,
     attack: 0.01,
@@ -598,8 +581,7 @@ const SONG_TKEYS: Record<string, TranslationKey> = {
 const INST_TKEYS: Record<string, TranslationKey> = {
   bell: 'musicBoxBell',
   flute: 'musicBoxFlute',
-  brass: 'musicBoxBrass',
-  organ: 'musicBoxOrgan',
+  sawtooth: 'musicBoxSawtooth',
   guitar: 'musicBoxGuitar',
 }
 
@@ -820,12 +802,16 @@ const stopAllNotes = (): void => {
   }
 }
 
+export const MIN_OCTAVE = -2
+export const MAX_OCTAVE = 1
+
 export const Model = S.Struct({
   selectedSong: S.Number,
   selectedInstrument: S.Number,
   isPlaying: S.Boolean,
   whiteKeys: S.Number,
   showBottomKeyboard: S.Boolean,
+  octaveOffset: S.Number,
 })
 export type Model = typeof Model.Type
 
@@ -838,14 +824,16 @@ export const NoteOn = m('MusicBoxNoteOn', { pitch: S.String })
 export const NoteOff = m('MusicBoxNoteOff', { pitch: S.String })
 export const AddKey = m('MusicBoxAddKey')
 export const RemoveKey = m('MusicBoxRemoveKey')
+export const OctaveUp = m('MusicBoxOctaveUp')
+export const OctaveDown = m('MusicBoxOctaveDown')
 export const ToggleBottomKeyboard = m('MusicBoxToggleBottomKeyboard')
 
-export const Message = S.Union([Play, Stop, SetSong, SetInstrument, SongEnded, NoteOn, NoteOff, AddKey, RemoveKey, ToggleBottomKeyboard])
+export const Message = S.Union([Play, Stop, SetSong, SetInstrument, SongEnded, NoteOn, NoteOff, AddKey, RemoveKey, OctaveUp, OctaveDown, ToggleBottomKeyboard])
 export type Message = typeof Message.Type
 
 export const init = (): Model => {
   bindKeyboard()
-  return { selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 12, showBottomKeyboard: true }
+  return { selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 8, showBottomKeyboard: false, octaveOffset: 0 }
 }
 
 export const update = (
@@ -896,12 +884,18 @@ export const update = (
       MusicBoxToggleBottomKeyboard: () => {
         return [{ ...model, showBottomKeyboard: !model.showBottomKeyboard }, []]
       },
+      MusicBoxOctaveUp: () => {
+        return model.octaveOffset < MAX_OCTAVE ? [{ ...model, octaveOffset: model.octaveOffset + 1 }, []] : [model, []]
+      },
+      MusicBoxOctaveDown: () => {
+        return model.octaveOffset > MIN_OCTAVE ? [{ ...model, octaveOffset: model.octaveOffset - 1 }, []] : [model, []]
+      },
     }),
   )
 
 export const view = (model: Model, language: string = 'en') => {
   const h = html<Message>()
-  const topKb = buildKeyboard('C4', model.whiteKeys)
+  const topKb = buildKeyboard('C4', model.whiteKeys, model.octaveOffset)
   const topWhite = topKb.keys.filter(k => k.type === 'white')
   const topBlack = topKb.keys.filter(k => k.type === 'black')
 
@@ -932,35 +926,13 @@ export const view = (model: Model, language: string = 'en') => {
                 ],
               ),
             ]),
-            h.div([h.Class('musicbox-dropdown')], [
-              h.label([h.Class('musicbox-dropdown-label')], [t('musicBoxPickInstrument', language)]),
-              h.select(
-                [
-                  h.Value(model.selectedInstrument.toString()),
-                  h.OnChange(v => SetInstrument({ value: parseInt(v) })),
-                  h.Disabled(model.isPlaying),
-                  h.Class('musicbox-select'),
-                ],
-                [
-                  ...INSTRUMENTS.map((inst, i) =>
-                    h.option(
-                      [h.Value(i.toString())],
-                      [`${t(INST_TKEYS[inst.key]!, language)}`],
-                    ),
-                  ),
-                ],
-              ),
-            ]),
-          ]),
-
-          h.div([h.Class('buttons')], [
             model.isPlaying
               ? h.button(
-                [h.OnClick(Stop()), h.Class('btn btn-secondary musicbox-stop-btn')],
+                [h.OnClick(Stop()), h.Class('btn btn-tiny musicbox-inline-btn')],
                 ['⏹ ' + t('stop', language)],
               )
               : h.button(
-                [h.OnClick(Play()), h.Class('btn btn-primary musicbox-play-btn')],
+                [h.OnClick(Play()), h.Class('btn btn-tiny musicbox-inline-btn')],
                 ['▶ ' + t('play', language)],
               ),
           ]),
@@ -977,23 +949,47 @@ export const view = (model: Model, language: string = 'en') => {
 
         h.div([h.Class('piano-controls')], [
           h.button(
-            [h.OnClick(RemoveKey()), h.Class('btn btn-small'), h.Disabled(model.whiteKeys <= MIN_WHITE_KEYS)],
-            ['−'],
+            [h.OnClick(OctaveDown()), h.Class('btn btn-tiny'), h.Disabled(model.octaveOffset <= MIN_OCTAVE)],
+            ['−8'],
+          ),
+          h.button(
+            [h.OnClick(OctaveUp()), h.Class('btn btn-tiny'), h.Disabled(model.octaveOffset >= MAX_OCTAVE)],
+            ['+8'],
           ),
           h.span([h.Class('piano-range-label')], [t('musicBoxPianoRange', language)]),
           h.button(
-            [h.OnClick(AddKey()), h.Class('btn btn-small'), h.Disabled(model.whiteKeys >= MAX_WHITE_KEYS)],
+            [h.OnClick(RemoveKey()), h.Class('btn btn-tiny btn-key-dec'), h.Disabled(model.whiteKeys <= MIN_WHITE_KEYS)],
+            ['−'],
+          ),
+          h.button(
+            [h.OnClick(AddKey()), h.Class('btn btn-tiny'), h.Disabled(model.whiteKeys >= MAX_WHITE_KEYS)],
             ['+'],
           ),
           h.label([h.Class('piano-toggle-label')], [
             h.input([h.Type('checkbox'), h.Checked(model.showBottomKeyboard), h.OnChange(() => ToggleBottomKeyboard())]),
             t('musicBoxShowBottom', language),
           ]),
+          h.select(
+            [
+              h.Value(model.selectedInstrument.toString()),
+              h.OnChange(v => SetInstrument({ value: parseInt(v) })),
+              h.Disabled(model.isPlaying),
+              h.Class('musicbox-select instrument-inline'),
+            ],
+            [
+              ...INSTRUMENTS.map((inst, i) =>
+                h.option(
+                  [h.Value(i.toString())],
+                  [`${t(INST_TKEYS[inst.key]!, language)}`],
+                ),
+              ),
+            ],
+          ),
         ]),
         renderPiano(h, topWhite, topBlack, topKb.blacks, model.whiteKeys, 'top'),
         model.showBottomKeyboard
           ? (() => {
-            const botKb = buildKeyboard('C2', model.whiteKeys)
+            const botKb = buildKeyboard('C3', model.whiteKeys, model.octaveOffset)
             const botWhite = botKb.keys.filter(k => k.type === 'white')
             const botBlack = botKb.keys.filter(k => k.type === 'black')
             return renderPiano(h, botWhite, botBlack, botKb.blacks, model.whiteKeys, 'bot')
@@ -1095,19 +1091,20 @@ const renderPiano = (
     h.div([h.Class('piano-keys'), h.Style({ '--white-count': whiteCount.toString() })], [
       ...whiteKeys.map((k, i) =>
         h.div([
-          h.Class('piano-key piano-white'),
-          h.Attribute('data-pitch', k.pitch),
+          h.Class(`piano-key piano-white${FREQUENCIES[k.pitch] ? '' : ' piano-key-disabled'}`),
+          ...(FREQUENCIES[k.pitch] ? [h.Attribute('data-pitch', k.pitch)] : []),
           h.Key(`${prefix}-${k.pitch}`),
           h.Style({ left: `calc(${i} / ${whiteCount} * 100%)`, width: `calc(100% / ${whiteCount})` }),
         ], [
           h.div([h.Class('piano-key-glow')], []),
+          h.div([h.Class('piano-key-label')], [k.pitch]),
         ]),
       ),
       ...blackKeys.map(k => {
         const boundary = blacks[k.pitch] ?? 1
         return h.div([
-          h.Class('piano-key piano-black'),
-          h.Attribute('data-pitch', k.pitch),
+          h.Class(`piano-key piano-black${FREQUENCIES[k.pitch] ? '' : ' piano-key-disabled'}`),
+          ...(FREQUENCIES[k.pitch] ? [h.Attribute('data-pitch', k.pitch)] : []),
           h.Key(`${prefix}-${k.pitch}`),
           h.Style({ left: `calc(${boundary} / ${whiteCount} * 100%)` }),
         ], [
