@@ -9,7 +9,7 @@
   box-sizing: border-box;
 }
 
-html, body {
+*, *::before, *::after {
   touch-action: manipulation;
 }
 

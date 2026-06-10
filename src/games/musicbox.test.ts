@@ -255,7 +255,7 @@ describe('MusicBox', () => {
 
   it('every QWERTY mapped pitch has a frequency entry', () => {
     const all = [...MusicBox.QWERTY_WHITES, ...MusicBox.QWERTY_BLACKS]
-    for (const { qwerty, pitch } of all) {
+    for (const { pitch } of all) {
       expect(MusicBox.FREQUENCIES[pitch]).toBeDefined()
     }
   })
