@@ -1115,13 +1115,17 @@ body {
   border-radius: inherit;
   background: linear-gradient(180deg, #b8e6d4 0%, #8dd4b8 8%, #6fc9a8 90%, #5ab895 100%);
   opacity: 0;
-  transition: opacity 0.5s ease;
+  transition: opacity 0.4s ease;
   pointer-events: none;
 }
 
 .piano-key-glow--active {
-  opacity: 0.7;
-  transition: opacity 0.06s ease;
+  animation: glowFlash 0.25s ease-out forwards;
+}
+
+@keyframes glowFlash {
+  0% { opacity: 1; background: linear-gradient(180deg, #5ae0b0 0%, #2ad490 8%, #1ac480 90%, #0eb070 100%); }
+  100% { opacity: 0.35; background: linear-gradient(180deg, #b8e6d4 0%, #8dd4b8 8%, #6fc9a8 90%, #5ab895 100%); }
 }
 
 .piano-key-label {
@@ -1273,6 +1277,21 @@ body {
   font-size: 0.75rem;
   color: #888;
   min-width: 2rem;
+  text-align: center;
+  font-family: monospace;
+}
+
+.tempo-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-left: 0.5rem;
+}
+
+.tempo-label {
+  font-size: 0.7rem;
+  color: #888;
+  min-width: 2.2rem;
   text-align: center;
   font-family: monospace;
 }

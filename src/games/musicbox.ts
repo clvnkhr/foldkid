@@ -202,7 +202,10 @@ const highlightKey = (pitch: string): void => {
     const parent = (el as HTMLElement).parentElement
     const p = parent?.getAttribute('data-pitch')
     if (p === pitch) {
-      (el as HTMLElement).classList.add('piano-key-glow--active')
+      const glow = el as HTMLElement
+      glow.classList.remove('piano-key-glow--active')
+      void glow.offsetHeight
+      glow.classList.add('piano-key-glow--active')
     }
   })
 }
@@ -598,6 +601,7 @@ const INST_TKEYS: Record<string, TranslationKey> = {
 
 let sharedCtx: AudioContext | undefined
 let stopFlag = false
+let playbackTempo = 1
 
 const getCtx = (): AudioContext | undefined => {
   if (sharedCtx?.state === 'closed' || sharedCtx?.state === 'interrupted') {
@@ -721,7 +725,7 @@ const playSongCmd = (
       const freq = FREQUENCIES[note.pitch]
       if (freq) playNoteAudio(freq, note.dur, inst)
       highlightKey(note.pitch)
-      yield* Effect.sleep(note.dur * 350)
+      yield* Effect.sleep((note.dur * 350) / playbackTempo)
       unhighlightAllKeys()
     }
     stopFlag = false
@@ -824,6 +828,7 @@ export const Model = S.Struct({
   showBottomKeyboard: S.Boolean,
   octaveOffset: S.Number,
   bottomShift: S.Number,
+  tempo: S.Number,
 })
 export type Model = typeof Model.Type
 
@@ -840,13 +845,15 @@ export const OctaveUp = m('MusicBoxOctaveUp')
 export const OctaveDown = m('MusicBoxOctaveDown')
 export const ToggleBottomKeyboard = m('MusicBoxToggleBottomKeyboard')
 export const ShiftBottom = m('MusicBoxShiftBottom', { delta: S.Number })
+export const TempoUp = m('MusicBoxTempoUp')
+export const TempoDown = m('MusicBoxTempoDown')
 
-export const Message = S.Union([Play, Stop, SetSong, SetInstrument, SongEnded, NoteOn, NoteOff, AddKey, RemoveKey, OctaveUp, OctaveDown, ToggleBottomKeyboard, ShiftBottom])
+export const Message = S.Union([Play, Stop, SetSong, SetInstrument, SongEnded, NoteOn, NoteOff, AddKey, RemoveKey, OctaveUp, OctaveDown, ToggleBottomKeyboard, ShiftBottom, TempoUp, TempoDown])
 export type Message = typeof Message.Type
 
 export const init = (): Model => {
   bindKeyboard()
-  return { selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 8, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0 }
+  return { selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 8, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0, tempo: 1 }
 }
 
 export const update = (
@@ -858,6 +865,7 @@ export const update = (
     M.tagsExhaustive({
       MusicBoxPlay: () => {
         getCtx() // Safari: AudioContext must be created within a user gesture
+        playbackTempo = model.tempo
         return [
           { ...model, isPlaying: true },
           [playSongCmd(
@@ -873,7 +881,14 @@ export const update = (
         unhighlightAllKeys()
         return [{ ...model, isPlaying: false }, []]
       },
-      MusicBoxSetSong: (msg) => [{ ...model, selectedSong: msg.value }, []],
+      MusicBoxSetSong: (msg) => {
+        if (model.isPlaying) {
+          stopFlag = true
+          stopAllNotes()
+          unhighlightAllKeys()
+        }
+        return [{ ...model, selectedSong: msg.value, isPlaying: false }, []]
+      },
       MusicBoxSetInstrument: (msg) => {
         selectedInstrumentIndex = msg.value
         return [{ ...model, selectedInstrument: msg.value }, []]
@@ -907,6 +922,18 @@ export const update = (
         const newShift = model.bottomShift + msg.delta
         return newShift < -7 || newShift > 7 ? [model, []] : [{ ...model, bottomShift: newShift }, []]
       },
+      MusicBoxTempoUp: () => {
+        const t = Math.round((model.tempo + 0.25) * 100) / 100
+        const next = t > 3 ? model : { ...model, tempo: t }
+        if (next.tempo !== model.tempo) playbackTempo = next.tempo
+        return [next, []]
+      },
+      MusicBoxTempoDown: () => {
+        const t = Math.round((model.tempo - 0.25) * 100) / 100
+        const next = t < 0.25 ? model : { ...model, tempo: t }
+        if (next.tempo !== model.tempo) playbackTempo = next.tempo
+        return [next, []]
+      },
     }),
   )
 
@@ -930,7 +957,6 @@ export const view = (model: Model, language: string = 'en') => {
                 [
                   h.Value(model.selectedSong.toString()),
                   h.OnChange(v => SetSong({ value: parseInt(v) })),
-                  h.Disabled(model.isPlaying),
                   h.Class('musicbox-select'),
                 ],
                 [
@@ -952,6 +978,17 @@ export const view = (model: Model, language: string = 'en') => {
                 [h.OnClick(Play()), h.Class('btn btn-tiny musicbox-inline-btn')],
                 ['▶ ' + t('play', language)],
               ),
+            h.div([h.Class('tempo-controls')], [
+              h.button(
+                [h.OnClick(TempoDown()), h.Class('btn btn-tiny'), h.Disabled(model.tempo <= 0.25)],
+                ['−'],
+              ),
+              h.span([h.Class('tempo-label')], [`${model.tempo.toFixed(2)}×`]),
+              h.button(
+                [h.OnClick(TempoUp()), h.Class('btn btn-tiny'), h.Disabled(model.tempo >= 3)],
+                ['+'],
+              ),
+            ]),
           ]),
 
           h.div([h.Class('lyrics-box')], [

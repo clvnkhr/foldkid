@@ -10,7 +10,7 @@ describe('MusicBox', () => {
   it('init state', () => {
     expect(MusicBox.init()).toStrictEqual({
       selectedSong: 0, selectedInstrument: 0, isPlaying: false,
-      whiteKeys: 8, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0,
+      whiteKeys: 8, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0, tempo: 1,
     })
   })
 
@@ -84,7 +84,7 @@ describe('MusicBox', () => {
     it('Stop sets isPlaying to false', () => {
       Story.story(
         MusicBox.update,
-        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: true, whiteKeys: 12, showBottomKeyboard: true }),
+        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: true, whiteKeys: 12, showBottomKeyboard: true, tempo: 1, }),
         Story.message(MusicBox.Stop()),
         Story.model((model) => {
           expect(model.isPlaying).toBe(false)
@@ -96,7 +96,7 @@ describe('MusicBox', () => {
     it('SongEnded sets isPlaying to false', () => {
       Story.story(
         MusicBox.update,
-        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: true, whiteKeys: 12, showBottomKeyboard: true }),
+        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: true, whiteKeys: 12, showBottomKeyboard: true, tempo: 1, }),
         Story.message(MusicBox.SongEnded()),
         Story.model((model) => {
           expect(model.isPlaying).toBe(false)
@@ -120,7 +120,7 @@ describe('MusicBox', () => {
     it('RemoveKey decrements whiteKeys', () => {
       Story.story(
         MusicBox.update,
-        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 12, showBottomKeyboard: true }),
+        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 12, showBottomKeyboard: true, tempo: 1, }),
         Story.message(MusicBox.RemoveKey()),
         Story.model((model) => {
           expect(model.whiteKeys).toBe(11)
@@ -132,7 +132,7 @@ describe('MusicBox', () => {
     it('AddKey is capped at MAX_WHITE_KEYS', () => {
       Story.story(
         MusicBox.update,
-        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MAX_WHITE_KEYS, showBottomKeyboard: true }),
+        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MAX_WHITE_KEYS, showBottomKeyboard: true, tempo: 1, }),
         Story.message(MusicBox.AddKey()),
         Story.model((model) => {
           expect(model.whiteKeys).toBe(MusicBox.MAX_WHITE_KEYS)
@@ -144,7 +144,7 @@ describe('MusicBox', () => {
     it('RemoveKey is capped at MIN_WHITE_KEYS', () => {
       Story.story(
         MusicBox.update,
-        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MIN_WHITE_KEYS, showBottomKeyboard: true }),
+        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MIN_WHITE_KEYS, showBottomKeyboard: true, tempo: 1, }),
         Story.message(MusicBox.RemoveKey()),
         Story.model((model) => {
           expect(model.whiteKeys).toBe(MusicBox.MIN_WHITE_KEYS)
@@ -156,7 +156,7 @@ describe('MusicBox', () => {
     it('AddKey works at boundary MAX_WHITE_KEYS - 1', () => {
       Story.story(
         MusicBox.update,
-        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MAX_WHITE_KEYS - 1, showBottomKeyboard: true }),
+        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MAX_WHITE_KEYS - 1, showBottomKeyboard: true, tempo: 1, }),
         Story.message(MusicBox.AddKey()),
         Story.model((model) => {
           expect(model.whiteKeys).toBe(MusicBox.MAX_WHITE_KEYS)
@@ -168,7 +168,7 @@ describe('MusicBox', () => {
     it('RemoveKey works at boundary MIN_WHITE_KEYS + 1', () => {
       Story.story(
         MusicBox.update,
-        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MIN_WHITE_KEYS + 1, showBottomKeyboard: true }),
+        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MIN_WHITE_KEYS + 1, showBottomKeyboard: true, tempo: 1, }),
         Story.message(MusicBox.RemoveKey()),
         Story.model((model) => {
           expect(model.whiteKeys).toBe(MusicBox.MIN_WHITE_KEYS)
@@ -192,7 +192,7 @@ describe('MusicBox', () => {
     it('ToggleBottomKeyboard toggles back to true', () => {
       Story.story(
         MusicBox.update,
-        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 12, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0, }),
+        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 12, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0, tempo: 1, }),
         Story.message(MusicBox.ToggleBottomKeyboard()),
         Story.model((model) => {
           expect(model.showBottomKeyboard).toBe(true)
@@ -335,7 +335,7 @@ describe('MusicBox', () => {
     it('renders stop button when playing', () => {
       Scene.scene(
         { update: MusicBox.update, view: MusicBox.view },
-        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: true, whiteKeys: 12, showBottomKeyboard: true }),
+        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: true, whiteKeys: 12, showBottomKeyboard: true, tempo: 1, }),
         Scene.Mount.resolveAll(resolvePianoTop, resolvePianoBot),
         Scene.expect(Scene.text('⏹ Stop')).toExist(),
         Scene.Command.expectNone(),
@@ -345,7 +345,7 @@ describe('MusicBox', () => {
     it('play button absent when playing', () => {
       Scene.scene(
         { update: MusicBox.update, view: MusicBox.view },
-        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: true, whiteKeys: 12, showBottomKeyboard: true }),
+        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: true, whiteKeys: 12, showBottomKeyboard: true, tempo: 1, }),
         Scene.Mount.resolveAll(resolvePianoTop, resolvePianoBot),
         Scene.expect(Scene.text('▶ Play')).not.toExist(),
         Scene.Command.expectNone(),
@@ -385,7 +385,7 @@ describe('MusicBox', () => {
     it('- button exists at MIN_WHITE_KEYS', () => {
       Scene.scene(
         { update: MusicBox.update, view: MusicBox.view },
-        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MIN_WHITE_KEYS, showBottomKeyboard: true }),
+        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MIN_WHITE_KEYS, showBottomKeyboard: true, tempo: 1, }),
         Scene.Mount.resolveAll(resolvePianoTop, resolvePianoBot),
         Scene.expect(Scene.text('−')).toExist(),
         Scene.Command.expectNone(),
@@ -395,7 +395,7 @@ describe('MusicBox', () => {
     it('+ button exists at MAX_WHITE_KEYS', () => {
       Scene.scene(
         { update: MusicBox.update, view: MusicBox.view },
-        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MAX_WHITE_KEYS, showBottomKeyboard: true }),
+        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MAX_WHITE_KEYS, showBottomKeyboard: true, tempo: 1, }),
         Scene.Mount.resolveAll(resolvePianoTop, resolvePianoBot),
         Scene.expect(Scene.text('+')).toExist(),
         Scene.Command.expectNone(),
@@ -425,7 +425,7 @@ describe('MusicBox', () => {
     it('does not render bottom keyboard when toggled off', () => {
       Scene.scene(
         { update: MusicBox.update, view: MusicBox.view },
-        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 12, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0, }),
+        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 12, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0, tempo: 1, }),
         Scene.Mount.resolveAll(resolvePianoTop),
         Scene.expect(Scene.text('Bottom keyboard')).toExist(),
         Scene.Command.expectNone(),
