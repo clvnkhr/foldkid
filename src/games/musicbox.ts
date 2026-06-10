@@ -13,6 +13,7 @@ interface Song {
   key: string
   emoji: string
   notes: Note[]
+  lyrics: string[]
 }
 
 interface HarmonicDef {
@@ -198,11 +199,29 @@ const unhighlightAllKeys = (): void => {
   })
 }
 
+const repeat = <T>(arr: T[], n: number): T[] =>
+  Array.from({ length: n }, () => [...arr]).flat()
+
 export const SONGS: Song[] = [
   {
     key: 'twinkle',
     emoji: '⭐',
-    notes: [
+    lyrics: [
+      'Twinkle, twinkle, little star,',
+      'How I wonder what you are!',
+      'Up above the world so high,',
+      'Like a diamond in the sky.',
+      'Twinkle, twinkle, little star,',
+      'How I wonder what you are!',
+      '',
+      'When the blazing sun is gone,',
+      'When he nothing shines upon,',
+      'Then you show your little light,',
+      'Twinkle, twinkle, all the night.',
+      'Twinkle, twinkle, little star,',
+      'How I wonder what you are!',
+    ],
+    notes: repeat([
       { pitch: 'C4', dur: 1 }, { pitch: 'C4', dur: 1 },
       { pitch: 'G4', dur: 1 }, { pitch: 'G4', dur: 1 },
       { pitch: 'A4', dur: 1 }, { pitch: 'A4', dur: 1 },
@@ -211,12 +230,43 @@ export const SONGS: Song[] = [
       { pitch: 'E4', dur: 1 }, { pitch: 'E4', dur: 1 },
       { pitch: 'D4', dur: 1 }, { pitch: 'D4', dur: 1 },
       { pitch: 'C4', dur: 2 },
-    ],
+      { pitch: 'G4', dur: 1 }, { pitch: 'G4', dur: 1 },
+      { pitch: 'F4', dur: 1 }, { pitch: 'F4', dur: 1 },
+      { pitch: 'E4', dur: 1 }, { pitch: 'E4', dur: 1 },
+      { pitch: 'D4', dur: 2 },
+      { pitch: 'G4', dur: 1 }, { pitch: 'G4', dur: 1 },
+      { pitch: 'F4', dur: 1 }, { pitch: 'F4', dur: 1 },
+      { pitch: 'E4', dur: 1 }, { pitch: 'E4', dur: 1 },
+      { pitch: 'D4', dur: 2 },
+      { pitch: 'C4', dur: 1 }, { pitch: 'C4', dur: 1 },
+      { pitch: 'G4', dur: 1 }, { pitch: 'G4', dur: 1 },
+      { pitch: 'A4', dur: 1 }, { pitch: 'A4', dur: 1 },
+      { pitch: 'G4', dur: 2 },
+      { pitch: 'F4', dur: 1 }, { pitch: 'F4', dur: 1 },
+      { pitch: 'E4', dur: 1 }, { pitch: 'E4', dur: 1 },
+      { pitch: 'D4', dur: 1 }, { pitch: 'D4', dur: 1 },
+      { pitch: 'C4', dur: 2 },
+    ], 2),
   },
   {
     key: 'mary',
     emoji: '🐑',
-    notes: [
+    lyrics: [
+      'Mary had a little lamb,',
+      'Its fleece was white as snow;',
+      'And everywhere that Mary went,',
+      'The lamb was sure to go.',
+      'It followed her to school one day,',
+      'Which was against the rules;',
+      'It made the children laugh and play,',
+      'To see a lamb at school.',
+      '',
+      'Why does the lamb love Mary so?',
+      'Love Mary so? Love Mary so?',
+      'Why does the lamb love Mary so?',
+      'The eager children cry.',
+    ],
+    notes: repeat([
       { pitch: 'E4', dur: 1 }, { pitch: 'D4', dur: 1 },
       { pitch: 'C4', dur: 1 }, { pitch: 'D4', dur: 1 },
       { pitch: 'E4', dur: 1 }, { pitch: 'E4', dur: 1 },
@@ -232,12 +282,28 @@ export const SONGS: Song[] = [
       { pitch: 'D4', dur: 1 }, { pitch: 'D4', dur: 1 },
       { pitch: 'E4', dur: 1 }, { pitch: 'D4', dur: 1 },
       { pitch: 'C4', dur: 2 },
-    ],
+    ], 2),
   },
   {
     key: 'london',
     emoji: '🌉',
-    notes: [
+    lyrics: [
+      'London Bridge is falling down,',
+      'Falling down, falling down,',
+      'London Bridge is falling down,',
+      'My fair lady.',
+      '',
+      'Build it up with iron bars,',
+      'Iron bars, iron bars,',
+      'Build it up with iron bars,',
+      'My fair lady.',
+      '',
+      'Iron bars will bend and break,',
+      'Bend and break, bend and break,',
+      'Iron bars will bend and break,',
+      'My fair lady.',
+    ],
+    notes: repeat([
       { pitch: 'G4', dur: 1 }, { pitch: 'A4', dur: 1 },
       { pitch: 'G4', dur: 1 }, { pitch: 'F4', dur: 1 },
       { pitch: 'E4', dur: 1 }, { pitch: 'F4', dur: 1 },
@@ -252,12 +318,23 @@ export const SONGS: Song[] = [
       { pitch: 'G4', dur: 2 },
       { pitch: 'D4', dur: 1 }, { pitch: 'G4', dur: 1 },
       { pitch: 'E4', dur: 1 }, { pitch: 'C4', dur: 2 },
-    ],
+    ], 3),
   },
   {
     key: 'row',
     emoji: '🚣',
-    notes: [
+    lyrics: [
+      'Row, row, row your boat,',
+      'Gently down the stream.',
+      'Merrily, merrily, merrily, merrily,',
+      'Life is but a dream.',
+      '',
+      'Row, row, row your boat,',
+      'Gently down the stream.',
+      'If you see a crocodile,',
+      "Don't forget to scream!",
+    ],
+    notes: repeat([
       { pitch: 'C4', dur: 1 }, { pitch: 'C4', dur: 1 },
       { pitch: 'C4', dur: 1 }, { pitch: 'D4', dur: 1 },
       { pitch: 'E4', dur: 2 },
@@ -275,12 +352,33 @@ export const SONGS: Song[] = [
       { pitch: 'G4', dur: 1 }, { pitch: 'F4', dur: 1 },
       { pitch: 'E4', dur: 1 }, { pitch: 'D4', dur: 1 },
       { pitch: 'C4', dur: 3 },
-    ],
+    ], 2),
   },
   {
     key: 'oldMac',
     emoji: '🐷',
-    notes: [
+    lyrics: [
+      'Old MacDonald had a farm, E-I-E-I-O,',
+      'And on his farm he had a pig, E-I-E-I-O,',
+      'With an oink oink here and an oink oink there,',
+      'Here an oink, there an oink, everywhere an oink oink.',
+      '',
+      'Old MacDonald had a farm, E-I-E-I-O,',
+      'And on his farm he had a cow, E-I-E-I-O,',
+      'With a moo moo here and a moo moo there,',
+      'Here a moo, there a moo, everywhere a moo moo.',
+      '',
+      'Old MacDonald had a farm, E-I-E-I-O,',
+      'And on his farm he had a duck, E-I-E-I-O,',
+      'With a quack quack here and a quack quack there,',
+      'Here a quack, there a quack, everywhere a quack quack.',
+      '',
+      'Old MacDonald had a farm, E-I-E-I-O,',
+      'And on his farm he had a horse, E-I-E-I-O,',
+      'With a neigh neigh here and a neigh neigh there,',
+      'Here a neigh, there a neigh, everywhere a neigh neigh.',
+    ],
+    notes: repeat([
       { pitch: 'G4', dur: 1 }, { pitch: 'G4', dur: 1 },
       { pitch: 'G4', dur: 1 }, { pitch: 'D4', dur: 1 },
       { pitch: 'E4', dur: 1 }, { pitch: 'E4', dur: 1 },
@@ -292,12 +390,67 @@ export const SONGS: Song[] = [
       { pitch: 'G4', dur: 1 }, { pitch: 'G4', dur: 1 },
       { pitch: 'A4', dur: 1 }, { pitch: 'A4', dur: 1 },
       { pitch: 'G4', dur: 2 },
-    ],
+    ], 4),
   },
   {
     key: 'happy',
     emoji: '😊',
+    lyrics: [
+      "If you're happy and you know it, clap your hands!",
+      "If you're happy and you know it, clap your hands!",
+      "If you're happy and you know it, then your face will surely show it,",
+      "If you're happy and you know it, clap your hands!",
+      '',
+      "If you're happy and you know it, stomp your feet!",
+      "If you're happy and you know it, stomp your feet!",
+      "If you're happy and you know it, then your face will surely show it,",
+      "If you're happy and you know it, stomp your feet!",
+      '',
+      "If you're happy and you know it, shout hurray!",
+      "If you're happy and you know it, shout hurray!",
+      "If you're happy and you know it, then your face will surely show it,",
+      "If you're happy and you know it, shout hurray!",
+    ],
+    notes: repeat([
+      { pitch: 'C4', dur: 1 }, { pitch: 'C4', dur: 1 },
+      { pitch: 'F4', dur: 1 }, { pitch: 'F4', dur: 1 },
+      { pitch: 'F4', dur: 1 }, { pitch: 'F4', dur: 1 },
+      { pitch: 'F4', dur: 1 }, { pitch: 'F4', dur: 1 },
+      { pitch: 'E4', dur: 1 }, { pitch: 'F4', dur: 1 },
+      { pitch: 'G4', dur: 2 },
+      { pitch: 'C4', dur: 1 }, { pitch: 'C4', dur: 1 },
+      { pitch: 'G4', dur: 1 }, { pitch: 'G4', dur: 1 },
+      { pitch: 'G4', dur: 1 }, { pitch: 'G4', dur: 1 },
+      { pitch: 'G4', dur: 1 }, { pitch: 'G4', dur: 1 },
+      { pitch: 'F4', dur: 1 }, { pitch: 'G4', dur: 1 },
+      { pitch: 'A4', dur: 2 },
+      { pitch: 'A4', dur: 1 }, { pitch: 'A4', dur: 1 },
+      { pitch: 'A#4', dur: 1 }, { pitch: 'A#4', dur: 1 },
+      { pitch: 'A#4', dur: 1 }, { pitch: 'A#4', dur: 1 },
+      { pitch: 'D4', dur: 1 }, { pitch: 'D4', dur: 1 },
+      { pitch: 'A#4', dur: 1 }, { pitch: 'A#4', dur: 1 },
+      { pitch: 'A4', dur: 1 }, { pitch: 'A4', dur: 1 },
+      { pitch: 'A4', dur: 1 }, { pitch: 'G4', dur: 1 },
+      { pitch: 'F4', dur: 1 }, { pitch: 'F4', dur: 1 },
+      { pitch: 'A4', dur: 1 }, { pitch: 'A4', dur: 1 },
+      { pitch: 'G4', dur: 1 }, { pitch: 'G4', dur: 1 },
+      { pitch: 'G4', dur: 1 }, { pitch: 'F4', dur: 1 },
+      { pitch: 'E4', dur: 1 }, { pitch: 'E4', dur: 1 },
+      { pitch: 'D4', dur: 1 }, { pitch: 'E4', dur: 1 },
+      { pitch: 'F4', dur: 2 },
+    ], 3),
+  },
+  {
+    key: 'birthday',
+    emoji: '🎂',
+    lyrics: [
+      "Happy birthday to you,",
+      "Happy birthday to you,",
+      "Happy birthday dear you,",
+      "Happy birthday to you!",
+    ],
     notes: [
+      // Verse 1
       { pitch: 'C4', dur: 1 }, { pitch: 'C4', dur: 1 },
       { pitch: 'D4', dur: 1 }, { pitch: 'C4', dur: 1 },
       { pitch: 'F4', dur: 1 }, { pitch: 'E4', dur: 2 },
@@ -400,6 +553,7 @@ const SONG_TKEYS: Record<string, TranslationKey> = {
   row: 'musicBoxRow',
   oldMac: 'musicBoxOldMac',
   happy: 'musicBoxHappy',
+  birthday: 'musicBoxHappyBirthday',
 }
 
 const INST_TKEYS: Record<string, TranslationKey> = {
@@ -741,6 +895,12 @@ export const view = (model: Model, language: string = 'en') => {
                 [h.OnClick(Play()), h.Class('btn btn-primary musicbox-play-btn')],
                 ['▶ ' + t('play', language)],
               ),
+          ]),
+
+          h.div([h.Class('lyrics-box')], [
+            ...SONGS[model.selectedSong]!.lyrics.map(line =>
+              h.p([h.Class('lyrics-line')], [line]),
+            ),
           ]),
 
           ]),
