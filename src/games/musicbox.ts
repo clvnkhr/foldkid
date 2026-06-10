@@ -226,6 +226,26 @@ const unhighlightAllKeys = (): void => {
   })
 }
 
+const highlightLyricLine = (index: number): void => {
+  if (index === currentLyricLine) return
+  if (currentLyricLine >= 0) {
+    document.querySelectorAll(`[data-lyric-index="${currentLyricLine}"]`).forEach(el => {
+      el.classList.remove('lyrics-line--active')
+    })
+  }
+  currentLyricLine = index
+  document.querySelectorAll(`[data-lyric-index="${index}"]`).forEach(el => {
+    el.classList.add('lyrics-line--active')
+  })
+}
+
+const unhighlightAllLyricLines = (): void => {
+  document.querySelectorAll('.lyrics-line--active').forEach(el => {
+    el.classList.remove('lyrics-line--active')
+  })
+  currentLyricLine = -1
+}
+
 const repeat = <T>(arr: T[], n: number): T[] =>
   Array.from({ length: n }, () => [...arr]).flat()
 
@@ -388,23 +408,23 @@ export const SONGS: Song[] = [
       "Don't forget to shake!",
     ],
     notes: repeat([
-      { pitch: 'C4', dur: 1 }, { pitch: 'C4', dur: 1 },
-      { pitch: 'C4', dur: 2 / 3 }, { pitch: 'D4', dur: 1 / 3 },
-      { pitch: 'E4', dur: 1 },
-      { pitch: 'E4', dur: 2 / 3 }, { pitch: 'D4', dur: 1 / 3 },
-      { pitch: 'E4', dur: 2 / 3 }, { pitch: 'F4', dur: 1 / 3 },
-      { pitch: 'G4', dur: 2 },
-      { pitch: 'C5', dur: 1 / 3 }, { pitch: 'C5', dur: 1 / 3 },
-      { pitch: 'C5', dur: 1 / 3 },
-      { pitch: 'G4', dur: 1 / 3 }, { pitch: 'G4', dur: 1 / 3 },
-      { pitch: 'G4', dur: 1 / 3 },
-      { pitch: 'E4', dur: 1 / 3 }, { pitch: 'E4', dur: 1 / 3 },
-      { pitch: 'E4', dur: 1 / 3 },
-      { pitch: 'C4', dur: 1 / 3 }, { pitch: 'C4', dur: 1 / 3 },
-      { pitch: 'C4', dur: 1 / 3 },
-      { pitch: 'G4', dur: 2 / 3 }, { pitch: 'F4', dur: 1 / 3 },
-      { pitch: 'E4', dur: 2 / 3 }, { pitch: 'D4', dur: 1 / 3 },
-      { pitch: 'C4', dur: 2 },
+      { pitch: 'C4', dur: 1.5 }, { pitch: 'C4', dur: 1.5 },
+      { pitch: 'C4', dur: 1 }, { pitch: 'D4', dur: 0.5 },
+      { pitch: 'E4', dur: 1.5 },
+      { pitch: 'E4', dur: 1 }, { pitch: 'D4', dur: 0.5 },
+      { pitch: 'E4', dur: 1 }, { pitch: 'F4', dur: 0.5 },
+      { pitch: 'G4', dur: 3 },
+      { pitch: 'C5', dur: 0.5 }, { pitch: 'C5', dur: 0.5 },
+      { pitch: 'C5', dur: 0.5 },
+      { pitch: 'G4', dur: 0.5 }, { pitch: 'G4', dur: 0.5 },
+      { pitch: 'G4', dur: 0.5 },
+      { pitch: 'E4', dur: 0.5 }, { pitch: 'E4', dur: 0.5 },
+      { pitch: 'E4', dur: 0.5 },
+      { pitch: 'C4', dur: 0.5 }, { pitch: 'C4', dur: 0.5 },
+      { pitch: 'C4', dur: 0.5 },
+      { pitch: 'G4', dur: 1 }, { pitch: 'F4', dur: 0.5 },
+      { pitch: 'E4', dur: 1 }, { pitch: 'D4', dur: 0.5 },
+      { pitch: 'C4', dur: 3 },
     ], 5),
   },
   {
@@ -438,10 +458,10 @@ export const SONGS: Song[] = [
       { pitch: 'D4', dur: 2 },
       { pitch: 'B4', dur: 1 }, { pitch: 'B4', dur: 1 },
       { pitch: 'A4', dur: 1 }, { pitch: 'A4', dur: 1 },
-      { pitch: 'G4', dur: 2 },
-      { pitch: 'D4', dur: 1 }, { pitch: 'D4', dur: 1 },
-      { pitch: 'G4', dur: 1 }, { pitch: 'G4', dur: 1 },
-      { pitch: 'A4', dur: 1 }, { pitch: 'A4', dur: 1 },
+      { pitch: 'G4', dur: 3 }, { pitch: 'D4', dur: 1 }, 
+      { pitch: 'G4', dur: 1 }, { pitch: 'G4', dur: 1 }, 
+      { pitch: 'G4', dur: 1 },
+      { pitch: 'D4', dur: 1 }, { pitch: 'A4', dur: 1 },
       { pitch: 'G4', dur: 2 },
     ], 4),
   },
@@ -602,6 +622,7 @@ const INST_TKEYS: Record<string, TranslationKey> = {
 let sharedCtx: AudioContext | undefined
 let stopFlag = false
 let playbackTempo = 1
+let currentLyricLine = -1
 
 const getCtx = (): AudioContext | undefined => {
   if (sharedCtx?.state === 'closed' || sharedCtx?.state === 'interrupted') {
@@ -719,17 +740,27 @@ const playSongCmd = (
   name: 'PlayMusicBox',
   effect: Effect.gen(function* () {
     stopFlag = false
+    const totalDur = song.notes.reduce((sum, n) => sum + n.dur, 0)
+    const nonEmptyIndices = song.lyrics
+      .map((line, i) => line === '' ? -1 : i)
+      .filter(i => i >= 0)
+    const beatsPerLine = totalDur / nonEmptyIndices.length
+    let cumDur = 0
     for (let i = 0; i < song.notes.length; i++) {
       if (stopFlag) break
       const note = song.notes[i]!
       const freq = FREQUENCIES[note.pitch]
       if (freq) playNoteAudio(freq, note.dur, inst)
       highlightKey(note.pitch)
+      const rawIdx = Math.min(Math.floor(cumDur / beatsPerLine), nonEmptyIndices.length - 1)
+      highlightLyricLine(nonEmptyIndices[rawIdx]!)
+      cumDur += note.dur
       yield* Effect.sleep((note.dur * 350) / playbackTempo)
       unhighlightAllKeys()
     }
     stopFlag = false
     unhighlightAllKeys()
+    unhighlightAllLyricLines()
     return msg
   }),
 })
@@ -879,6 +910,7 @@ export const update = (
         stopFlag = true
         stopAllNotes()
         unhighlightAllKeys()
+        unhighlightAllLyricLines()
         return [{ ...model, isPlaying: false }, []]
       },
       MusicBoxSetSong: (msg) => {
@@ -887,6 +919,7 @@ export const update = (
           stopAllNotes()
           unhighlightAllKeys()
         }
+        unhighlightAllLyricLines()
         return [{ ...model, selectedSong: msg.value, isPlaying: false }, []]
       },
       MusicBoxSetInstrument: (msg) => {
@@ -992,10 +1025,10 @@ export const view = (model: Model, language: string = 'en') => {
           ]),
 
           h.div([h.Class('lyrics-box')], [
-            ...SONGS[model.selectedSong]!.lyrics.map(line =>
+            ...SONGS[model.selectedSong]!.lyrics.map((line, idx) =>
               line === ''
                 ? h.div([h.Class('lyrics-gap')], [])
-                : h.p([h.Class('lyrics-line')], [line]),
+                : h.p([h.Class('lyrics-line'), h.Attribute('data-lyric-index', idx.toString())], [line]),
             ),
           ]),
 

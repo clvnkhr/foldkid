@@ -1296,4 +1296,10 @@ body {
   font-family: monospace;
 }
 
+.lyrics-line--active {
+  font-weight: 700;
+  color: #2d6b4f;
+  transition: color 0.08s ease;
+}
+
 
