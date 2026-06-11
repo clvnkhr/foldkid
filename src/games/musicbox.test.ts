@@ -9,7 +9,7 @@ const resolveMount = [resolvePianoTop]
 describe('MusicBox', () => {
   it('init state', () => {
     expect(MusicBox.init()).toStrictEqual({
-      selectedSong: 0, selectedInstrument: 0, isPlaying: false, isPaused: false,
+      selectedSong: 0, selectedInstrument: 0, isPlaying: false, isPaused: false, songTranspose: 0,
       whiteKeys: 8, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, lyricsExpanded: false,
     })
   })
@@ -305,6 +305,54 @@ describe('MusicBox', () => {
         Story.message(MusicBox.ShiftTop({ delta: 1 })),
         Story.model((model) => {
           expect(model.topShift).toBe(7)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('TransposeUp increments songTranspose', () => {
+      Story.story(
+        MusicBox.update,
+        Story.with(MusicBox.init()),
+        Story.message(MusicBox.TransposeUp()),
+        Story.model((model) => {
+          expect(model.songTranspose).toBe(1)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('TransposeDown decrements songTranspose', () => {
+      Story.story(
+        MusicBox.update,
+        Story.with(MusicBox.init()),
+        Story.message(MusicBox.TransposeDown()),
+        Story.model((model) => {
+          expect(model.songTranspose).toBe(-1)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('TransposeUp is capped at 12', () => {
+      Story.story(
+        MusicBox.update,
+        Story.with({ ...MusicBox.init(), songTranspose: 12 }),
+        Story.message(MusicBox.TransposeUp()),
+        Story.model((model) => {
+          expect(model.songTranspose).toBe(12)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('TransposeDown is capped at -12', () => {
+      Story.story(
+        MusicBox.update,
+        Story.with({ ...MusicBox.init(), songTranspose: -12 }),
+        Story.message(MusicBox.TransposeDown()),
+        Story.model((model) => {
+          expect(model.songTranspose).toBe(-12)
         }),
         Story.Command.expectNone(),
       )

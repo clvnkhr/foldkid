@@ -57,8 +57,24 @@ export const FREQUENCIES: Record<string, number> = {
 }
 
 const WHITE_NOTES = ['C', 'D', 'E', 'F', 'G', 'A', 'B']
+const CHROMATIC_NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 export const MIN_WHITE_KEYS = 1
 export const MAX_WHITE_KEYS = 15
+export const MIN_TRANSPOSE = -12
+export const MAX_TRANSPOSE = 12
+
+const transposePitch = (pitch: string, semitones: number): string => {
+  if (!pitch) return pitch
+  const note = pitch.slice(0, -1)
+  const octave = parseInt(pitch.slice(-1))
+  const semiIdx = CHROMATIC_NOTES.indexOf(note)
+  if (semiIdx === -1) return pitch
+  const newIdx = semiIdx + semitones
+  const newOctave = octave + Math.floor(newIdx / 12)
+  const newNote = CHROMATIC_NOTES[((newIdx % 12) + 12) % 12]!
+  const result = `${newNote}${newOctave}`
+  return FREQUENCIES[result] ? result : pitch
+}
 
 const getBlackBetween = (whiteNote: string): string | null => {
   const map: Record<string, string> = {
@@ -683,6 +699,7 @@ let sharedCtx: AudioContext | undefined
 let stopFlag = false
 let pauseFlag = false
 let playbackTempo = 1
+let playbackTranspose = 0
 let currentLyricLine = -1
 
 const getCtx = (): AudioContext | undefined => {
@@ -811,9 +828,10 @@ const playSongCmd = (
       if (stopFlag) break
       const note = song.notes[i]!
       if (note.pitch) {
-        const freq = FREQUENCIES[note.pitch]
+        const tp = transposePitch(note.pitch, playbackTranspose)
+        const freq = FREQUENCIES[tp]
         if (freq) playNoteAudio(freq, note.dur, INSTRUMENTS[selectedInstrumentIndex]!)
-        highlightKey(note.pitch)
+        highlightKey(tp)
       }
       const rawIdx = Math.min(Math.floor(cumDur / beatsPerLine), nonEmptyIndices.length - 1)
       highlightLyricLine(nonEmptyIndices[rawIdx]!)
@@ -923,6 +941,7 @@ export const Model = S.Struct({
   selectedInstrument: S.Number,
   isPlaying: S.Boolean,
   isPaused: S.Boolean,
+  songTranspose: S.Number,
   whiteKeys: S.Number,
   showBottomKeyboard: S.Boolean,
   octaveOffset: S.Number,
@@ -951,13 +970,15 @@ export const TempoUp = m('MusicBoxTempoUp')
 export const TempoDown = m('MusicBoxTempoDown')
 export const ToggleLyrics = m('MusicBoxToggleLyrics')
 export const TogglePause = m('MusicBoxTogglePause')
+export const TransposeUp = m('MusicBoxTransposeUp')
+export const TransposeDown = m('MusicBoxTransposeDown')
 
-export const Message = S.Union([Play, Stop, SetSong, SetInstrument, SongEnded, NoteOn, NoteOff, AddKey, RemoveKey, OctaveUp, OctaveDown, ToggleBottomKeyboard, ShiftBottom, ShiftTop, TempoUp, TempoDown, ToggleLyrics, TogglePause])
+export const Message = S.Union([Play, Stop, SetSong, SetInstrument, SongEnded, NoteOn, NoteOff, AddKey, RemoveKey, OctaveUp, OctaveDown, ToggleBottomKeyboard, ShiftBottom, ShiftTop, TempoUp, TempoDown, ToggleLyrics, TogglePause, TransposeUp, TransposeDown])
 export type Message = typeof Message.Type
 
 export const init = (): Model => {
   bindKeyboard()
-  return { selectedSong: 0, selectedInstrument: 0, isPlaying: false, isPaused: false, whiteKeys: 8, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, lyricsExpanded: false }
+  return { selectedSong: 0, selectedInstrument: 0, isPlaying: false, isPaused: false, songTranspose: 0, whiteKeys: 8, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, lyricsExpanded: false }
 }
 
 export const update = (
@@ -974,6 +995,7 @@ export const update = (
         }
         getCtx() // Safari: AudioContext must be created within a user gesture
         playbackTempo = model.tempo
+        playbackTranspose = model.songTranspose
         return [
           { ...model, isPlaying: true, isPaused: false },
           [playSongCmd(
@@ -1065,6 +1087,18 @@ export const update = (
           return [{ ...model, isPaused: true }, []]
         }
       },
+      MusicBoxTransposeUp: () => {
+        if (model.songTranspose >= MAX_TRANSPOSE) return [model, []]
+        const next = model.songTranspose + 1
+        playbackTranspose = next
+        return [{ ...model, songTranspose: next }, []]
+      },
+      MusicBoxTransposeDown: () => {
+        if (model.songTranspose <= MIN_TRANSPOSE) return [model, []]
+        const next = model.songTranspose - 1
+        playbackTranspose = next
+        return [{ ...model, songTranspose: next }, []]
+      },
     }),
   )
 
@@ -1122,6 +1156,17 @@ export const view = (model: Model, language: string = 'en') => {
               h.span([h.Class('tempo-label')], [`${model.tempo.toFixed(2)}×`]),
               h.button(
                 [h.OnClick(TempoUp()), h.Class('btn btn-tiny'), h.Disabled(model.tempo >= 3)],
+                ['+'],
+              ),
+            ]),
+            h.div([h.Class('tempo-controls')], [
+              h.button(
+                [h.OnClick(TransposeDown()), h.Class('btn btn-tiny'), h.Disabled(model.songTranspose <= MIN_TRANSPOSE)],
+                ['−'],
+              ),
+              h.span([h.Class('tempo-label')], [`${model.songTranspose > 0 ? '+' : ''}${model.songTranspose}`]),
+              h.button(
+                [h.OnClick(TransposeUp()), h.Class('btn btn-tiny'), h.Disabled(model.songTranspose >= MAX_TRANSPOSE)],
                 ['+'],
               ),
             ]),
