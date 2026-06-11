@@ -1318,7 +1318,7 @@ body {
   .musicbox-controls > .musicbox-dropdown:nth-child(4) .tempo-label,
   .piano-controls > .octave-indicator,
   .piano-controls > .piano-range-label,
-  .piano-controls > .piano-toggle-text {
+  .piano-controls > .piano-toggle-label .piano-toggle-text {
     display: none;
   }
 }
