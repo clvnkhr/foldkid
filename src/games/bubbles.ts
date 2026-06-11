@@ -10,7 +10,9 @@ type Bubble = typeof Bubble.Type
 
 const COLORS = ['#FF4757', '#FF6348', '#FFA502', '#2ED573', '#1E90FF', '#A855F7', '#FF6B81']
 
-const randomColor = (): string => COLORS[Math.floor(Math.random() * COLORS.length)] as string
+const RAINBOW_GRADIENT = 'linear-gradient(135deg, #ff6b6b, #ffd93d, #6bcb5e, #4ecdc4, #667eea, #ff8b94)'
+const RAINBOW_COLORS = ['#ff6b6b', '#ffd93d', '#6bcb5e', '#4ecdc4', '#667eea', '#ff8b94']
+const BUBBLE_GLOSS = 'radial-gradient(circle at 30% 25%, rgba(255,255,255,0.5) 0%, transparent 55%),radial-gradient(circle at 70% 80%, rgba(0,0,0,0.08) 0%, transparent 45%)' as string
 
 let isPointerDown = false
 
@@ -33,6 +35,8 @@ const poof = (cx: number, cy: number, w: number, color: string, popLabelText: st
   const s = w / 16
   const count = Math.max(6, Math.floor(w / 8))
   const duration = 300 + w * 1.5
+  const isRainbow = color.startsWith('linear-gradient')
+  const pickColor = () => isRainbow ? RAINBOW_COLORS[Math.floor(Math.random() * RAINBOW_COLORS.length)]! : color
 
   // Center flash
   const flash = document.createElement('div')
@@ -44,7 +48,7 @@ const poof = (cx: number, cy: number, w: number, color: string, popLabelText: st
     `width:${flashSize}px`,
     `height:${flashSize}px`,
     'border-radius:50%',
-    `background:radial-gradient(circle, rgba(255,255,255,0.7) 0%, ${color} 50%, transparent 70%)`,
+    `background:radial-gradient(circle, rgba(255,255,255,0.7) 0%, ${pickColor()} 50%, transparent 70%)`,
     'pointer-events:none',
     'z-index:999',
   ].join(';')
@@ -62,6 +66,7 @@ const poof = (cx: number, cy: number, w: number, color: string, popLabelText: st
     const angle = Math.random() * Math.PI * 2
     const dist = (20 + Math.random() * 45) * s
     const drift = duration * 0.6 + Math.random() * duration * 0.4
+    const pc = pickColor()
     p.style.cssText = [
       `position:fixed`,
       `left:${cx - ps / 2}px`,
@@ -69,7 +74,7 @@ const poof = (cx: number, cy: number, w: number, color: string, popLabelText: st
       `width:${ps}px`,
       `height:${ps}px`,
       `border-radius:50%`,
-      `background:${color}`,
+      `background:${pc}`,
       `pointer-events:none`,
       `z-index:1000`,
     ].join(';')
@@ -88,7 +93,7 @@ const poof = (cx: number, cy: number, w: number, color: string, popLabelText: st
     const ps = (1.5 + Math.random() * 2.5) * s
     const angle = Math.random() * Math.PI * 2
     const dist = (30 + Math.random() * 50) * s
-    const hueShift = Math.random() > 0.5 ? `rgba(255,255,255,0.6)` : color
+    const hueShift = Math.random() > 0.5 ? `rgba(255,255,255,0.6)` : pickColor()
     p.style.cssText = [
       `position:fixed`,
       `left:${cx - ps / 2}px`,
@@ -203,7 +208,7 @@ const tick = (state: AnimState, container: HTMLElement): void => {
         cx: 0,
         cy: 0,
         rectW: 0,
-        color: el.style.backgroundColor || '#667eea',
+        color: el.getAttribute('data-color') ?? '#667eea',
       }
       state.bubbles.set(id, ba)
     }
@@ -214,7 +219,7 @@ const tick = (state: AnimState, container: HTMLElement): void => {
     ba.cy = rect.top + rect.height / 2
     ba.rectW = rect.width
     ba.el = el
-    ba.color = el.style.backgroundColor || ba.color
+    ba.color = el.getAttribute('data-color') ?? ba.color
   }
 
   // Remove tracking for popped/removed bubbles that are no longer in DOM
@@ -271,7 +276,7 @@ export const update = (
         ]
       },
       BubblesClickedColor: (msg) => {
-        const color = msg.color === 'rainbow' ? randomColor() : msg.color
+        const color = msg.color === 'rainbow' ? RAINBOW_GRADIENT : msg.color
         const size = Math.min(10 + msg.duration * 0.07, 200)
         const newBubble: Bubble = { id: model.nextId, color, popped: false, size }
         return [
@@ -457,8 +462,9 @@ export const view = (model: Model, language: string = 'en') => {
                   h.OnPointerDown(() => O.some(ClickedPop({ id: b.id }))),
                   h.OnPointerMove(() => isPointerDown ? O.some(ClickedPop({ id: b.id })) : O.none()),
                   h.Class('bubble'),
-                  h.Style({ backgroundColor: b.color }),
+                  h.Style(b.color.startsWith('linear-gradient') ? { background: `${b.color},${BUBBLE_GLOSS}` } : { backgroundColor: b.color }),
                   h.Attribute('data-id', b.id.toString()),
+                  h.Attribute('data-color', b.color),
                   h.Attribute('data-size', b.size.toString()),
                   h.Key(b.id.toString()),
                 ],

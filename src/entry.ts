@@ -1,12 +1,14 @@
 import { Runtime } from 'foldkit'
 
 import { Message, Model, init, update, view } from './main'
+import { subscriptions } from './subscriptions'
 
 const program = Runtime.makeProgram({
   Model,
   init,
   update,
   view,
+  subscriptions,
   container: document.getElementById('root'),
   devTools: {
     Message,

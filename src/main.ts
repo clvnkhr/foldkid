@@ -1,8 +1,8 @@
-import { Effect, Match as M, Schema as S, Stream } from 'effect'
+import { Effect, Match as M, Option, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { Document, html } from 'foldkit/html'
 
-import { ClickedAudioTest, ClickedBubbles, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedGreeting, ClickedLanding, ClickedMusicBox, ClickedSettings, SetLanguage, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
+import { ClickedAudioTest, ClickedBubbles, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedGreeting, ClickedLanding, ClickedMusicBox, ClickedSettings, SetLanguage, SettingsDragEnded, SettingsDragMoved, SettingsDragStarted, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
 
 import { Page, PageAudioTest, PageBubbles, PageCounter, PageFindIt, PageGreeting, PageLanding, PageMusicBox } from './route'
 
@@ -103,6 +103,9 @@ export const Model = S.Struct({
   counter: Counter.Model,
   findIt: FindIt.Model,
   bubbles: Bubbles.Model,
+  settingsPanelWidth: S.Number,
+  isDraggingSettings: S.Boolean,
+  settingsDragStartMouseX: S.Number,
 })
 
 export type Model = typeof Model.Type
@@ -183,6 +186,9 @@ export const Message = S.Union([
   MusicBox.TransposeUp,
   MusicBox.TransposeDown,
   SettingsPersisted,
+  SettingsDragStarted,
+  SettingsDragMoved,
+  SettingsDragEnded,
 ])
 
 export type Message = typeof Message.Type
@@ -221,6 +227,9 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
         rainbowMode: bubblesSelectedColor === 'rainbow',
         popLabel: saved.bubblesPopLabel ?? false,
       },
+      settingsPanelWidth: 150,
+      isDraggingSettings: false,
+      settingsDragStartMouseX: 0,
     },
     cmds,
   ]
@@ -357,6 +366,22 @@ const _update = (
       MusicBoxTogglePause: (msg) => updateMusicBox(model, msg),
       MusicBoxTransposeUp: (msg) => updateMusicBox(model, msg),
       MusicBoxTransposeDown: (msg) => updateMusicBox(model, msg),
+      SettingsDragStarted: (msg) => [
+        { ...model, isDraggingSettings: true, settingsDragStartMouseX: msg.screenX },
+        [],
+      ],
+      SettingsDragMoved: (msg) => {
+        const delta = model.settingsDragStartMouseX - msg.screenX
+        const newWidth = Math.max(60, Math.min(400, model.settingsPanelWidth + delta))
+        return [{ ...model, settingsPanelWidth: newWidth, settingsDragStartMouseX: msg.screenX }, []]
+      },
+      SettingsDragEnded: () => {
+        let next = { ...model, isDraggingSettings: false }
+        if (model.settingsPanelWidth < 90) {
+          next = { ...next, showSettings: false, settingsPanelWidth: 150 }
+        }
+        return [next, []]
+      },
       SettingsPersisted: () => [model, []],
     }),
   )
@@ -462,7 +487,11 @@ export const view = (model: Model): Document => {
                 ]),
               ],
             ),
-        h.div([h.Class('settings-panel'), h.Style({ display: model.showSettings ? '' : 'none' })], [
+        h.div([h.Class('settings-panel'), h.Style({ display: model.showSettings ? '' : 'none', width: `${model.settingsPanelWidth}px` })], [
+          h.div([
+            h.Class('settings-drag-handle'),
+            h.OnPointerDown((_pointerType, _button, screenX) => Option.some(SettingsDragStarted({ screenX }))),
+          ], ['⠿']),
           h.div([h.Class('settings-header')], [
             h.h2([], [t('settings', model.language)]),
             h.button(

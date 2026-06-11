@@ -40,14 +40,14 @@ describe('Bubbles', () => {
     )
   })
 
-  it('ClickedColor with rainbow creates a random-colored bubble', () => {
+  it('ClickedColor with rainbow creates a rainbow-gradient bubble', () => {
     Story.story(
       Bubbles.update,
       Story.with(Bubbles.init()),
       Story.message(Bubbles.ClickedColor({ color: 'rainbow', duration: 500 })),
       Story.model((model) => {
         expect(model.bubbles).toHaveLength(1)
-        expect(['#FF4757', '#FF6348', '#FFA502', '#2ED573', '#1E90FF', '#A855F7', '#FF6B81']).toContain(model.bubbles[0]?.color)
+        expect(model.bubbles[0]?.color).toContain('linear-gradient')
         expect(model.selectedColor).toBe('rainbow')
         expect(model.rainbowMode).toBe(true)
       }),

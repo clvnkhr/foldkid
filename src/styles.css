@@ -828,7 +828,6 @@ body {
   top: 0;
   right: 0;
   bottom: 0;
-  width: 150px;
   background: var(--settings-bg);
   box-shadow: -4px 0 24px var(--shadow-color-strong);
   z-index: 100;
@@ -837,6 +836,7 @@ body {
   flex-direction: column;
   gap: 1.25rem;
   animation: slideIn 0.25s ease-out;
+  touch-action: none;
 }
 
 @keyframes slideIn {
@@ -869,6 +869,27 @@ body {
 }
 
 .settings-close:hover {
+  color: var(--settings-close-hover);
+}
+
+.settings-drag-handle {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 14px;
+  cursor: ew-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  user-select: none;
+  touch-action: none;
+  transition: color 0.15s;
+}
+
+.settings-drag-handle:hover {
   color: var(--settings-close-hover);
 }
 
