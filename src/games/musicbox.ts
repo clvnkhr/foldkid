@@ -681,6 +681,7 @@ const INST_TKEYS: Record<string, TranslationKey> = {
 
 let sharedCtx: AudioContext | undefined
 let stopFlag = false
+let pauseFlag = false
 let playbackTempo = 1
 let currentLyricLine = -1
 
@@ -794,12 +795,12 @@ const playNoteAudio = (freq: number, dur: number, inst: Instrument): void => {
 
 const playSongCmd = (
   song: Song,
-  inst: Instrument,
   msg: ReturnType<typeof SongEnded>,
 ): Command.Command<ReturnType<typeof SongEnded>> => ({
   name: 'PlayMusicBox',
   effect: Effect.gen(function* () {
     stopFlag = false
+    pauseFlag = false
     const totalDur = song.notes.reduce((sum, n) => sum + n.dur, 0)
     const nonEmptyIndices = song.lyrics
       .map((line, i) => line === '' ? -1 : i)
@@ -811,7 +812,7 @@ const playSongCmd = (
       const note = song.notes[i]!
       if (note.pitch) {
         const freq = FREQUENCIES[note.pitch]
-        if (freq) playNoteAudio(freq, note.dur, inst)
+        if (freq) playNoteAudio(freq, note.dur, INSTRUMENTS[selectedInstrumentIndex]!)
         highlightKey(note.pitch)
       }
       const rawIdx = Math.min(Math.floor(cumDur / beatsPerLine), nonEmptyIndices.length - 1)
@@ -819,8 +820,12 @@ const playSongCmd = (
       cumDur += note.dur
       yield* Effect.sleep((note.dur * 350) / playbackTempo)
       unhighlightAllKeys()
+      while (pauseFlag && !stopFlag) {
+        yield* Effect.sleep(100)
+      }
     }
     stopFlag = false
+    pauseFlag = false
     unhighlightAllKeys()
     unhighlightAllLyricLines()
     return msg
@@ -917,6 +922,7 @@ export const Model = S.Struct({
   selectedSong: S.Number,
   selectedInstrument: S.Number,
   isPlaying: S.Boolean,
+  isPaused: S.Boolean,
   whiteKeys: S.Number,
   showBottomKeyboard: S.Boolean,
   octaveOffset: S.Number,
@@ -944,13 +950,14 @@ export const ShiftTop = m('MusicBoxShiftTop', { delta: S.Number })
 export const TempoUp = m('MusicBoxTempoUp')
 export const TempoDown = m('MusicBoxTempoDown')
 export const ToggleLyrics = m('MusicBoxToggleLyrics')
+export const TogglePause = m('MusicBoxTogglePause')
 
-export const Message = S.Union([Play, Stop, SetSong, SetInstrument, SongEnded, NoteOn, NoteOff, AddKey, RemoveKey, OctaveUp, OctaveDown, ToggleBottomKeyboard, ShiftBottom, ShiftTop, TempoUp, TempoDown, ToggleLyrics])
+export const Message = S.Union([Play, Stop, SetSong, SetInstrument, SongEnded, NoteOn, NoteOff, AddKey, RemoveKey, OctaveUp, OctaveDown, ToggleBottomKeyboard, ShiftBottom, ShiftTop, TempoUp, TempoDown, ToggleLyrics, TogglePause])
 export type Message = typeof Message.Type
 
 export const init = (): Model => {
   bindKeyboard()
-  return { selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 8, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, lyricsExpanded: false }
+  return { selectedSong: 0, selectedInstrument: 0, isPlaying: false, isPaused: false, whiteKeys: 8, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, lyricsExpanded: false }
 }
 
 export const update = (
@@ -961,38 +968,46 @@ export const update = (
     M.withReturnType<readonly [Model, ReadonlyArray<Command.Command<Message>>]>(),
     M.tagsExhaustive({
       MusicBoxPlay: () => {
+        if (model.isPaused) {
+          pauseFlag = false
+          return [{ ...model, isPaused: false }, []]
+        }
         getCtx() // Safari: AudioContext must be created within a user gesture
         playbackTempo = model.tempo
         return [
-          { ...model, isPlaying: true },
+          { ...model, isPlaying: true, isPaused: false },
           [playSongCmd(
             SONGS[model.selectedSong]!,
-            INSTRUMENTS[model.selectedInstrument]!,
             SongEnded(),
           )],
         ]
       },
       MusicBoxStop: () => {
         stopFlag = true
+        pauseFlag = false
         stopAllNotes()
         unhighlightAllKeys()
         unhighlightAllLyricLines()
-        return [{ ...model, isPlaying: false }, []]
+        return [{ ...model, isPlaying: false, isPaused: false }, []]
       },
       MusicBoxSetSong: (msg) => {
         if (model.isPlaying) {
           stopFlag = true
+          pauseFlag = false
           stopAllNotes()
           unhighlightAllKeys()
         }
         unhighlightAllLyricLines()
-        return [{ ...model, selectedSong: msg.value, isPlaying: false }, []]
+        return [{ ...model, selectedSong: msg.value, isPlaying: false, isPaused: false }, []]
       },
       MusicBoxSetInstrument: (msg) => {
         selectedInstrumentIndex = msg.value
         return [{ ...model, selectedInstrument: msg.value }, []]
       },
-      MusicBoxSongEnded: () => [{ ...model, isPlaying: false }, []],
+      MusicBoxSongEnded: () => {
+        pauseFlag = false
+        return [{ ...model, isPlaying: false, isPaused: false }, []]
+      },
       MusicBoxNoteOn: (msg) => {
         getCtx() // Safari: ensure AudioContext from user gesture
         startNote(msg.pitch, INSTRUMENTS[model.selectedInstrument]!)
@@ -1040,6 +1055,16 @@ export const update = (
       MusicBoxToggleLyrics: () => {
         return [{ ...model, lyricsExpanded: !model.lyricsExpanded }, []]
       },
+      MusicBoxTogglePause: () => {
+        if (model.isPaused) {
+          pauseFlag = false
+          return [{ ...model, isPaused: false }, []]
+        } else {
+          pauseFlag = true
+          unhighlightAllKeys()
+          return [{ ...model, isPaused: true }, []]
+        }
+      },
     }),
   )
 
@@ -1075,15 +1100,20 @@ export const view = (model: Model, language: string = 'en') => {
                 ],
               ),
             ]),
-            model.isPlaying
-              ? h.button(
-                [h.OnClick(Stop()), h.Class('btn btn-tiny musicbox-inline-btn')],
-                ['⏹ ' + t('stop', language)],
-              )
-              : h.button(
-                [h.OnClick(Play()), h.Class('btn btn-tiny musicbox-inline-btn')],
-                ['▶ ' + t('play', language)],
+            h.div([h.Class('playback-btns')], [
+              h.button(
+                [h.OnClick(Play()), h.Class('btn btn-tiny musicbox-inline-btn'), h.Disabled(model.isPlaying && !model.isPaused)],
+                ['▶'],
               ),
+              h.button(
+                [h.OnClick(TogglePause()), h.Class('btn btn-tiny musicbox-inline-btn'), h.Disabled(!model.isPlaying || model.isPaused)],
+                ['⏸'],
+              ),
+              h.button(
+                [h.OnClick(Stop()), h.Class('btn btn-tiny musicbox-inline-btn'), h.Disabled(!model.isPlaying)],
+                ['⏹'],
+              ),
+            ]),
             h.div([h.Class('tempo-controls')], [
               h.button(
                 [h.OnClick(TempoDown()), h.Class('btn btn-tiny'), h.Disabled(model.tempo <= 0.25)],
@@ -1134,7 +1164,6 @@ export const view = (model: Model, language: string = 'en') => {
             [
               h.Value(model.selectedInstrument.toString()),
               h.OnChange(v => SetInstrument({ value: parseInt(v) })),
-              h.Disabled(model.isPlaying),
               h.Class('musicbox-select instrument-inline'),
             ],
             [

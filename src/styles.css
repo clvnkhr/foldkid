@@ -970,6 +970,11 @@ body {
   opacity: 0.8;
 }
 
+.playback-btns {
+  display: flex;
+  gap: 0.5rem;
+}
+
 .instrument-inline {
   width: auto;
   min-width: 5rem;

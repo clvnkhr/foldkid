@@ -179,6 +179,7 @@ export const Message = S.Union([
   MusicBox.TempoUp,
   MusicBox.TempoDown,
   MusicBox.ToggleLyrics,
+  MusicBox.TogglePause,
   SettingsPersisted,
 ])
 
@@ -351,6 +352,7 @@ const _update = (
       MusicBoxTempoDown: (msg) => updateMusicBox(model, msg),
       MusicBoxToggleBottomKeyboard: (msg) => updateMusicBox(model, msg),
       MusicBoxToggleLyrics: (msg) => updateMusicBox(model, msg),
+      MusicBoxTogglePause: (msg) => updateMusicBox(model, msg),
       SettingsPersisted: () => [model, []],
     }),
   )

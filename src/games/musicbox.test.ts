@@ -9,7 +9,7 @@ const resolveMount = [resolvePianoTop]
 describe('MusicBox', () => {
   it('init state', () => {
     expect(MusicBox.init()).toStrictEqual({
-      selectedSong: 0, selectedInstrument: 0, isPlaying: false,
+      selectedSong: 0, selectedInstrument: 0, isPlaying: false, isPaused: false,
       whiteKeys: 8, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, lyricsExpanded: false,
     })
   })
@@ -81,6 +81,19 @@ describe('MusicBox', () => {
       )
     })
 
+    it('Play while paused resumes without duplicating command', () => {
+      Story.story(
+        MusicBox.update,
+        Story.with({ ...MusicBox.init(), isPlaying: true, isPaused: true }),
+        Story.message(MusicBox.Play()),
+        Story.model((model) => {
+          expect(model.isPlaying).toBe(true)
+          expect(model.isPaused).toBe(false)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
     it('Stop sets isPlaying to false', () => {
       Story.story(
         MusicBox.update,
@@ -112,6 +125,30 @@ describe('MusicBox', () => {
         Story.message(MusicBox.ToggleLyrics()),
         Story.model((model) => {
           expect(model.lyricsExpanded).toBe(false)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('TogglePause sets isPaused when playing', () => {
+      Story.story(
+        MusicBox.update,
+        Story.with({ ...MusicBox.init(), isPlaying: true, isPaused: false }),
+        Story.message(MusicBox.TogglePause()),
+        Story.model((model) => {
+          expect(model.isPaused).toBe(true)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('TogglePause unsets isPaused', () => {
+      Story.story(
+        MusicBox.update,
+        Story.with({ ...MusicBox.init(), isPlaying: true, isPaused: true }),
+        Story.message(MusicBox.TogglePause()),
+        Story.model((model) => {
+          expect(model.isPaused).toBe(false)
         }),
         Story.Command.expectNone(),
       )
@@ -399,7 +436,7 @@ describe('MusicBox', () => {
         { update: MusicBox.update, view: MusicBox.view },
         Scene.with(MusicBox.init()),
         Scene.Mount.resolveAll(...resolveMount),
-        Scene.expect(Scene.text('▶ Play')).toExist(),
+        Scene.expect(Scene.text('▶')).toExist(),
         Scene.Command.expectNone(),
       )
     })
@@ -409,17 +446,17 @@ describe('MusicBox', () => {
         { update: MusicBox.update, view: MusicBox.view },
         Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: true, whiteKeys: 12, showBottomKeyboard: true, tempo: 1, lyricsExpanded: false, }),
         Scene.Mount.resolveAll(resolvePianoTop, resolvePianoBot),
-        Scene.expect(Scene.text('⏹ Stop')).toExist(),
+        Scene.expect(Scene.text('⏹')).toExist(),
         Scene.Command.expectNone(),
       )
     })
 
-    it('play button absent when playing', () => {
+    it('play button disabled when playing', () => {
       Scene.scene(
         { update: MusicBox.update, view: MusicBox.view },
         Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: true, whiteKeys: 12, showBottomKeyboard: true, tempo: 1, lyricsExpanded: false, }),
         Scene.Mount.resolveAll(resolvePianoTop, resolvePianoBot),
-        Scene.expect(Scene.text('▶ Play')).not.toExist(),
+        Scene.expect(Scene.text('▶')).toExist(),
         Scene.Command.expectNone(),
       )
     })
