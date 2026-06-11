@@ -1252,15 +1252,22 @@ export const view = (model: Model, language: string = 'en') => {
             h.div([h.Class('playback-btns')], [
               h.button(
                 [h.Id('musicbox-play'), h.OnClick(Play()), h.Class('btn btn-tiny musicbox-inline-btn'), h.Disabled(model.isPlaying && !model.isPaused)],
-                ['▶'],
+                [h.svg([h.ViewBox('0 0 24 24'), h.Width('18'), h.Height('18'), h.Fill('currentColor')], [
+                  h.path([h.D('M6 3l14 9-14 9V3z')], []),
+                ])],
               ),
               h.button(
                 [h.Id('musicbox-pause'), h.OnClick(TogglePause()), h.Class('btn btn-tiny musicbox-inline-btn'), h.Disabled(!model.isPlaying || model.isPaused)],
-                ['⏸'],
+                [h.svg([h.ViewBox('0 0 24 24'), h.Width('18'), h.Height('18'), h.Fill('currentColor')], [
+                  h.rect([h.X('5'), h.Y('3'), h.Width('4'), h.Height('18'), h.Attribute('rx', '1')], []),
+                  h.rect([h.X('15'), h.Y('3'), h.Width('4'), h.Height('18'), h.Attribute('rx', '1')], []),
+                ])],
               ),
               h.button(
                 [h.Id('musicbox-stop'), h.OnClick(Stop()), h.Class('btn btn-tiny musicbox-inline-btn'), h.Disabled(!model.isPlaying)],
-                ['⏹'],
+                [h.svg([h.ViewBox('0 0 24 24'), h.Width('18'), h.Height('18'), h.Fill('currentColor')], [
+                  h.rect([h.X('4'), h.Y('4'), h.Width('16'), h.Height('16'), h.Attribute('rx', '2')], []),
+                ])],
               ),
             ]),
             h.div([h.Class('musicbox-dropdown')], [
