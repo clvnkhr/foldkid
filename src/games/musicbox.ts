@@ -142,6 +142,9 @@ const activeNotes = new Map<string, {
 }>()
 let selectedInstrumentIndex = 0
 let keyboardBound = false
+let shortcutKeysBound = false
+let currentOctaveOffset = 0
+
 
 interface QWERTYKey {
   qwerty: string
@@ -178,11 +181,17 @@ const QWERTY_MAP: Record<string, string> = {}
 for (const k of QWERTY_WHITES) QWERTY_MAP[k.qwerty.toLowerCase()] = k.pitch
 for (const k of QWERTY_BLACKS) QWERTY_MAP[k.qwerty.toLowerCase()] = k.pitch
 
+const applyOctaveOffset = (pitch: string, offset: number): string => {
+  if (offset === 0) return pitch
+  const m = pitch.match(/^([A-G]#?)(\d+)$/)
+  return m ? `${m[1]}${parseInt(m[2]!) + offset}` : pitch
+}
+
 const handleKeyDown = (e: KeyboardEvent): void => {
   const pitch = QWERTY_MAP[e.key.toLowerCase()]
   if (pitch) {
     e.preventDefault()
-    startNote(pitch, INSTRUMENTS[selectedInstrumentIndex]!)
+    startNote(applyOctaveOffset(pitch, currentOctaveOffset), INSTRUMENTS[selectedInstrumentIndex]!)
   }
 }
 
@@ -190,7 +199,7 @@ const handleKeyUp = (e: KeyboardEvent): void => {
   const pitch = QWERTY_MAP[e.key.toLowerCase()]
   if (pitch) {
     e.preventDefault()
-    stopNote(pitch)
+    stopNote(applyOctaveOffset(pitch, currentOctaveOffset))
   }
 }
 
@@ -222,6 +231,33 @@ const bindKeyboard = (): void => {
   }
   document.addEventListener('pointerup', firstTouch, { capture: true })
   document.addEventListener('keydown', firstTouch)
+}
+
+const bindShortcutKeys = (): void => {
+  if (shortcutKeysBound) return
+  shortcutKeysBound = true
+  document.addEventListener('keydown', (e: KeyboardEvent): void => {
+    if (e.repeat) return
+    const target = e.target as HTMLElement
+    if (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA') return
+    const key = e.key.toLowerCase()
+    if (key === 'z') {
+      e.preventDefault()
+      document.getElementById('octave-down')?.click()
+    } else if (key === 'x') {
+      e.preventDefault()
+      document.getElementById('octave-up')?.click()
+    } else if (key === ' ') {
+      e.preventDefault()
+      const playBtn = document.getElementById('musicbox-play')
+      const pauseBtn = document.getElementById('musicbox-pause')
+      if (playBtn && !(playBtn as HTMLButtonElement).disabled) {
+        playBtn.click()
+      } else if (pauseBtn && !(pauseBtn as HTMLButtonElement).disabled) {
+        pauseBtn.click()
+      }
+    }
+  })
 }
 
 
@@ -978,6 +1014,7 @@ export type Message = typeof Message.Type
 
 export const init = (): Model => {
   bindKeyboard()
+  bindShortcutKeys()
   return { selectedSong: 0, selectedInstrument: 0, isPlaying: false, isPaused: false, songTranspose: 0, whiteKeys: 8, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, lyricsExpanded: false }
 }
 
@@ -1103,6 +1140,7 @@ export const update = (
   )
 
 export const view = (model: Model, language: string = 'en') => {
+  currentOctaveOffset = model.octaveOffset
   const h = html<Message>()
   const topKb = buildKeyboard(shiftStart('C4', model.topShift), model.whiteKeys, model.octaveOffset)
   const topWhite = topKb.keys.filter(k => k.type === 'white')
@@ -1136,15 +1174,15 @@ export const view = (model: Model, language: string = 'en') => {
             ]),
             h.div([h.Class('playback-btns')], [
               h.button(
-                [h.OnClick(Play()), h.Class('btn btn-tiny musicbox-inline-btn'), h.Disabled(model.isPlaying && !model.isPaused)],
+                [h.Id('musicbox-play'), h.OnClick(Play()), h.Class('btn btn-tiny musicbox-inline-btn'), h.Disabled(model.isPlaying && !model.isPaused)],
                 ['▶'],
               ),
               h.button(
-                [h.OnClick(TogglePause()), h.Class('btn btn-tiny musicbox-inline-btn'), h.Disabled(!model.isPlaying || model.isPaused)],
+                [h.Id('musicbox-pause'), h.OnClick(TogglePause()), h.Class('btn btn-tiny musicbox-inline-btn'), h.Disabled(!model.isPlaying || model.isPaused)],
                 ['⏸'],
               ),
               h.button(
-                [h.OnClick(Stop()), h.Class('btn btn-tiny musicbox-inline-btn'), h.Disabled(!model.isPlaying)],
+                [h.Id('musicbox-stop'), h.OnClick(Stop()), h.Class('btn btn-tiny musicbox-inline-btn'), h.Disabled(!model.isPlaying)],
                 ['⏹'],
               ),
             ]),
@@ -1191,11 +1229,11 @@ export const view = (model: Model, language: string = 'en') => {
 
         h.div([h.Class('piano-controls')], [
           h.button(
-            [h.OnClick(OctaveDown()), h.Class('btn btn-tiny'), h.Disabled(model.octaveOffset <= MIN_OCTAVE)],
+            [h.Id('octave-down'), h.OnClick(OctaveDown()), h.Class('btn btn-tiny'), h.Disabled(model.octaveOffset <= MIN_OCTAVE)],
             ['−8'],
           ),
           h.button(
-            [h.OnClick(OctaveUp()), h.Class('btn btn-tiny'), h.Disabled(model.octaveOffset >= MAX_OCTAVE)],
+            [h.Id('octave-up'), h.OnClick(OctaveUp()), h.Class('btn btn-tiny'), h.Disabled(model.octaveOffset >= MAX_OCTAVE)],
             ['+8'],
           ),
           h.span([h.Class('piano-range-label')], [t('musicBoxPianoRange', language)]),

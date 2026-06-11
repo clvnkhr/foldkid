@@ -357,6 +357,78 @@ describe('MusicBox', () => {
         Story.Command.expectNone(),
       )
     })
+
+    it('OctaveUp increments octaveOffset', () => {
+      Story.story(
+        MusicBox.update,
+        Story.with(MusicBox.init()),
+        Story.message(MusicBox.OctaveUp()),
+        Story.model((model) => {
+          expect(model.octaveOffset).toBe(1)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('OctaveDown decrements octaveOffset', () => {
+      Story.story(
+        MusicBox.update,
+        Story.with(MusicBox.init()),
+        Story.message(MusicBox.OctaveDown()),
+        Story.model((model) => {
+          expect(model.octaveOffset).toBe(-1)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('OctaveUp is capped at MAX_OCTAVE', () => {
+      Story.story(
+        MusicBox.update,
+        Story.with({ ...MusicBox.init(), octaveOffset: MusicBox.MAX_OCTAVE }),
+        Story.message(MusicBox.OctaveUp()),
+        Story.model((model) => {
+          expect(model.octaveOffset).toBe(MusicBox.MAX_OCTAVE)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('OctaveDown is capped at MIN_OCTAVE', () => {
+      Story.story(
+        MusicBox.update,
+        Story.with({ ...MusicBox.init(), octaveOffset: MusicBox.MIN_OCTAVE }),
+        Story.message(MusicBox.OctaveDown()),
+        Story.model((model) => {
+          expect(model.octaveOffset).toBe(MusicBox.MIN_OCTAVE)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('OctaveUp works at boundary MAX_OCTAVE - 1', () => {
+      Story.story(
+        MusicBox.update,
+        Story.with({ ...MusicBox.init(), octaveOffset: MusicBox.MAX_OCTAVE - 1 }),
+        Story.message(MusicBox.OctaveUp()),
+        Story.model((model) => {
+          expect(model.octaveOffset).toBe(MusicBox.MAX_OCTAVE)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('OctaveDown works at boundary MIN_OCTAVE + 1', () => {
+      Story.story(
+        MusicBox.update,
+        Story.with({ ...MusicBox.init(), octaveOffset: MusicBox.MIN_OCTAVE + 1 }),
+        Story.message(MusicBox.OctaveDown()),
+        Story.model((model) => {
+          expect(model.octaveOffset).toBe(MusicBox.MIN_OCTAVE)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
   })
 
   describe('instruments', () => {

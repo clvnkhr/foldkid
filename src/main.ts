@@ -36,6 +36,7 @@ interface PersistedSettings {
   findItVoiceMode: boolean
   findItPairsMode: boolean
   bubblesPopLabel: boolean
+  bubblesSayColor: boolean
   bubblesSelectedColor: string
   greetingVoiceEffect: string
 }
@@ -71,6 +72,7 @@ const buildSettingsData = (model: Model): PersistedSettings => ({
   findItVoiceMode: model.findIt.voiceMode,
   findItPairsMode: model.findIt.pairsMode,
   bubblesPopLabel: model.bubbles.popLabel,
+  bubblesSayColor: model.bubbles.sayColor,
   bubblesSelectedColor: model.bubbles.selectedColor,
   greetingVoiceEffect: model.greeting.voiceEffect,
 })
@@ -163,6 +165,7 @@ export const Message = S.Union([
   Bubbles.SoundPlayed,
   Bubbles.SetRainbowMode,
   Bubbles.SetPopLabel,
+  Bubbles.SetSayColor,
   Bubbles.ClickedColor,
   MusicBox.Play,
   MusicBox.Stop,
@@ -226,6 +229,7 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
         selectedColor: bubblesSelectedColor,
         rainbowMode: bubblesSelectedColor === 'rainbow',
         popLabel: saved.bubblesPopLabel ?? false,
+        sayColor: saved.bubblesSayColor ?? false,
       },
       settingsPanelWidth: 150,
       isDraggingSettings: false,
@@ -346,6 +350,7 @@ const _update = (
       BubblesClickedColor: (msg) => updateBubbles(model, msg),
       BubblesSetRainbowMode: (msg) => updateBubbles(model, msg),
       BubblesSetPopLabel: (msg) => updateBubbles(model, msg),
+      BubblesSetSayColor: (msg) => updateBubbles(model, msg),
       MusicBoxPlay: (msg) => updateMusicBox(model, msg),
       MusicBoxStop: (msg) => updateMusicBox(model, msg),
       MusicBoxSetSong: (msg) => updateMusicBox(model, msg),
@@ -390,7 +395,7 @@ const SETTINGS_TAGS = new Set([
   'ClickedDarkMode', 'SetLanguage', 'ToggleMute',
   'CounterSetRate', 'CounterSetPitch', 'CounterSetDisplayMode',
   'FindItSetAnyWins', 'FindItSetVoiceMode', 'FindItSetPairsMode',
-  'BubblesSetPopLabel',
+  'BubblesSetPopLabel', 'BubblesSetSayColor',
   'GreetingSetVoiceEffect',
 ])
 
@@ -523,14 +528,16 @@ export const view = (model: Model): Document => {
             ]),
           ]),
           h.div([h.Class('setting-section')], [
-            h.h3([], [t('sound', model.language)]),
-            h.button(
-              [
-                h.Class('mute-toggle'),
-                h.OnClick(ToggleMute()),
-              ],
-              [model.muted ? ICON_MUTED : ICON_UNMUTED],
-            ),
+            h.div([h.Class('setting-section-row')], [
+              h.h3([], [t('sound', model.language)]),
+              h.button(
+                [
+                  h.Class('mute-toggle'),
+                  h.OnClick(ToggleMute()),
+                ],
+                [model.muted ? ICON_MUTED : ICON_UNMUTED],
+              ),
+            ]),
           ]),
           model.page._tag === 'PageCounter'
             ? h.div([h.Class('setting-section')], [
@@ -627,12 +634,16 @@ export const view = (model: Model): Document => {
               h.h3([], [t('bubblesTitle', model.language)]),
               h.div([h.Class('lang-buttons')], [
                 h.button(
-                  [h.Class(!model.bubbles.popLabel ? 'btn btn-primary' : 'btn btn-secondary'), h.OnClick(Bubbles.SetPopLabel({ value: false }))],
+                  [h.Class(!model.bubbles.popLabel && !model.bubbles.sayColor ? 'btn btn-primary' : 'btn btn-secondary'), h.OnClick(Bubbles.SetPopLabel({ value: false }))],
                   [t('normal', model.language)],
                 ),
                 h.button(
-                  [h.Class(model.bubbles.popLabel ? 'btn btn-primary' : 'btn btn-secondary'), h.OnClick(Bubbles.SetPopLabel({ value: true }))],
+                  [h.Class(model.bubbles.popLabel && !model.bubbles.sayColor ? 'btn btn-primary' : 'btn btn-secondary'), h.OnClick(Bubbles.SetPopLabel({ value: true }))],
                   [t('popLabel', model.language)],
+                ),
+                h.button(
+                  [h.Class(model.bubbles.sayColor ? 'btn btn-primary' : 'btn btn-secondary'), h.OnClick(Bubbles.SetSayColor({ value: true }))],
+                  [t('sayColor', model.language)],
                 ),
               ]),
             ])

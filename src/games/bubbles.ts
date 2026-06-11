@@ -3,20 +3,34 @@ import { Command } from 'foldkit'
 import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
 import { pop, chime, swoosh } from '../audio'
-import { t, tf } from '../i18n'
+import { t, tf, type TranslationKey } from '../i18n'
 
 const Bubble = S.Struct({ id: S.Number, color: S.String, popped: S.Boolean, size: S.Number })
 type Bubble = typeof Bubble.Type
 
-const COLORS = ['#FF4757', '#FF6348', '#FFA502', '#2ED573', '#1E90FF', '#A855F7', '#FF6B81']
+const COLORS = ['#FF4757', '#FF7F00', '#FFD93D', '#2ED573', '#1E90FF', '#A855F7', '#FF69B4', '#E0E0E0', '#666666']
 
 const RAINBOW_GRADIENT = 'linear-gradient(135deg, #ff6b6b, #ffd93d, #6bcb5e, #4ecdc4, #667eea, #ff8b94)'
 const RAINBOW_COLORS = ['#ff6b6b', '#ffd93d', '#6bcb5e', '#4ecdc4', '#667eea', '#ff8b94']
 const BUBBLE_GLOSS = 'radial-gradient(circle at 30% 25%, rgba(255,255,255,0.5) 0%, transparent 55%),radial-gradient(circle at 70% 80%, rgba(0,0,0,0.08) 0%, transparent 45%)' as string
 
+const COLOR_NAME_KEYS: Record<string, string> = {
+  '#FF4757': 'colorRed',
+  '#FF7F00': 'colorOrange',
+  '#FFD93D': 'colorYellow',
+  '#2ED573': 'colorGreen',
+  '#1E90FF': 'colorBlue',
+  '#A855F7': 'colorPurple',
+  '#FF69B4': 'colorPink',
+  '#E0E0E0': 'colorWhite',
+  '#666666': 'colorGrey',
+}
+
+const getColorName = (color: string): string => COLOR_NAME_KEYS[color] ?? 'colorRainbow'
+
 let isPointerDown = false
 
-export const Model = S.Struct({ bubbles: S.Array(Bubble), score: S.Number, nextId: S.Number, rainbowMode: S.Boolean, popLabel: S.Boolean, selectedColor: S.String })
+export const Model = S.Struct({ bubbles: S.Array(Bubble), score: S.Number, nextId: S.Number, rainbowMode: S.Boolean, popLabel: S.Boolean, sayColor: S.Boolean, selectedColor: S.String })
 export type Model = typeof Model.Type
 
 export const ClickedPop = m('BubblesClickedPop', { id: S.Number })
@@ -25,11 +39,12 @@ export const ClickedColor = m('BubblesClickedColor', { color: S.String, duration
 export const SoundPlayed = m('BubblesSoundPlayed')
 export const SetRainbowMode = m('BubblesSetRainbowMode', { value: S.Boolean })
 export const SetPopLabel = m('BubblesSetPopLabel', { value: S.Boolean })
+export const SetSayColor = m('BubblesSetSayColor', { value: S.Boolean })
 
-export const Message = S.Union([ClickedPop, ClickedReset, ClickedColor, SoundPlayed, SetRainbowMode, SetPopLabel])
+export const Message = S.Union([ClickedPop, ClickedReset, ClickedColor, SoundPlayed, SetRainbowMode, SetPopLabel, SetSayColor])
 export type Message = typeof Message.Type
 
-export const init = (): Model => ({ bubbles: [], score: 0, nextId: 0, rainbowMode: false, popLabel: false, selectedColor: '' })
+export const init = (): Model => ({ bubbles: [], score: 0, nextId: 0, rainbowMode: false, popLabel: false, sayColor: false, selectedColor: '' })
 
 const poof = (cx: number, cy: number, w: number, color: string, popLabelText: string): void => {
   const s = w / 16
@@ -298,7 +313,8 @@ export const update = (
         ]
       },
       BubblesSetRainbowMode: (msg) => [{ ...model, rainbowMode: msg.value, selectedColor: msg.value ? 'rainbow' : model.selectedColor }, []],
-      BubblesSetPopLabel: (msg) => [{ ...model, popLabel: msg.value }, []],
+      BubblesSetPopLabel: (msg) => [{ ...model, popLabel: msg.value, sayColor: false }, []],
+      BubblesSetSayColor: (msg) => [{ ...model, sayColor: msg.value, popLabel: false }, []],
       BubblesSoundPlayed: () => [model, []],
     }),
   )
@@ -396,7 +412,7 @@ export const view = (model: Model, language: string = 'en') => {
         h.div([
           h.Class('bubbles-container'),
           h.Key('bubbles-container'),
-          h.Attribute('data-pop-label', model.popLabel ? t('popText', language) : ''),
+          h.Attribute('data-pop-label', !model.sayColor && model.popLabel ? t('popText', language) : ''),
           h.OnMount({
             name: 'bubblesAnim',
             f: (element) => Stream.callback<never>(_queue =>
@@ -425,8 +441,9 @@ export const view = (model: Model, language: string = 'en') => {
                           const id = parseInt(node.getAttribute('data-id') ?? '', 10)
                           const ba = state.bubbles.get(id)
                           if (ba) {
-                            const popLabelText = container.getAttribute('data-pop-label') ?? ''
-                            poof(ba.cx, ba.cy, ba.rectW, ba.color, popLabelText)
+                          const popLabelText = container.getAttribute('data-pop-label') ?? ''
+                          const colorName = node.getAttribute('data-color-name') ?? ''
+                          poof(ba.cx, ba.cy, ba.rectW, ba.color, colorName || popLabelText)
                             state.bubbles.delete(id)
                           }
                         }
@@ -465,6 +482,7 @@ export const view = (model: Model, language: string = 'en') => {
                   h.Style(b.color.startsWith('linear-gradient') ? { background: `${b.color},${BUBBLE_GLOSS}` } : { backgroundColor: b.color }),
                   h.Attribute('data-id', b.id.toString()),
                   h.Attribute('data-color', b.color),
+                  h.Attribute('data-color-name', model.sayColor ? t(getColorName(b.color) as TranslationKey, language) : ''),
                   h.Attribute('data-size', b.size.toString()),
                   h.Key(b.id.toString()),
                 ],
