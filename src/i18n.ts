@@ -90,6 +90,8 @@ const translations = {
     musicBoxFlute: 'Flute',
     musicBoxSawtooth: 'Sawtooth',
     musicBoxGuitar: 'Guitar',
+    musicBoxSpeed: 'Speed',
+    musicBoxTranspose: 'Transpose',
     play: 'Play',
     pause: 'Pause',
     stop: 'Stop',
@@ -193,6 +195,8 @@ const translations = {
     stop: '停止',
     pageTitleMusicBox: '音乐盒 - 折纸娃',
     pageTitleAudioTest: '音频测试 - 折纸娃',
+    musicBoxSpeed: '速度',
+    musicBoxTranspose: '移调',
   },
   fr: {
     appName: 'PliEnfant',
@@ -291,6 +295,8 @@ const translations = {
     stop: 'Arrêter',
     pageTitleMusicBox: 'Boîte à Musique - PliEnfant',
     pageTitleAudioTest: 'Test Audio - PliEnfant',
+    musicBoxSpeed: 'Vitesse',
+    musicBoxTranspose: 'Transposition',
   },
   de: {
     appName: 'FaltKind',
@@ -389,6 +395,8 @@ const translations = {
     stop: 'Stopp',
     pageTitleMusicBox: 'Spieluhr - FaltKind',
     pageTitleAudioTest: 'Audio Test - FaltKind',
+    musicBoxSpeed: 'Tempo',
+    musicBoxTranspose: 'Transposition',
   },
   fa: {
     appName: 'بچهاوری',
@@ -487,6 +495,8 @@ const translations = {
     stop: 'ایست',
     pageTitleMusicBox: 'جعبه موسیقی - بچهاوری',
     pageTitleAudioTest: 'تست صدا - بچهاوری',
+    musicBoxSpeed: 'سرعت',
+    musicBoxTranspose: 'انتقال',
   },
   ms: {
     appName: 'LipatBudak',
@@ -585,6 +595,8 @@ const translations = {
     stop: 'Berhenti',
     pageTitleMusicBox: 'Kotak Muzik - LipatBudak',
     pageTitleAudioTest: 'Ujian Audio - LipatBudak',
+    musicBoxSpeed: 'Kelajuan',
+    musicBoxTranspose: 'Transpos',
   },
   'zh-HK': {
     appName: '摺紙細路',
@@ -683,6 +695,8 @@ const translations = {
     stop: '停止',
     pageTitleMusicBox: '音樂盒 - 摺紙細路',
     pageTitleAudioTest: '音頻測試 - 摺紙細路',
+    musicBoxSpeed: '速度',
+    musicBoxTranspose: '移調',
   },
   ja: {
     appName: '折り紙っ子',
@@ -781,6 +795,8 @@ const translations = {
     stop: 'とめる',
     pageTitleMusicBox: 'オルゴール - 折り紙っ子',
     pageTitleAudioTest: 'オーディオテスト - 折り紙っ子',
+    musicBoxSpeed: 'スピード',
+    musicBoxTranspose: 'トランスポーズ',
   },
 } as const
 

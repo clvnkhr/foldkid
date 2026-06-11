@@ -1148,27 +1148,33 @@ export const view = (model: Model, language: string = 'en') => {
                 ['⏹'],
               ),
             ]),
-            h.div([h.Class('tempo-controls')], [
-              h.button(
-                [h.OnClick(TempoDown()), h.Class('btn btn-tiny'), h.Disabled(model.tempo <= 0.25)],
-                ['−'],
-              ),
-              h.span([h.Class('tempo-label')], [`${model.tempo.toFixed(2)}×`]),
-              h.button(
-                [h.OnClick(TempoUp()), h.Class('btn btn-tiny'), h.Disabled(model.tempo >= 3)],
-                ['+'],
-              ),
+            h.div([h.Class('musicbox-dropdown')], [
+              h.label([h.Class('musicbox-dropdown-label')], [t('musicBoxSpeed', language)]),
+              h.div([h.Class('tempo-controls')], [
+                h.button(
+                  [h.OnClick(TempoDown()), h.Class('btn btn-tiny'), h.Disabled(model.tempo <= 0.25)],
+                  ['−'],
+                ),
+                h.span([h.Class('tempo-label')], [`${model.tempo.toFixed(2)}×`]),
+                h.button(
+                  [h.OnClick(TempoUp()), h.Class('btn btn-tiny'), h.Disabled(model.tempo >= 3)],
+                  ['+'],
+                ),
+              ]),
             ]),
-            h.div([h.Class('tempo-controls')], [
-              h.button(
-                [h.OnClick(TransposeDown()), h.Class('btn btn-tiny'), h.Disabled(model.songTranspose <= MIN_TRANSPOSE)],
-                ['−'],
-              ),
-              h.span([h.Class('tempo-label')], [`${model.songTranspose > 0 ? '+' : ''}${model.songTranspose}`]),
-              h.button(
-                [h.OnClick(TransposeUp()), h.Class('btn btn-tiny'), h.Disabled(model.songTranspose >= MAX_TRANSPOSE)],
-                ['+'],
-              ),
+            h.div([h.Class('musicbox-dropdown')], [
+              h.label([h.Class('musicbox-dropdown-label')], [t('musicBoxTranspose', language)]),
+              h.div([h.Class('tempo-controls')], [
+                h.button(
+                  [h.OnClick(TransposeDown()), h.Class('btn btn-tiny'), h.Disabled(model.songTranspose <= MIN_TRANSPOSE)],
+                  ['−'],
+                ),
+                h.span([h.Class('tempo-label')], [`${model.songTranspose > 0 ? '+' : ''}${model.songTranspose}`]),
+                h.button(
+                  [h.OnClick(TransposeUp()), h.Class('btn btn-tiny'), h.Disabled(model.songTranspose >= MAX_TRANSPOSE)],
+                  ['+'],
+                ),
+              ]),
             ]),
           ]),
 
