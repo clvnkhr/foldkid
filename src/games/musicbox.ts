@@ -1324,7 +1324,7 @@ export const view = (model: Model, language: string = 'en') => {
           ),
           h.label([h.Class('piano-toggle-label')], [
             h.input([h.Type('checkbox'), h.Checked(model.showBottomKeyboard), h.OnChange(() => ToggleBottomKeyboard())]),
-            t('musicBoxShowBottom', language),
+            h.span([h.Class('piano-toggle-text')], [t('musicBoxShowBottom', language)]),
           ]),
           h.select(
             [
