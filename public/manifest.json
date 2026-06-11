@@ -1,0 +1,22 @@
+{
+  "name": "foldkid",
+  "short_name": "foldkid",
+  "description": "Fun educational games for kids",
+  "start_url": "/foldkid/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f0f4ff",
+  "theme_color": "#667eea",
+  "icons": [
+    {
+      "src": "/foldkid/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/foldkid/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
