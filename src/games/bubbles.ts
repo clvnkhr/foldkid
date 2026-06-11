@@ -197,61 +197,61 @@ interface AnimState {
   id: number
 }
 
-const tick = (state: AnimState, container: HTMLElement): void => {
+const initBubbleTracking = (state: AnimState, container: HTMLElement): void => {
+  const w = window.innerWidth
+  const h = window.innerHeight
+  const els = container.querySelectorAll(':scope > .bubble') as NodeListOf<HTMLElement>
+  for (const el of els) {
+    const id = parseInt(el.getAttribute('data-id') ?? '', 10)
+    if (isNaN(id)) continue
+    if (state.bubbles.has(id)) continue
+    state.bubbles.set(id, {
+      el,
+      x: Math.random() * w,
+      y: Math.random() * h,
+      vx: (Math.random() - 0.5) * 60,
+      vy: (Math.random() - 0.5) * 50 - 20,
+      r: parseFloat(el.getAttribute('data-size') ?? '20'),
+      cx: 0, cy: 0, rectW: 0,
+      color: el.getAttribute('data-color') ?? '#667eea',
+    })
+  }
+}
+
+const addBubbleTracking = (state: AnimState, el: HTMLElement): void => {
+  const w = window.innerWidth
+  const h = window.innerHeight
+  const id = parseInt(el.getAttribute('data-id') ?? '', 10)
+  if (isNaN(id)) return
+  if (state.bubbles.has(id)) return
+  state.bubbles.set(id, {
+    el,
+    x: Math.random() * w,
+    y: Math.random() * h,
+    vx: (Math.random() - 0.5) * 60,
+    vy: (Math.random() - 0.5) * 50 - 20,
+    r: parseFloat(el.getAttribute('data-size') ?? '20'),
+    cx: 0, cy: 0, rectW: 0,
+    color: el.getAttribute('data-color') ?? '#667eea',
+  })
+}
+
+const tick = (state: AnimState): void => {
   const w = window.innerWidth
   const h = window.innerHeight
   const dt = 1 / 60
 
-  const els = container.querySelectorAll(':scope > .bubble') as NodeListOf<HTMLElement>
-  const currentIds = new Set<number>()
-
-  // Sync: add/update tracking for current elements
-  for (const el of els) {
-    const id = parseInt(el.getAttribute('data-id') ?? '', 10)
-    if (isNaN(id)) continue
-    currentIds.add(id)
-
-    let ba = state.bubbles.get(id)
-    if (!ba) {
-      ba = {
-        el,
-        x: Math.random() * w,
-        y: Math.random() * h,
-        vx: (Math.random() - 0.5) * 60,
-        vy: (Math.random() - 0.5) * 50 - 20,
-        r: parseFloat(el.getAttribute('data-size') ?? '20'),
-        cx: 0,
-        cy: 0,
-        rectW: 0,
-        color: el.getAttribute('data-color') ?? '#667eea',
-      }
-      state.bubbles.set(id, ba)
-    }
-
-    // Cache current bounding rect for potential poof
-    const rect = el.getBoundingClientRect()
-    ba.cx = rect.left + rect.width / 2
-    ba.cy = rect.top + rect.height / 2
-    ba.rectW = rect.width
-    ba.el = el
-    ba.color = el.getAttribute('data-color') ?? ba.color
-  }
-
-  // Remove tracking for popped/removed bubbles that are no longer in DOM
-  // (poof was already handled by MutationObserver, just clean up)
-  for (const [id] of state.bubbles) {
-    if (!currentIds.has(id)) {
-      state.bubbles.delete(id)
-    }
-  }
-
-  // Update positions for all tracked bubbles still in the DOM
   for (const [, ba] of state.bubbles) {
     if (!ba.el.parentElement) continue
     ba.x += ba.vx * dt
     ba.y += ba.vy * dt
     ba.r += 6 * dt
     if (ba.r > 200) ba.r = 200
+
+    // Store center position for poof (no getBoundingClientRect needed)
+    ba.cx = ba.x
+    ba.cy = ba.y
+    ba.rectW = ba.r * 2
 
     // Wrap around edges
     if (ba.x < -ba.r) ba.x = w + ba.r
@@ -263,8 +263,6 @@ const tick = (state: AnimState, container: HTMLElement): void => {
     ba.el.style.width = `${size}px`
     ba.el.style.height = `${size}px`
     ba.el.style.transform = `translate3d(${ba.x - ba.r}px,${ba.y - ba.r}px,0)`
-
-
   }
 }
 
@@ -380,24 +378,39 @@ export const view = (model: Model, language: string = 'en') => {
             }),
           ),
         })], [
-          ...COLORS.map((c) =>
+          h.div([h.Class('color-selector-row')], [
+            ...COLORS.slice(0, 5).map((c) =>
+              h.button(
+                [
+                  h.Class(c === model.selectedColor ? 'color-btn color-btn--active' : 'color-btn'),
+                  h.Style({ backgroundColor: c }),
+                  h.Attribute('data-color', c),
+                  h.Key(c),
+                ],
+                [],
+              ),
+            ),
+          ]),
+          h.div([h.Class('color-selector-row')], [
+            ...COLORS.slice(5).map((c) =>
+              h.button(
+                [
+                  h.Class(c === model.selectedColor ? 'color-btn color-btn--active' : 'color-btn'),
+                  h.Style({ backgroundColor: c }),
+                  h.Attribute('data-color', c),
+                  h.Key(c),
+                ],
+                [],
+              ),
+            ),
             h.button(
               [
-                h.Class(c === model.selectedColor ? 'color-btn color-btn--active' : 'color-btn'),
-                h.Style({ backgroundColor: c }),
-                h.Attribute('data-color', c),
-                h.Key(c),
+                h.Class(model.selectedColor === 'rainbow' ? 'color-btn color-btn--active color-btn--rainbow' : 'color-btn color-btn--rainbow'),
+                h.Attribute('data-color', 'rainbow'),
               ],
-              [],
+              ['🌈'],
             ),
-          ),
-          h.button(
-            [
-              h.Class(model.selectedColor === 'rainbow' ? 'color-btn color-btn--active color-btn--rainbow' : 'color-btn color-btn--rainbow'),
-              h.Attribute('data-color', 'rainbow'),
-            ],
-            ['🌈'],
-          ),
+          ]),
         ]),
         h.div([h.Class('display-area')], [
           model.bubbles.length === 0
@@ -436,6 +449,11 @@ export const view = (model: Model, language: string = 'en') => {
                     const observer = new MutationObserver((mutations) => {
                       for (const mutation of mutations) {
                         if (mutation.type !== 'childList') continue
+                        for (const node of mutation.addedNodes) {
+                          if (node instanceof HTMLElement && node.classList.contains('bubble')) {
+                            addBubbleTracking(state, node)
+                          }
+                        }
                         for (const node of mutation.removedNodes) {
                           if (!(node instanceof HTMLElement)) continue
                           if (!node.classList.contains('bubble')) continue
@@ -452,9 +470,12 @@ export const view = (model: Model, language: string = 'en') => {
                     })
                     observer.observe(container, { childList: true })
 
+                    // Track any bubbles that were already in the DOM before the observer started
+                    initBubbleTracking(state, container)
+
                     const loop = () => {
                       if (!state.running) return
-                      tick(state, container)
+                      tick(state)
                       state.id = requestAnimationFrame(loop)
                     }
                     state.id = requestAnimationFrame(loop)
@@ -480,7 +501,11 @@ export const view = (model: Model, language: string = 'en') => {
                   h.OnPointerDown(() => O.some(ClickedPop({ id: b.id }))),
                   h.OnPointerMove(() => isPointerDown ? O.some(ClickedPop({ id: b.id })) : O.none()),
                   h.Class('bubble'),
-                  h.Style(b.color.startsWith('linear-gradient') ? { background: `${b.color},${BUBBLE_GLOSS}` } : { backgroundColor: b.color }),
+                  h.Style({
+                    ...(b.color.startsWith('linear-gradient') ? { background: `${b.color},${BUBBLE_GLOSS}` } : { backgroundColor: b.color }),
+                    width: `${b.size}px`,
+                    height: `${b.size}px`,
+                  }),
                   h.Attribute('data-id', b.id.toString()),
                   h.Attribute('data-color', b.color),
                   h.Attribute('data-color-name', model.sayColor ? t(getColorName(b.color), language) : ''),

@@ -715,9 +715,16 @@ body {
 
 .color-selector {
   display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.color-selector-row {
+  display: flex;
   gap: 0.5rem;
   justify-content: center;
-  margin-bottom: 1rem;
 }
 
 .color-btn {
@@ -770,6 +777,7 @@ body {
   border-radius: 50%;
   cursor: pointer;
   will-change: transform;
+  contain: layout style paint;
   pointer-events: auto;
   opacity: 0.85;
   border: 1.5px solid rgba(255, 255, 255, 0.35);

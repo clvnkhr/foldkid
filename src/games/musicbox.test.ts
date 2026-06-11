@@ -557,7 +557,7 @@ describe('MusicBox', () => {
         { update: MusicBox.update, view: MusicBox.view },
         Scene.with(MusicBox.init()),
         Scene.Mount.resolveAll(...resolveMount),
-        Scene.expect(Scene.text('▶')).toExist(),
+        Scene.expect(Scene.selector('#musicbox-play svg')).toExist(),
         Scene.Command.expectNone(),
       )
     })
@@ -567,7 +567,7 @@ describe('MusicBox', () => {
         { update: MusicBox.update, view: MusicBox.view },
         Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: true, whiteKeys: 12, showBottomKeyboard: true, tempo: 1, lyricsExpanded: false, songOrder: [0, 1, 2, 3, 4, 5, 6], hiddenSongs: [false, false, false, false, false, false, false], dragIndex: -1 }),
         Scene.Mount.resolveAll(resolvePianoTop, resolvePianoBot),
-        Scene.expect(Scene.text('⏹')).toExist(),
+        Scene.expect(Scene.selector('#musicbox-stop svg')).toExist(),
         Scene.Command.expectNone(),
       )
     })
@@ -577,7 +577,7 @@ describe('MusicBox', () => {
         { update: MusicBox.update, view: MusicBox.view },
         Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: true, whiteKeys: 12, showBottomKeyboard: true, tempo: 1, lyricsExpanded: false, songOrder: [0, 1, 2, 3, 4, 5, 6], hiddenSongs: [false, false, false, false, false, false, false], dragIndex: -1 }),
         Scene.Mount.resolveAll(resolvePianoTop, resolvePianoBot),
-        Scene.expect(Scene.text('▶')).toExist(),
+        Scene.expect(Scene.selector('#musicbox-play svg')).toExist(),
         Scene.Command.expectNone(),
       )
     })
