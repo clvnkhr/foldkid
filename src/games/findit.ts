@@ -195,7 +195,10 @@ export const update = (
       FindItGridDroppedOn: (msg) => {
         if (model.gridDragIndex === null || model.gridDragIndex === msg.index) return [model, []]
         const grid = [...model.grid]
-        ;[grid[model.gridDragIndex]!, grid[msg.index]!] = [grid[msg.index]!, grid[model.gridDragIndex]!]
+        if (model.gridDragIndex >= grid.length || msg.index >= grid.length) return [model, []]
+        const tmp = grid[model.gridDragIndex]!
+        grid[model.gridDragIndex] = grid[msg.index]!
+        grid[msg.index] = tmp
         return [{ ...model, grid, gridDragIndex: null }, []]
       },
       FindItGridDragEnded: () => [

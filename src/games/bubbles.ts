@@ -12,9 +12,9 @@ const COLORS = ['#FF4757', '#FF7F00', '#FFD93D', '#2ED573', '#1E90FF', '#A855F7'
 
 const RAINBOW_GRADIENT = 'linear-gradient(135deg, #ff6b6b, #ffd93d, #6bcb5e, #4ecdc4, #667eea, #ff8b94)'
 const RAINBOW_COLORS = ['#ff6b6b', '#ffd93d', '#6bcb5e', '#4ecdc4', '#667eea', '#ff8b94']
-const BUBBLE_GLOSS = 'radial-gradient(circle at 30% 25%, rgba(255,255,255,0.5) 0%, transparent 55%),radial-gradient(circle at 70% 80%, rgba(0,0,0,0.08) 0%, transparent 45%)' as string
+const BUBBLE_GLOSS = 'radial-gradient(circle at 30% 25%, rgba(255,255,255,0.5) 0%, transparent 55%),radial-gradient(circle at 70% 80%, rgba(0,0,0,0.08) 0%, transparent 45%)'
 
-const COLOR_NAME_KEYS: Record<string, string> = {
+const COLOR_NAME_KEYS: Record<string, TranslationKey> = {
   '#FF4757': 'colorRed',
   '#FF7F00': 'colorOrange',
   '#FFD93D': 'colorYellow',
@@ -26,7 +26,7 @@ const COLOR_NAME_KEYS: Record<string, string> = {
   '#666666': 'colorGrey',
 }
 
-const getColorName = (color: string): string => COLOR_NAME_KEYS[color] ?? 'colorRainbow'
+const getColorName = (color: string): TranslationKey => COLOR_NAME_KEYS[color] ?? 'colorRainbow'
 
 let isPointerDown = false
 
@@ -344,8 +344,9 @@ export const view = (model: Model, language: string = 'en') => {
                   const colorMap = new Map<number, { startTime: number; color: string }>()
 
                   const onDown = (e: PointerEvent): void => {
-                    const target = e.target as HTMLElement
-                    const colorBtn = target.closest('.color-btn') as HTMLElement | null
+                    if (!(e.target instanceof HTMLElement)) return
+                    const target = e.target
+                    const colorBtn = target.closest('.color-btn')
                     if (!colorBtn) return
                     const color = colorBtn.getAttribute('data-color') ?? ''
                     if (!color) return
@@ -419,10 +420,10 @@ export const view = (model: Model, language: string = 'en') => {
               Effect.gen(function* () {
                 yield* Effect.acquireRelease(
                   Effect.sync(() => {
-                    const container = element as HTMLElement
-                    const state: AnimState = {
-                      bubbles: new Map(),
-                      running: true,
+                  const container = element as HTMLElement
+                  const state: AnimState = {
+                    bubbles: new Map(),
+                    running: true,
                       id: 0,
                     }
 
@@ -482,7 +483,7 @@ export const view = (model: Model, language: string = 'en') => {
                   h.Style(b.color.startsWith('linear-gradient') ? { background: `${b.color},${BUBBLE_GLOSS}` } : { backgroundColor: b.color }),
                   h.Attribute('data-id', b.id.toString()),
                   h.Attribute('data-color', b.color),
-                  h.Attribute('data-color-name', model.sayColor ? t(getColorName(b.color) as TranslationKey, language) : ''),
+                  h.Attribute('data-color-name', model.sayColor ? t(getColorName(b.color), language) : ''),
                   h.Attribute('data-size', b.size.toString()),
                   h.Key(b.id.toString()),
                 ],

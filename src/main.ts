@@ -2,7 +2,7 @@ import { Effect, Match as M, Option, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { Document, html } from 'foldkit/html'
 
-import { CancelResetSettings, ClickedAudioTest, ClickedBubbles, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedGreeting, ClickedLanding, ClickedMusicBox, ClickedSettings, ConfirmResetSettings, CopyExportData, DismissMessage, ExportSettings, ImportSettings, ImportedSettings, ResetSettings, SetLanguage, SettingsDragEnded, SettingsDragMoved, SettingsDragStarted, SettingsImportFailed, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
+import { ApplyImport, CancelResetSettings, ClickedAudioTest, ClickedBubbles, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedGreeting, ClickedLanding, ClickedMusicBox, ClickedSettings, ConfirmResetSettings, CopyExportData, DismissMessage, ExportSettings, ImportSettings, ImportedSettings, ResetSettings, SetExportData, SetLanguage, SettingsDragEnded, SettingsDragMoved, SettingsDragStarted, SettingsImportFailed, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
 
 import { Page, PageAudioTest, PageBubbles, PageCounter, PageFindIt, PageGreeting, PageLanding, PageMusicBox } from './route'
 
@@ -41,8 +41,8 @@ interface PersistedSettings {
   bubblesSayColor: boolean
   bubblesSelectedColor: string
   greetingVoiceEffect: string
-  musicBoxSongOrder: number[]
-  musicBoxHiddenSongs: boolean[]
+  musicBoxSongOrder: readonly number[]
+  musicBoxHiddenSongs: readonly boolean[]
 }
 
 const DarkModeValues = ['auto', 'light', 'dark'] as const
@@ -59,11 +59,27 @@ const loadSettings = (): Partial<PersistedSettings> => {
   }
 }
 
+const isDarkMode = (value: string | undefined): value is DarkMode =>
+  value !== undefined && (DarkModeValues as readonly string[]).includes(value)
+
 const sanitizeDarkMode = (value: string | undefined, fallback: DarkMode): DarkMode =>
-  DarkModeValues.includes(value as DarkMode) ? (value as DarkMode) : fallback
+  isDarkMode(value) ? value : fallback
+
+const isDisplayMode = (value: string | undefined): value is 'number' | 'word' | 'both' =>
+  value !== undefined && (DisplayModeValues as readonly string[]).includes(value)
 
 const sanitizeDisplayMode = (value: string | undefined, fallback: 'number' | 'word' | 'both'): 'number' | 'word' | 'both' =>
-  DisplayModeValues.includes(value as 'number' | 'word' | 'both') ? (value as 'number' | 'word' | 'both') : fallback
+  isDisplayMode(value) ? value : fallback
+
+const VOICE_EFFECT_VALUES = ['normal', 'high', 'low', 'echo', 'highpass', 'lowpass', 'reverse', 'robot', 'alien', 'chipmunk'] as const
+
+type VoiceEffectValue = typeof VOICE_EFFECT_VALUES[number]
+
+const isVoiceEffect = (value: string | undefined): value is VoiceEffectValue =>
+  value !== undefined && (VOICE_EFFECT_VALUES).includes(value as VoiceEffectValue)
+
+const sanitizeVoiceEffect = (value: string | undefined, fallback: VoiceEffectValue): VoiceEffectValue =>
+  isVoiceEffect(value) ? value : fallback
 
 const buildSettingsData = (model: Model): PersistedSettings => ({
   version: SETTINGS_VERSION,
@@ -104,33 +120,6 @@ const copyExportCmd = (text: string): Command.Command<Message> => ({
   }).pipe(Effect.as(DismissMessage())),
 })
 
-const importSettingsCmd = (): Command.Command<Message> => ({
-  name: 'ImportSettings',
-  effect: Effect.callback<Message>((resume) => {
-    const input = document.createElement('input')
-    input.type = 'file'
-    input.accept = '.json'
-    input.onchange = () => {
-      const file = input.files?.[0]
-      if (!file) {
-        resume(Effect.succeed(SettingsImportFailed()))
-        return
-      }
-      const reader = new FileReader()
-      reader.onload = () => {
-        const text = reader.result as string
-        resume(Effect.succeed(ImportedSettings({ data: text })))
-      }
-      reader.onerror = () => {
-        resume(Effect.succeed(SettingsImportFailed()))
-      }
-      reader.readAsText(file)
-    }
-    input.click()
-    return Effect.sync(() => {})
-  }),
-})
-
 // MODEL
 
 const DarkModeType = S.Union([S.Literal('auto'), S.Literal('light'), S.Literal('dark')])
@@ -152,6 +141,7 @@ export const Model = S.Struct({
   showResetConfirm: S.Boolean,
   importExportMessage: S.String,
   exportData: S.String,
+  settingsOverlay: S.String,
 })
 
 export type Model = typeof Model.Type
@@ -226,7 +216,6 @@ export const Message = S.Union([
   MusicBox.ShiftBottom,
   MusicBox.ShiftTop,
   MusicBox.TempoUp,
-  MusicBox.TempoUp,
   MusicBox.TempoDown,
   MusicBox.ToggleLyrics,
   MusicBox.TogglePause,
@@ -249,6 +238,8 @@ export const Message = S.Union([
   ImportedSettings,
   SettingsImportFailed,
   DismissMessage,
+  SetExportData,
+  ApplyImport,
 ])
 
 export type Message = typeof Message.Type
@@ -274,10 +265,14 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
       muted: saved.muted ?? false,
       musicBox: {
         ...MusicBox.init(),
-        songOrder: saved.musicBoxSongOrder ?? MusicBox.init().songOrder,
-        hiddenSongs: saved.musicBoxHiddenSongs ?? MusicBox.init().hiddenSongs,
+        songOrder: Array.isArray(saved.musicBoxSongOrder)
+          ? saved.musicBoxSongOrder.filter((i: number) => typeof i === 'number' && i >= 0 && i < MusicBox.SONGS.length)
+          : MusicBox.init().songOrder,
+        hiddenSongs: Array.isArray(saved.musicBoxHiddenSongs)
+          ? saved.musicBoxHiddenSongs.map((h: boolean) => h === true)
+          : MusicBox.init().hiddenSongs,
       },
-      greeting: { ...Greeting.init, voiceEffect: saved.greetingVoiceEffect ?? 'normal' },
+      greeting: { ...Greeting.init, voiceEffect: sanitizeVoiceEffect(saved.greetingVoiceEffect, 'normal') },
       counter: {
         ...Counter.init,
         rate: saved.counterRate ?? Counter.init.rate,
@@ -298,6 +293,7 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
       showResetConfirm: false,
       importExportMessage: '',
       exportData: '',
+      settingsOverlay: '',
     },
     cmds,
   ]
@@ -350,6 +346,45 @@ const cycleDarkMode = (current: DarkMode): DarkMode => {
   if (current === 'light') return 'dark'
   return 'auto'
 }
+
+const applyImportData = (model: Model, s: PersistedSettings): Model => ({
+  ...model,
+  settingsOverlay: '',
+  language: s.language ?? model.language,
+  darkMode: sanitizeDarkMode(s.darkMode, model.darkMode),
+  muted: s.muted ?? model.muted,
+  greeting: { ...model.greeting, voiceEffect: sanitizeVoiceEffect(s.greetingVoiceEffect, model.greeting.voiceEffect) },
+  counter: {
+    ...model.counter,
+    rate: s.counterRate ?? model.counter.rate,
+    pitch: s.counterPitch ?? model.counter.pitch,
+    displayMode: sanitizeDisplayMode(s.counterDisplayMode, model.counter.displayMode),
+  },
+  findIt: {
+    ...model.findIt,
+    anyWins: s.findItAnyWins ?? model.findIt.anyWins,
+    voiceMode: s.findItVoiceMode ?? model.findIt.voiceMode,
+    pairsMode: s.findItPairsMode ?? model.findIt.pairsMode,
+  },
+  bubbles: {
+    ...model.bubbles,
+    popLabel: s.bubblesPopLabel ?? model.bubbles.popLabel,
+    sayColor: s.bubblesSayColor ?? model.bubbles.sayColor,
+    selectedColor: s.bubblesSelectedColor ?? model.bubbles.selectedColor,
+    rainbowMode: (s.bubblesSelectedColor ?? model.bubbles.selectedColor) === 'rainbow',
+  },
+  musicBox: {
+    ...model.musicBox,
+    songOrder: Array.isArray(s.musicBoxSongOrder)
+      ? s.musicBoxSongOrder.filter((i: number) => typeof i === 'number' && i >= 0 && i < MusicBox.SONGS.length)
+      : model.musicBox.songOrder,
+    hiddenSongs: Array.isArray(s.musicBoxHiddenSongs)
+      ? s.musicBoxHiddenSongs.map((h: boolean) => h === true)
+      : model.musicBox.hiddenSongs,
+  },
+  showResetConfirm: false,
+  importExportMessage: t('settingsImportSuccess', model.language),
+})
 
 const _update = (
   model: Model,
@@ -469,10 +504,11 @@ const _update = (
           exportedAt: new Date().toISOString(),
           settings: buildSettingsData(model),
         }
-        return [{ ...model, exportData: JSON.stringify(data), showResetConfirm: false }, []]
+        return [{ ...model, settingsOverlay: 'export', exportData: JSON.stringify(data, null, 2), showResetConfirm: false, importExportMessage: '' }, []]
       },
       CopyExportData: () => [model, [copyExportCmd(model.exportData)]],
-      ImportSettings: () => [model, [importSettingsCmd()]],
+      ImportSettings: () => [{ ...model, settingsOverlay: 'import', exportData: '', showResetConfirm: false, importExportMessage: '' }, []],
+      SetExportData: (msg) => [{ ...model, exportData: msg.value }, []],
       ImportedSettings: (msg) => {
         try {
           const parsed = JSON.parse(msg.data)
@@ -483,47 +519,32 @@ const _update = (
           if (!s || typeof s.language !== 'string') {
             return [{ ...model, importExportMessage: t('settingsImportInvalid', model.language), showResetConfirm: false }, []]
           }
-          const next = {
-            ...model,
-            language: s.language ?? model.language,
-            darkMode: sanitizeDarkMode(s.darkMode, model.darkMode),
-            muted: s.muted ?? model.muted,
-            greeting: { ...model.greeting, voiceEffect: s.greetingVoiceEffect ?? model.greeting.voiceEffect },
-            counter: {
-              ...model.counter,
-              rate: s.counterRate ?? model.counter.rate,
-              pitch: s.counterPitch ?? model.counter.pitch,
-              displayMode: sanitizeDisplayMode(s.counterDisplayMode, model.counter.displayMode),
-            },
-            findIt: {
-              ...model.findIt,
-              anyWins: s.findItAnyWins ?? model.findIt.anyWins,
-              voiceMode: s.findItVoiceMode ?? model.findIt.voiceMode,
-              pairsMode: s.findItPairsMode ?? model.findIt.pairsMode,
-            },
-            bubbles: {
-              ...model.bubbles,
-              popLabel: s.bubblesPopLabel ?? model.bubbles.popLabel,
-              sayColor: s.bubblesSayColor ?? model.bubbles.sayColor,
-              selectedColor: s.bubblesSelectedColor ?? model.bubbles.selectedColor,
-              rainbowMode: (s.bubblesSelectedColor ?? model.bubbles.selectedColor) === 'rainbow',
-            },
-            musicBox: {
-              ...model.musicBox,
-              songOrder: s.musicBoxSongOrder ?? model.musicBox.songOrder,
-              hiddenSongs: s.musicBoxHiddenSongs ?? model.musicBox.hiddenSongs,
-            },
-            showResetConfirm: false,
-            importExportMessage: t('settingsImportSuccess', model.language),
-          }
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(buildSettingsData(next)))
+          const next = applyImportData(model, s)
+          try { localStorage.setItem(STORAGE_KEY, JSON.stringify(buildSettingsData(next))) } catch { /* ok */ }
           return [next, []]
         } catch {
           return [{ ...model, importExportMessage: t('settingsImportInvalid', model.language), showResetConfirm: false }, []]
         }
       },
+      ApplyImport: () => {
+        try {
+          const parsed = JSON.parse(model.exportData)
+          if (!parsed || parsed.version !== SETTINGS_VERSION) {
+            return [{ ...model, importExportMessage: t('settingsImportVersionMismatch', model.language), showResetConfirm: false, settingsOverlay: '' }, []]
+          }
+          const s = parsed.settings
+          if (!s || typeof s.language !== 'string') {
+            return [{ ...model, importExportMessage: t('settingsImportInvalid', model.language), showResetConfirm: false, settingsOverlay: '' }, []]
+          }
+          const next = applyImportData(model, s)
+          try { localStorage.setItem(STORAGE_KEY, JSON.stringify(buildSettingsData(next))) } catch { /* ok */ }
+          return [next, []]
+        } catch {
+          return [{ ...model, importExportMessage: t('settingsImportInvalid', model.language), showResetConfirm: false, settingsOverlay: '' }, []]
+        }
+      },
       SettingsImportFailed: () => [{ ...model, importExportMessage: t('settingsImportFailed', model.language) }, []],
-      DismissMessage: () => [{ ...model, importExportMessage: '', exportData: '' }, []],
+      DismissMessage: () => [{ ...model, settingsOverlay: '', importExportMessage: '', exportData: '' }, []],
     }),
   )
 
@@ -789,29 +810,32 @@ export const view = (model: Model): Document => {
             ? h.div([h.Class('setting-section')], [
               h.h3([], [t('musicBoxTitle', model.language)]),
               h.div([h.Class('settings-song-list')], [
-                ...model.musicBox.songOrder.map((songIdx, displayIdx) => {
-                  const song = MusicBox.SONGS[songIdx]!
-                  const isHidden = model.musicBox.hiddenSongs[songIdx]
-                  const isDragged = model.musicBox.dragIndex === displayIdx
-                  return h.div(
-                    [
-                      h.Key(songIdx.toString()),
-                      h.Class('settings-song-item' + (isHidden ? ' settings-song-item--hidden' : '') + (isDragged ? ' settings-song-item--dragging' : '')),
-                      h.Attribute('draggable', 'true'),
-                      h.OnDragStart(MusicBox.SongDragStarted({ index: displayIdx })),
-                      h.AllowDrop(),
-                      h.OnDrop(MusicBox.SongDroppedOn({ index: displayIdx })),
-                      h.OnDragEnd(MusicBox.SongDragEnded()),
-                    ],
-                    [
-                      h.span([h.Class('settings-song-drag')], ['⠿']),
-                      h.span([h.Class('settings-song-name')], [
-                        `${song.emoji} ${t(MusicBox.SONG_TKEYS[song.key], model.language)}`,
-                      ]),
-                      h.button(
-                        [h.Class('btn btn-tiny'), h.OnClick(MusicBox.ToggleSongVisibility({ index: songIdx }))],
-                        [isHidden ? t('musicBoxShow', model.language) : t('musicBoxHide', model.language)],
-                      ),
+                ...model.musicBox.songOrder
+                  .filter(songIdx => songIdx < MusicBox.SONGS.length && MusicBox.SONGS[songIdx] !== undefined)
+                  .map((songIdx, displayIdx) => {
+                    const song = MusicBox.SONGS[songIdx]!
+                    const isHidden = model.musicBox.hiddenSongs[songIdx]
+                    const isDragged = model.musicBox.dragIndex === displayIdx
+                    const songKey = MusicBox.SONG_TKEYS[song.key]
+                    return h.div(
+                      [
+                        h.Key(songIdx.toString()),
+                        h.Class('settings-song-item' + (isHidden ? ' settings-song-item--hidden' : '') + (isDragged ? ' settings-song-item--dragging' : '')),
+                        h.Attribute('draggable', 'true'),
+                        h.OnDragStart(MusicBox.SongDragStarted({ index: displayIdx })),
+                        h.AllowDrop(),
+                        h.OnDrop(MusicBox.SongDroppedOn({ index: displayIdx })),
+                        h.OnDragEnd(MusicBox.SongDragEnded()),
+                      ],
+                      [
+                        h.span([h.Class('settings-song-drag')], ['⠿']),
+                        h.span([h.Class('settings-song-name')], [
+                          `${song.emoji} ${t(songKey ?? 'musicBoxTwinkle', model.language)}`,
+                        ]),
+                        h.button(
+                          [h.Class('btn btn-tiny'), h.OnClick(MusicBox.ToggleSongVisibility({ index: songIdx }))],
+                          [isHidden ? t('musicBoxShow', model.language) : t('musicBoxHide', model.language)],
+                        ),
                     ],
                   )
                 }),
@@ -834,57 +858,85 @@ export const view = (model: Model): Document => {
                 ]),
               ])
               : null,
-            model.exportData
-              ? h.div([h.Class('settings-export-data')], [
-                h.textarea([
-                  h.Class('settings-export-textarea'),
-                  h.Value(model.exportData),
-                  h.Readonly(true),
-                  h.Rows(4),
-                ], []),
-                h.div([h.Class('lang-buttons')], [
-                  h.button(
-                    [h.OnClick(CopyExportData()), h.Class('btn btn-primary')],
-                    [t('settingsCopy', model.language)],
-                  ),
-                  h.button(
-                    [h.OnClick(DismissMessage()), h.Class('btn btn-secondary')],
-                    [t('cancel', model.language)],
-                  ),
-                ]),
-              ])
-              : h.div([h.Class('lang-buttons')], [
-                h.button(
-                  [h.OnClick(ResetSettings()), h.Class('btn btn-secondary')],
-                  [t('settingsReset', model.language)],
-                ),
-                h.button(
-                  [h.OnClick(ExportSettings()), h.Class('btn btn-secondary')],
-                  [t('settingsExport', model.language)],
-                ),
-                h.button(
-                  [h.OnClick(ImportSettings()), h.Class('btn btn-secondary')],
-                  [t('settingsImport', model.language)],
-                ),
-              ]),
+            h.div([h.Class('lang-buttons')], [
+              h.button(
+                [h.OnClick(ResetSettings()), h.Class('btn btn-secondary')],
+                [t('settingsReset', model.language)],
+              ),
+              h.button(
+                [h.OnClick(ExportSettings()), h.Class('btn btn-secondary')],
+                [t('settingsExport', model.language)],
+              ),
+              h.button(
+                [h.OnClick(ImportSettings()), h.Class('btn btn-secondary')],
+                [t('settingsImport', model.language)],
+              ),
+            ]),
             model.importExportMessage
               ? h.div([h.Class('settings-message'), h.OnClick(DismissMessage())], [model.importExportMessage])
               : null,
           ]),
           h.p([h.Class('settings-note')], [t('voiceNote', model.language)]),
         ]),
-        M.value(model.page).pipe(
-          M.tagsExhaustive({
-            PageLanding: () => landingView(model.language),
-            PageGreeting: () => Greeting.view(model.greeting, model.language),
-            PageCounter: () => Counter.view(model.counter, model.language),
-            PageFindIt: () => FindIt.view(model.findIt, model.language),
-            PageBubbles: () => Bubbles.view(model.bubbles, model.language),
-            PageMusicBox: () => MusicBox.view(model.musicBox, model.language),
-            PageAudioTest: () => audioTestView(model.language),
-          }),
-        ),
-      ],
-    ),
+          M.value(model.page).pipe(
+            M.tagsExhaustive({
+              PageLanding: () => landingView(model.language),
+              PageGreeting: () => Greeting.view(model.greeting, model.language),
+              PageCounter: () => Counter.view(model.counter, model.language),
+              PageFindIt: () => FindIt.view(model.findIt, model.language),
+              PageBubbles: () => Bubbles.view(model.bubbles, model.language),
+              PageMusicBox: () => MusicBox.view(model.musicBox, model.language),
+              PageAudioTest: () => audioTestView(model.language),
+            }),
+          ),
+          model.settingsOverlay
+            ? h.div([
+              h.Style({
+                position: 'fixed', inset: '0', background: 'rgba(0,0,0,0.5)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                zIndex: '1000',
+              }),
+            ], [
+              h.div([
+                h.Style({
+                  background: '#fff', borderRadius: '8px', padding: '1.5rem',
+                  maxWidth: '90vw', maxHeight: '90vh', display: 'flex',
+                  flexDirection: 'column', gap: '1rem', minWidth: '300px',
+                }),
+              ], [
+                ...(model.settingsOverlay === 'export'
+                  ? [
+                    h.h3([h.Style({ margin: '0' })], [t('settingsExportSuccess', model.language)]),
+                    h.textarea([
+                      h.Value(model.exportData),
+                      h.Readonly(true),
+                      h.Style({ width: '100%', minHeight: '300px', fontFamily: 'monospace', fontSize: '12px', resize: 'vertical', boxSizing: 'border-box' }),
+                    ], []),
+                    h.div([h.Style({ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' })], [
+                      h.button([h.OnClick(CopyExportData()), h.Class('btn btn-primary')], [t('settingsCopy', model.language)]),
+                      h.button([h.OnClick(DismissMessage()), h.Class('btn btn-secondary')], [t('cancel', model.language)]),
+                    ]),
+                  ]
+                  : model.settingsOverlay === 'import'
+                    ? [
+                      h.h3([h.Style({ margin: '0' })], [t('settingsImport', model.language)]),
+                      h.textarea([
+                        h.Value(model.exportData),
+                        h.OnInput((v) => SetExportData({ value: v })),
+                        h.Placeholder('Paste settings JSON here...'),
+                        h.Style({ width: '100%', minHeight: '300px', fontFamily: 'monospace', fontSize: '12px', resize: 'vertical', boxSizing: 'border-box' }),
+                      ], []),
+                      h.div([h.Style({ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' })], [
+                        h.button([h.OnClick(ApplyImport()), h.Class('btn btn-primary')], [t('settingsImport', model.language)]),
+                        h.button([h.OnClick(DismissMessage()), h.Class('btn btn-secondary')], [t('cancel', model.language)]),
+                      ]),
+                    ]
+                    : []),
+              ]),
+            ])
+            : null,
+        ],
+      ),
+    };
   }
-}
+

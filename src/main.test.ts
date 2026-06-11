@@ -7,22 +7,12 @@ import * as FindIt from './games/findit'
 import * as Bubbles from './games/bubbles'
 import * as MusicBox from './games/musicbox'
 import { PageGreeting } from './route'
-import { ClickedLanding, ClickedGreeting, ClickedCounter, ClickedFindIt, ClickedBubbles, ClickedDarkMode, SettingsPersisted } from './message'
+import { ClickedLanding, ClickedGreeting, ClickedCounter, ClickedFindIt, ClickedBubbles, ClickedDarkMode, ImportedSettings, SettingsPersisted } from './message'
 
 const resolveSettings = [{ name: 'PersistSettings' }, SettingsPersisted()] as const
 
 describe('settings persistence', () => {
-  const settingsMessages: Array<{ label: string; msg: Main.Message }> = [
-    { label: 'ClickedDarkMode', msg: ClickedDarkMode() },
-    { label: 'CounterSetRate', msg: Counter.SetRate({ value: 0.5 }) },
-    { label: 'FindItSetAnyWins', msg: FindIt.SetAnyWins({ value: true }) },
-    { label: 'BubblesSetPopLabel', msg: Bubbles.SetPopLabel({ value: true }) },
-    { label: 'GreetingSetVoiceEffect', msg: Greeting.SetVoiceEffect({ value: 'robot' }) },
-    { label: 'MusicBoxToggleSongVisibility', msg: MusicBox.ToggleSongVisibility({ index: 0 }) },
-    { label: 'MusicBoxSongDroppedOn', msg: MusicBox.SongDroppedOn({ index: 1 }) },
-  ]
-
-  const nonSettingsMessages: Array<{ label: string; msg: Main.Message; resolves?: readonly [readonly [string, Main.Message], ...readonly (readonly [string, Main.Message])[]] }> = [
+  const nonSettingsMessages: Array<{ label: string; msg: Main.Message; resolves?: readonly [readonly [{ readonly name: string }, Main.Message], ...readonly (readonly [{ readonly name: string }, Main.Message])[]] }> = [
     { label: 'ClickedLanding', msg: ClickedLanding() },
     { label: 'ClickedGreeting', msg: ClickedGreeting() },
     { label: 'ClickedCounter', msg: ClickedCounter() },
@@ -172,6 +162,66 @@ describe('Main', () => {
       Story.Command.resolveAll([{ name: 'Record' }, Greeting.RecordingFailed()]),
       Story.Command.expectNone(),
     )
+  })
+
+  describe('settings import', () => {
+    it('filters out-of-bounds song indices', () => {
+      Story.story(
+        Main.update,
+        Story.with(createModel()),
+        Story.message(ImportedSettings({
+          data: JSON.stringify({
+            version: 1,
+            settings: {
+              language: 'en',
+              musicBoxSongOrder: [0, 999, 1, -1],
+              musicBoxHiddenSongs: [false, true],
+            },
+          }),
+        })),
+        Story.model((model) => {
+          expect(model.musicBox.songOrder).toEqual([0, 1])
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('sanitizes invalid voice effect', () => {
+      Story.story(
+        Main.update,
+        Story.with(createModel()),
+        Story.message(ImportedSettings({
+          data: JSON.stringify({
+            version: 1,
+            settings: {
+              language: 'en',
+              greetingVoiceEffect: 'invalid',
+            },
+          }),
+        })),
+        Story.model((model) => {
+          expect(model.greeting.voiceEffect).toBe('normal')
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('rejects wrong version', () => {
+      Story.story(
+        Main.update,
+        Story.with(createModel()),
+        Story.message(ImportedSettings({
+          data: JSON.stringify({
+            version: 999,
+            settings: { language: 'en' },
+          }),
+        })),
+        Story.model((model) => {
+          expect(model.importExportMessage).toBeTruthy()
+        }),
+        Story.Command.expectNone(),
+      )
+    })
   })
 })
 

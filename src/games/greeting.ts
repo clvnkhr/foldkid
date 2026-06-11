@@ -13,6 +13,19 @@ let activeMediaStream: MediaStream | null = null
 
 const StatusType = S.Union([S.Literal('idle'), S.Literal('recording')])
 
+const VoiceEffect = S.Union([
+  S.Literal('normal'),
+  S.Literal('high'),
+  S.Literal('low'),
+  S.Literal('echo'),
+  S.Literal('highpass'),
+  S.Literal('lowpass'),
+  S.Literal('reverse'),
+  S.Literal('robot'),
+  S.Literal('alien'),
+  S.Literal('chipmunk'),
+])
+
 export const Model = S.Struct({
   status: StatusType,
   audioUrl: S.String,
@@ -20,7 +33,7 @@ export const Model = S.Struct({
   autoPlay: S.Boolean,
   recordingId: S.Number,
   hellos: S.Array(S.Struct({ id: S.Number, effect: S.String, left: S.String, top: S.String, color: S.String })),
-  voiceEffect: S.String,
+  voiceEffect: VoiceEffect,
 })
 export type Model = typeof Model.Type
 
@@ -31,7 +44,7 @@ export const RecordingFailed = m('GreetingRecordingFailed')
 export const ClickedPlay = m('GreetingClickedPlay')
 export const ClickedReset = m('GreetingClickedReset')
 export const SoundPlayed = m('GreetingSoundPlayed')
-export const SetVoiceEffect = m('GreetingSetVoiceEffect', { value: S.String })
+export const SetVoiceEffect = m('GreetingSetVoiceEffect', { value: VoiceEffect })
 export const HideHello = m('GreetingHideHello', { id: S.Number })
 
 export const Message = S.Union([ClickedRecord, ClickedStopRecording, RecordedAudio, RecordingFailed, ClickedPlay, ClickedReset, SoundPlayed, SetVoiceEffect, HideHello])
@@ -42,10 +55,10 @@ export const init: Model = { status: 'idle', audioUrl: '', playCount: 0, autoPla
 const trimSilence = (samples: Float32Array): Float32Array => {
   const threshold = TRIM_THRESHOLD * (2 ** 0.5)
   let start = 0
-  while (start < samples.length && Math.abs(samples[start] as number) < threshold) start++
+  while (start < samples.length && Math.abs(samples[start] ?? 0) < threshold) start++
   start = Math.max(0, start - TRIM_PADDING_SAMPLES)
   let end = samples.length - 1
-  while (end > start && Math.abs(samples[end] as number) < threshold) end--
+  while (end > start && Math.abs(samples[end] ?? 0) < threshold) end--
   end = Math.min(samples.length - 1, end + TRIM_PADDING_SAMPLES)
   return samples.slice(start, end + 1)
 }
@@ -71,7 +84,7 @@ const encodeWav = (samples: Float32Array, sampleRate: number): Blob => {
   write(36, 'data')
   view.setUint32(40, len * 2, true)
   for (let i = 0; i < len; i++) {
-    const s = Math.max(-1, Math.min(1, samples[i] as number))
+    const s = Math.max(-1, Math.min(1, samples[i] ?? 0))
     view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true)
   }
   return new Blob([buffer], { type: 'audio/wav' })
@@ -169,7 +182,9 @@ const record = (): Command.Command<Message> => ({
   }),
 })
 
-const applyEffect = (ctx: AudioContext, source: AudioBufferSourceNode, effect: string): void => {
+type EffectType = typeof VoiceEffect.Type
+
+const applyEffect = (ctx: AudioContext, source: AudioBufferSourceNode, effect: EffectType): void => {
   switch (effect) {
     case 'normal':
       source.connect(ctx.destination)
@@ -250,7 +265,7 @@ const applyEffect = (ctx: AudioContext, source: AudioBufferSourceNode, effect: s
   }
 }
 
-const playGreeting = (audioUrl: string, language: string, voiceEffect: string): Command.Command<Message> => ({
+const playGreeting = (audioUrl: string, language: string, voiceEffect: EffectType): Command.Command<Message> => ({
   name: 'PlayGreeting',
   effect: Effect.sync(() => {
     const ctx = new AudioContext()
@@ -431,7 +446,7 @@ export const view = (model: Model, language: string = 'en') => {
                 ? [h.OnMount({
                   name: 'autoPlayGreeting',
                   f: (el) => {
-                    requestAnimationFrame(() => (el as HTMLElement).click())
+                    requestAnimationFrame(() => { if (el instanceof HTMLElement) el.click() })
                     return Stream.empty
                   },
                 })]

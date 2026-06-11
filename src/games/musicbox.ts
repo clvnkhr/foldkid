@@ -94,7 +94,9 @@ const getBlackBetween = (whiteNote: string): string | null => {
 }
 
 export const shiftStart = (start: string, shift: number): string => {
-  const whiteNote = start[0]!
+  const first = start[0]
+  if (!first) return start
+  const whiteNote = first
   const octave = parseInt(start.slice(-1))
   const whiteIdx = WHITE_NOTES.indexOf(whiteNote)
   const totalIdx = whiteIdx + shift
@@ -103,7 +105,7 @@ export const shiftStart = (start: string, shift: number): string => {
 }
 
 export const buildKeyboard = (start: string, whiteCount: number, octaveOffset = 0): { keys: KeyDef[]; blacks: Record<string, number> } => {
-  const startWhiteNote = start[0]!
+  const startWhiteNote = start[0] ?? ''
   const startOctave = parseInt(start.slice(-1)) + octaveOffset
   const startWhiteIdx = WHITE_NOTES.indexOf(startWhiteNote)
   const keys: KeyDef[] = []
@@ -194,14 +196,16 @@ for (const k of QWERTY_BLACKS) QWERTY_MAP[k.qwerty.toLowerCase()] = k.pitch
 const applyOctaveOffset = (pitch: string, offset: number): string => {
   if (offset === 0) return pitch
   const m = pitch.match(/^([A-G]#?)(\d+)$/)
-  return m ? `${m[1]}${parseInt(m[2]!) + offset}` : pitch
+  return m ? `${m[1]}${parseInt(m[2] ?? '0') + offset}` : pitch
 }
 
 const handleKeyDown = (e: KeyboardEvent): void => {
   const pitch = QWERTY_MAP[e.key.toLowerCase()]
   if (pitch) {
     e.preventDefault()
-    startNote(applyOctaveOffset(pitch, currentOctaveOffset), INSTRUMENTS[selectedInstrumentIndex]!)
+    const instr = INSTRUMENTS[selectedInstrumentIndex]
+    if (!instr) return
+    startNote(applyOctaveOffset(pitch, currentOctaveOffset), instr)
   }
 }
 
@@ -248,7 +252,8 @@ const bindShortcutKeys = (): void => {
   shortcutKeysBound = true
   document.addEventListener('keydown', (e: KeyboardEvent): void => {
     if (e.repeat) return
-    const target = e.target as HTMLElement
+    if (!(e.target instanceof HTMLElement)) return
+    const target = e.target
     if (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA') return
     const key = e.key.toLowerCase()
     if (key === 'z') {
@@ -261,9 +266,9 @@ const bindShortcutKeys = (): void => {
       e.preventDefault()
       const playBtn = document.getElementById('musicbox-play')
       const pauseBtn = document.getElementById('musicbox-pause')
-      if (playBtn && !(playBtn as HTMLButtonElement).disabled) {
+      if (playBtn instanceof HTMLButtonElement && !playBtn.disabled) {
         playBtn.click()
-      } else if (pauseBtn && !(pauseBtn as HTMLButtonElement).disabled) {
+      } else if (pauseBtn instanceof HTMLButtonElement && !pauseBtn.disabled) {
         pauseBtn.click()
       }
     }
@@ -274,30 +279,31 @@ const bindShortcutKeys = (): void => {
 
 const highlightKey = (pitch: string): void => {
   document.querySelectorAll('.piano-key-glow').forEach(el => {
-    const parent = (el as HTMLElement).parentElement
+    if (!(el instanceof HTMLElement)) return
+    const parent = el.parentElement
     const p = parent?.getAttribute('data-pitch')
     if (p === pitch) {
-      const glow = el as HTMLElement
-      glow.classList.remove('piano-key-glow--active')
-      void glow.offsetHeight
-      glow.classList.add('piano-key-glow--active')
+      el.classList.remove('piano-key-glow--active')
+      void el.offsetHeight
+      el.classList.add('piano-key-glow--active')
     }
   })
 }
 
 const unhighlightKey = (pitch: string): void => {
   document.querySelectorAll('.piano-key-glow').forEach(el => {
-    const parent = (el as HTMLElement).parentElement
+    if (!(el instanceof HTMLElement)) return
+    const parent = el.parentElement
     const p = parent?.getAttribute('data-pitch')
     if (p === pitch) {
-      (el as HTMLElement).classList.remove('piano-key-glow--active')
+      el.classList.remove('piano-key-glow--active')
     }
   })
 }
 
 const unhighlightAllKeys = (): void => {
   document.querySelectorAll('.piano-key-glow--active').forEach(el => {
-    ; (el as HTMLElement).classList.remove('piano-key-glow--active')
+    if (el instanceof HTMLElement) el.classList.remove('piano-key-glow--active')
   })
 }
 
@@ -877,6 +883,8 @@ const playSongCmd = (
   effect: Effect.gen(function* () {
     stopFlag = false
     pauseFlag = false
+    const instr = INSTRUMENTS[selectedInstrumentIndex]
+    if (!instr) return msg
     const totalDur = song.notes.reduce((sum, n) => sum + n.dur, 0)
     const nonEmptyIndices = song.lyrics
       .map((line, i) => line === '' ? -1 : i)
@@ -889,7 +897,7 @@ const playSongCmd = (
       if (note.pitch) {
         const tp = transposePitch(note.pitch, playbackTranspose)
         const freq = FREQUENCIES[tp]
-        if (freq) playNoteAudio(freq, note.dur, INSTRUMENTS[selectedInstrumentIndex]!)
+        if (freq) playNoteAudio(freq, note.dur, instr)
         highlightKey(tp)
       }
       const rawIdx = Math.min(Math.floor(cumDur / beatsPerLine), nonEmptyIndices.length - 1)
@@ -1046,6 +1054,13 @@ export type Message = typeof Message.Type
 export const init = (): Model => {
   bindKeyboard()
   bindShortcutKeys()
+  stopFlag = false
+  pauseFlag = false
+  selectedInstrumentIndex = 0
+  currentOctaveOffset = 0
+  playbackTempo = 1
+  playbackTranspose = 0
+  currentLyricLine = -1
   return { selectedSong: 0, selectedInstrument: 0, isPlaying: false, isPaused: false, songTranspose: 0, whiteKeys: 8, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, lyricsExpanded: false, songOrder: SONGS.map((_, i) => i), hiddenSongs: SONGS.map(() => false), dragIndex: -1 }
 }
 
@@ -1064,12 +1079,11 @@ export const update = (
         getCtx() // Safari: AudioContext must be created within a user gesture
         playbackTempo = model.tempo
         playbackTranspose = model.songTranspose
+        const song = SONGS[model.selectedSong]
+        if (!song) return [model, []]
         return [
           { ...model, isPlaying: true, isPaused: false },
-          [playSongCmd(
-            SONGS[model.selectedSong]!,
-            SongEnded(),
-          )],
+          [playSongCmd(song, SongEnded())],
         ]
       },
       MusicBoxStop: () => {
@@ -1223,13 +1237,15 @@ export const view = (model: Model, language: string = 'en') => {
                 ],
                 [
                   ...model.songOrder
-                    .filter(i => !model.hiddenSongs[i])
-                    .map(songIdx =>
-                      h.option(
+                    .filter(i => !model.hiddenSongs[i] && i < SONGS.length && SONGS[i] !== undefined)
+                    .map(songIdx => {
+                      const song = SONGS[songIdx]!
+                      const key = SONG_TKEYS[song.key]
+                      return h.option(
                         [h.Value(songIdx.toString())],
-                        [`${SONGS[songIdx]!.emoji} ${t(SONG_TKEYS[SONGS[songIdx]!.key]!, language)}`],
-                      ),
-                    ),
+                        [`${song.emoji} ${t(key ?? 'musicBoxTwinkle', language)}`],
+                      )
+                    }),
                 ],
               ),
             ]),
@@ -1279,7 +1295,7 @@ export const view = (model: Model, language: string = 'en') => {
 
           h.div(
             [h.Class('lyrics-box' + (model.lyricsExpanded ? '' : ' lyrics-box--compact')), h.OnClick(ToggleLyrics())],
-            SONGS[model.selectedSong]!.lyrics.map((line, idx) =>
+            (SONGS[model.selectedSong]?.lyrics ?? []).map((line, idx) =>
               line === ''
                 ? h.div([h.Class('lyrics-gap')], [])
                 : h.p([h.Class('lyrics-line'), h.Attribute('data-lyric-index', idx.toString())], [line]),
@@ -1382,7 +1398,7 @@ const pointerStream = (element: Element): Stream.Stream<Message> => {
   const findPitch = (clientX: number, clientY: number): string | undefined => {
     const els = document.elementsFromPoint(clientX, clientY)
     for (const el of els) {
-      const elWithPitch = (el as HTMLElement).closest('[data-pitch]')
+      const elWithPitch = el.closest('[data-pitch]')
       if (elWithPitch) return elWithPitch.getAttribute('data-pitch')!
     }
     return undefined
@@ -1451,8 +1467,7 @@ const renderPiano = (
   blacks: Record<string, number>,
   whiteCount: number,
   prefix: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-): any => {
+) => {
   return h.div([
     h.Class('piano-container'),
     h.Style({ touchAction: 'none' }),
