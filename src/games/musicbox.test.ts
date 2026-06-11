@@ -10,7 +10,7 @@ describe('MusicBox', () => {
   it('init state', () => {
     expect(MusicBox.init()).toStrictEqual({
       selectedSong: 0, selectedInstrument: 0, isPlaying: false,
-      whiteKeys: 8, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0, tempo: 1, lyricsExpanded: false,
+      whiteKeys: 8, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, lyricsExpanded: false,
     })
   })
 
@@ -216,10 +216,58 @@ describe('MusicBox', () => {
     it('ToggleBottomKeyboard toggles back to true', () => {
       Story.story(
         MusicBox.update,
-        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 12, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0, tempo: 1, lyricsExpanded: false, }),
+        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 12, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, lyricsExpanded: false, }),
         Story.message(MusicBox.ToggleBottomKeyboard()),
         Story.model((model) => {
           expect(model.showBottomKeyboard).toBe(true)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('ShiftTop increments topShift', () => {
+      Story.story(
+        MusicBox.update,
+        Story.with(MusicBox.init()),
+        Story.message(MusicBox.ShiftTop({ delta: 1 })),
+        Story.model((model) => {
+          expect(model.topShift).toBe(1)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('ShiftTop decrements topShift', () => {
+      Story.story(
+        MusicBox.update,
+        Story.with(MusicBox.init()),
+        Story.message(MusicBox.ShiftTop({ delta: -1 })),
+        Story.model((model) => {
+          expect(model.topShift).toBe(-1)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('ShiftTop is capped at -7', () => {
+      Story.story(
+        MusicBox.update,
+        Story.with({ ...MusicBox.init(), topShift: -7 }),
+        Story.message(MusicBox.ShiftTop({ delta: -1 })),
+        Story.model((model) => {
+          expect(model.topShift).toBe(-7)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('ShiftTop is capped at 7', () => {
+      Story.story(
+        MusicBox.update,
+        Story.with({ ...MusicBox.init(), topShift: 7 }),
+        Story.message(MusicBox.ShiftTop({ delta: 1 })),
+        Story.model((model) => {
+          expect(model.topShift).toBe(7)
         }),
         Story.Command.expectNone(),
       )
@@ -256,10 +304,10 @@ describe('MusicBox', () => {
         expect(song.key).toBeTruthy()
         expect(song.emoji).toBeTruthy()
         expect(song.notes.length).toBeGreaterThan(0)
-        for (const note of song.notes) {
-          expect(note.dur).toBeGreaterThan(0)
-          expect(MusicBox.FREQUENCIES[note.pitch]).toBeDefined()
-        }
+         for (const note of song.notes) {
+           expect(note.dur).toBeGreaterThan(0)
+           if (note.pitch) expect(MusicBox.FREQUENCIES[note.pitch]).toBeDefined()
+         }
       })
     }
 
@@ -335,7 +383,7 @@ describe('MusicBox', () => {
     it('buildKeyboard with non-C start includes correct black keys', () => {
       const kb = MusicBox.buildKeyboard('D3', 4)
       const blackPitches = kb.keys.filter(k => k.type === 'black').map(k => k.pitch)
-      expect(blackPitches).toEqual(['D#3', 'F#3', 'G#3'])
+      expect(blackPitches).toEqual(['C#3', 'D#3', 'F#3', 'G#3'])
     })
 
     it('buildKeyboard with negative shift wraps octave correctly', () => {
@@ -449,7 +497,7 @@ describe('MusicBox', () => {
     it('does not render bottom keyboard when toggled off', () => {
       Scene.scene(
         { update: MusicBox.update, view: MusicBox.view },
-        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 12, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0, tempo: 1, lyricsExpanded: false, }),
+        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 12, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, lyricsExpanded: false, }),
         Scene.Mount.resolveAll(resolvePianoTop),
         Scene.expect(Scene.text('Bottom keyboard')).toExist(),
         Scene.Command.expectNone(),

@@ -83,6 +83,19 @@ export const buildKeyboard = (start: string, whiteCount: number, octaveOffset = 
   const keys: KeyDef[] = []
   const blacks: Record<string, number> = {}
 
+  // leading black key: if keyboard starts at D/E/G/A/B, the preceding
+  // white note's black key should sit before the first white key
+  const prevWhiteIdx = (startWhiteIdx - 1 + 7) % 7
+  const prevBlack = getBlackBetween(WHITE_NOTES[prevWhiteIdx]!)
+  if (prevBlack) {
+    const prevOctave = startOctave + Math.floor((startWhiteIdx - 1) / 7)
+    const bp = `${prevBlack}${prevOctave}`
+    if (FREQUENCIES[bp]) {
+      keys.push({ pitch: bp, type: 'black' })
+      blacks[bp] = 0
+    }
+  }
+
   for (let i = 0; i < whiteCount; i++) {
     const wi = (startWhiteIdx + i) % 7
     const oct = startOctave + Math.floor((startWhiteIdx + i) / 7)
@@ -908,6 +921,7 @@ export const Model = S.Struct({
   showBottomKeyboard: S.Boolean,
   octaveOffset: S.Number,
   bottomShift: S.Number,
+  topShift: S.Number,
   tempo: S.Number,
   lyricsExpanded: S.Boolean,
 })
@@ -926,16 +940,17 @@ export const OctaveUp = m('MusicBoxOctaveUp')
 export const OctaveDown = m('MusicBoxOctaveDown')
 export const ToggleBottomKeyboard = m('MusicBoxToggleBottomKeyboard')
 export const ShiftBottom = m('MusicBoxShiftBottom', { delta: S.Number })
+export const ShiftTop = m('MusicBoxShiftTop', { delta: S.Number })
 export const TempoUp = m('MusicBoxTempoUp')
 export const TempoDown = m('MusicBoxTempoDown')
 export const ToggleLyrics = m('MusicBoxToggleLyrics')
 
-export const Message = S.Union([Play, Stop, SetSong, SetInstrument, SongEnded, NoteOn, NoteOff, AddKey, RemoveKey, OctaveUp, OctaveDown, ToggleBottomKeyboard, ShiftBottom, TempoUp, TempoDown, ToggleLyrics])
+export const Message = S.Union([Play, Stop, SetSong, SetInstrument, SongEnded, NoteOn, NoteOff, AddKey, RemoveKey, OctaveUp, OctaveDown, ToggleBottomKeyboard, ShiftBottom, ShiftTop, TempoUp, TempoDown, ToggleLyrics])
 export type Message = typeof Message.Type
 
 export const init = (): Model => {
   bindKeyboard()
-  return { selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 8, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0, tempo: 1, lyricsExpanded: false }
+  return { selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 8, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, lyricsExpanded: false }
 }
 
 export const update = (
@@ -1006,6 +1021,10 @@ export const update = (
         const newShift = model.bottomShift + msg.delta
         return newShift < -7 || newShift > 7 ? [model, []] : [{ ...model, bottomShift: newShift }, []]
       },
+      MusicBoxShiftTop: (msg) => {
+        const newShift = model.topShift + msg.delta
+        return newShift < -7 || newShift > 7 ? [model, []] : [{ ...model, topShift: newShift }, []]
+      },
       MusicBoxTempoUp: () => {
         const t = Math.round((model.tempo + 0.25) * 100) / 100
         const next = t > 3 ? model : { ...model, tempo: t }
@@ -1026,7 +1045,7 @@ export const update = (
 
 export const view = (model: Model, language: string = 'en') => {
   const h = html<Message>()
-  const topKb = buildKeyboard('C4', model.whiteKeys, model.octaveOffset)
+  const topKb = buildKeyboard(shiftStart('C4', model.topShift), model.whiteKeys, model.octaveOffset)
   const topWhite = topKb.keys.filter(k => k.type === 'white')
   const topBlack = topKb.keys.filter(k => k.type === 'black')
 
@@ -1129,6 +1148,32 @@ export const view = (model: Model, language: string = 'en') => {
           ),
         ]),
         renderPiano(h, topWhite, topBlack, topKb.blacks, model.whiteKeys, 'top'),
+        h.div([h.Class('shift-controls-row')], [
+          h.div([h.Class('shift-controls')], [
+            h.button(
+              [h.OnClick(ShiftTop({ delta: -1 })), h.Class('btn btn-tiny'), h.Disabled(model.topShift <= -7)],
+              ['−'],
+            ),
+            h.span([h.Class('shift-label')], [shiftStart('C4', model.topShift)]),
+            h.button(
+              [h.OnClick(ShiftTop({ delta: 1 })), h.Class('btn btn-tiny'), h.Disabled(model.topShift >= 7)],
+              ['+'],
+            ),
+          ]),
+          ...(model.showBottomKeyboard
+            ? [h.div([h.Class('shift-controls')], [
+              h.button(
+                [h.OnClick(ShiftBottom({ delta: -1 })), h.Class('btn btn-tiny'), h.Disabled(model.bottomShift <= -7)],
+                ['−'],
+              ),
+              h.span([h.Class('shift-label')], [shiftStart('C3', model.bottomShift)]),
+              h.button(
+                [h.OnClick(ShiftBottom({ delta: 1 })), h.Class('btn btn-tiny'), h.Disabled(model.bottomShift >= 7)],
+                ['+'],
+              ),
+            ])]
+            : []),
+        ]),
         ...(model.showBottomKeyboard
           ? (() => {
             const bottomStart = shiftStart('C3', model.bottomShift)
@@ -1137,17 +1182,6 @@ export const view = (model: Model, language: string = 'en') => {
             const botBlack = botKb.keys.filter(k => k.type === 'black')
             return [
               renderPiano(h, botWhite, botBlack, botKb.blacks, model.whiteKeys, 'bot'),
-              h.div([h.Class('bottom-shift-controls')], [
-                h.button(
-                  [h.OnClick(ShiftBottom({ delta: -1 })), h.Class('btn btn-tiny'), h.Disabled(model.bottomShift <= -7)],
-                  ['−'],
-                ),
-                h.span([h.Class('bottom-shift-label')], [bottomStart]),
-                h.button(
-                  [h.OnClick(ShiftBottom({ delta: 1 })), h.Class('btn btn-tiny'), h.Disabled(model.bottomShift >= 7)],
-                  ['+'],
-                ),
-              ]),
             ]
           })()
           : []),

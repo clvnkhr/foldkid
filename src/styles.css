@@ -1294,17 +1294,23 @@ body {
   z-index: 999;
 }
 
-.bottom-shift-controls {
+.shift-controls-row {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.4rem;
+  gap: 1rem;
   padding: 0.25rem 0;
 }
 
-.bottom-shift-label {
+.shift-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.shift-label {
   font-size: 0.75rem;
-  color: #888;
+  color: var(--text-muted);
   min-width: 2rem;
   text-align: center;
   font-family: monospace;
