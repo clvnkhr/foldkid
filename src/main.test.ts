@@ -2,10 +2,52 @@ import { describe, expect, it } from 'vitest'
 import { Story } from 'foldkit/test'
 import * as Main from './main'
 import * as Greeting from './games/greeting'
+import * as Counter from './games/counter'
+import * as FindIt from './games/findit'
+import * as Bubbles from './games/bubbles'
+import * as MusicBox from './games/musicbox'
 import { PageGreeting } from './route'
 import { ClickedLanding, ClickedGreeting, ClickedCounter, ClickedFindIt, ClickedBubbles, ClickedDarkMode, SettingsPersisted } from './message'
 
 const resolveSettings = [{ name: 'PersistSettings' }, SettingsPersisted()] as const
+
+describe('settings persistence', () => {
+  const settingsMessages: Array<{ label: string; msg: Main.Message }> = [
+    { label: 'ClickedDarkMode', msg: ClickedDarkMode() },
+    { label: 'CounterSetRate', msg: Counter.SetRate({ value: 0.5 }) },
+    { label: 'FindItSetAnyWins', msg: FindIt.SetAnyWins({ value: true }) },
+    { label: 'BubblesSetPopLabel', msg: Bubbles.SetPopLabel({ value: true }) },
+    { label: 'GreetingSetVoiceEffect', msg: Greeting.SetVoiceEffect({ value: 'robot' }) },
+    { label: 'MusicBoxToggleSongVisibility', msg: MusicBox.ToggleSongVisibility({ index: 0 }) },
+    { label: 'MusicBoxSongDroppedOn', msg: MusicBox.SongDroppedOn({ index: 1 }) },
+  ]
+
+  const nonSettingsMessages: Array<{ label: string; msg: Main.Message; resolves?: readonly [readonly [string, Main.Message], ...readonly (readonly [string, Main.Message])[]] }> = [
+    { label: 'ClickedLanding', msg: ClickedLanding() },
+    { label: 'ClickedGreeting', msg: ClickedGreeting() },
+    { label: 'ClickedCounter', msg: ClickedCounter() },
+    { label: 'ClickedFindIt', msg: ClickedFindIt() },
+    { label: 'ClickedBubbles', msg: ClickedBubbles() },
+    { label: 'GreetingClickedRecord', msg: Greeting.ClickedRecord(), resolves: [[{ name: 'Record' }, Greeting.RecordingFailed()]] },
+    { label: 'CounterPointerDown', msg: Counter.PointerDown() },
+    { label: 'FindItClickedCell', msg: FindIt.ClickedCell({ id: 0 }) },
+    { label: 'BubblesClickedPop', msg: Bubbles.ClickedPop({ id: 0 }) },
+    { label: 'MusicBoxNoteOn', msg: MusicBox.NoteOn({ pitch: 'C4' }) },
+  ]
+
+  for (const { label, msg } of nonSettingsMessages) {
+    it(`does not persist settings on ${label}`, () => {
+      Story.story(
+        Main.update,
+        Story.with(createModel()),
+        Story.message(msg),
+        label === 'GreetingClickedRecord'
+          ? Story.Command.resolveAll([{ name: 'Record' }, Greeting.RecordingFailed()])
+          : Story.Command.expectNone(),
+      )
+    })
+  }
+})
 
 describe('Main', () => {
   it('init returns correct initial state', () => {

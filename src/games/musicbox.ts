@@ -727,7 +727,7 @@ export const INSTRUMENTS: Instrument[] = [
   },
 ]
 
-const SONG_TKEYS: Record<string, TranslationKey> = {
+export const SONG_TKEYS: Record<string, TranslationKey> = {
   twinkle: 'musicBoxTwinkle',
   mary: 'musicBoxMary',
   london: 'musicBoxLondon',
@@ -1009,6 +1009,9 @@ export const Model = S.Struct({
   topShift: S.Number,
   tempo: S.Number,
   lyricsExpanded: S.Boolean,
+  songOrder: S.Array(S.Number),
+  hiddenSongs: S.Array(S.Boolean),
+  dragIndex: S.Number,
 })
 export type Model = typeof Model.Type
 
@@ -1032,14 +1035,18 @@ export const ToggleLyrics = m('MusicBoxToggleLyrics')
 export const TogglePause = m('MusicBoxTogglePause')
 export const TransposeUp = m('MusicBoxTransposeUp')
 export const TransposeDown = m('MusicBoxTransposeDown')
+export const ToggleSongVisibility = m('MusicBoxToggleSongVisibility', { index: S.Number })
+export const SongDragStarted = m('MusicBoxSongDragStarted', { index: S.Number })
+export const SongDroppedOn = m('MusicBoxSongDroppedOn', { index: S.Number })
+export const SongDragEnded = m('MusicBoxSongDragEnded')
 
-export const Message = S.Union([Play, Stop, SetSong, SetInstrument, SongEnded, NoteOn, NoteOff, AddKey, RemoveKey, OctaveUp, OctaveDown, ToggleBottomKeyboard, ShiftBottom, ShiftTop, TempoUp, TempoDown, ToggleLyrics, TogglePause, TransposeUp, TransposeDown])
+export const Message = S.Union([Play, Stop, SetSong, SetInstrument, SongEnded, NoteOn, NoteOff, AddKey, RemoveKey, OctaveUp, OctaveDown, ToggleBottomKeyboard, ShiftBottom, ShiftTop, TempoUp, TempoDown, ToggleLyrics, TogglePause, TransposeUp, TransposeDown, ToggleSongVisibility, SongDragStarted, SongDroppedOn, SongDragEnded])
 export type Message = typeof Message.Type
 
 export const init = (): Model => {
   bindKeyboard()
   bindShortcutKeys()
-  return { selectedSong: 0, selectedInstrument: 0, isPlaying: false, isPaused: false, songTranspose: 0, whiteKeys: 8, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, lyricsExpanded: false }
+  return { selectedSong: 0, selectedInstrument: 0, isPlaying: false, isPaused: false, songTranspose: 0, whiteKeys: 8, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, lyricsExpanded: false, songOrder: SONGS.map((_, i) => i), hiddenSongs: SONGS.map(() => false), dragIndex: -1 }
 }
 
 export const update = (
@@ -1160,6 +1167,34 @@ export const update = (
         playbackTranspose = next
         return [{ ...model, songTranspose: next }, []]
       },
+      MusicBoxToggleSongVisibility: (msg) => {
+        const hidden = [...model.hiddenSongs]
+        hidden[msg.index] = !hidden[msg.index]
+        let selected = model.selectedSong
+        if (hidden[msg.index] && selected === msg.index) {
+          const visible = model.songOrder.filter(i => !hidden[i])
+          selected = visible.length > 0 ? visible[0]! : 0
+        }
+        return [{ ...model, hiddenSongs: hidden, selectedSong: selected }, []]
+      },
+      MusicBoxSongDragStarted: (msg) => {
+        return [{ ...model, dragIndex: msg.index }, []]
+      },
+      MusicBoxSongDroppedOn: (msg) => {
+        if (model.dragIndex < 0 || model.dragIndex === msg.index) return [{ ...model, dragIndex: -1 }, []]
+        const visible = model.songOrder.filter(i => !model.hiddenSongs[i])
+        const movedIdx = visible[model.dragIndex]!
+        const targetIdx = visible[msg.index]!
+        const order = [...model.songOrder]
+        const fromPos = order.indexOf(movedIdx)
+        const toPos = order.indexOf(targetIdx)
+        order.splice(fromPos, 1)
+        order.splice(toPos, 0, movedIdx)
+        return [{ ...model, songOrder: order, dragIndex: -1 }, []]
+      },
+      MusicBoxSongDragEnded: () => {
+        return [{ ...model, dragIndex: -1 }, []]
+      },
     }),
   )
 
@@ -1187,12 +1222,14 @@ export const view = (model: Model, language: string = 'en') => {
                   h.Class('musicbox-select'),
                 ],
                 [
-                  ...SONGS.map((song, i) =>
-                    h.option(
-                      [h.Value(i.toString())],
-                      [`${song.emoji} ${t(SONG_TKEYS[song.key]!, language)}`],
+                  ...model.songOrder
+                    .filter(i => !model.hiddenSongs[i])
+                    .map(songIdx =>
+                      h.option(
+                        [h.Value(songIdx.toString())],
+                        [`${SONGS[songIdx]!.emoji} ${t(SONG_TKEYS[SONGS[songIdx]!.key]!, language)}`],
+                      ),
                     ),
-                  ),
                 ],
               ),
             ]),

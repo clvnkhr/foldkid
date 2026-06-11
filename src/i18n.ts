@@ -103,11 +103,26 @@ const translations = {
     musicBoxGuitar: 'Guitar',
     musicBoxSpeed: 'Speed',
     musicBoxTranspose: 'Transpose',
+    musicBoxHide: 'Hide',
+    musicBoxShow: 'Show',
     play: 'Play',
     pause: 'Pause',
     stop: 'Stop',
     pageTitleMusicBox: 'Music Box - FoldKid',
     pageTitleAudioTest: 'Audio Test - FoldKid',
+
+    settingsReset: 'Reset settings',
+    settingsResetConfirm: 'Settings have been reset',
+    settingsExport: 'Export settings',
+    settingsExportSuccess: 'Settings exported',
+    settingsImport: 'Import settings',
+    settingsImportSuccess: 'Settings imported',
+    settingsImportFailed: 'Failed to import settings',
+    settingsImportInvalid: 'Invalid settings file',
+    settingsImportVersionMismatch: 'Incompatible settings version',
+    settingsCopy: 'Copy',
+    cancel: 'Cancel',
+    confirm: 'Confirm',
   },
   zh: {
     appName: '折纸娃',
@@ -219,6 +234,8 @@ const translations = {
     pageTitleAudioTest: '音频测试 - 折纸娃',
     musicBoxSpeed: '速度',
     musicBoxTranspose: '移调',
+    musicBoxHide: '隐藏',
+    musicBoxShow: '显示',
   },
   fr: {
     appName: 'PliEnfant',
@@ -330,6 +347,8 @@ const translations = {
     pageTitleAudioTest: 'Test Audio - PliEnfant',
     musicBoxSpeed: 'Vitesse',
     musicBoxTranspose: 'Transposition',
+    musicBoxHide: 'Masquer',
+    musicBoxShow: 'Afficher',
   },
   de: {
     appName: 'FaltKind',
@@ -441,6 +460,8 @@ const translations = {
     pageTitleAudioTest: 'Audio Test - FaltKind',
     musicBoxSpeed: 'Tempo',
     musicBoxTranspose: 'Transposition',
+    musicBoxHide: 'Verstecken',
+    musicBoxShow: 'Zeigen',
   },
   fa: {
     appName: 'بچهاوری',
@@ -552,6 +573,8 @@ const translations = {
     pageTitleAudioTest: 'تست صدا - بچهاوری',
     musicBoxSpeed: 'سرعت',
     musicBoxTranspose: 'انتقال',
+    musicBoxHide: 'مخفی کردن',
+    musicBoxShow: 'نمایش',
   },
   ms: {
     appName: 'LipatBudak',
@@ -663,6 +686,8 @@ const translations = {
     pageTitleAudioTest: 'Ujian Audio - LipatBudak',
     musicBoxSpeed: 'Kelajuan',
     musicBoxTranspose: 'Transpos',
+    musicBoxHide: 'Sembunyi',
+    musicBoxShow: 'Tunjuk',
   },
   'zh-HK': {
     appName: '摺紙細路',
@@ -774,6 +799,8 @@ const translations = {
     pageTitleAudioTest: '音頻測試 - 摺紙細路',
     musicBoxSpeed: '速度',
     musicBoxTranspose: '移調',
+    musicBoxHide: '隱藏',
+    musicBoxShow: '顯示',
   },
   ja: {
     appName: '折り紙っ子',
@@ -885,6 +912,8 @@ const translations = {
     pageTitleAudioTest: 'オーディオテスト - 折り紙っ子',
     musicBoxSpeed: 'スピード',
     musicBoxTranspose: 'トランスポーズ',
+    musicBoxHide: '隠す',
+    musicBoxShow: '表示',
   },
 } as const
 
