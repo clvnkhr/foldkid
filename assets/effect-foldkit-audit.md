@@ -1,290 +1,277 @@
 # Effect-TS / Foldkit Usage Audit
 
-Generated: June 12, 2026
+Generated: June 13, 2026
 
 ## Executive Summary
 
-FoldKid is using Foldkit well as its main application architecture: model, message, update, view, commands, subscriptions, and test stories are all recognizably in the Foldkit style. The strongest parts of the codebase are the typed message constructors, schema-backed models, exhaustive update matches, and the focused `foldkit/test` coverage around update and scene behavior.
+FoldKid is using Foldkit well as its main application architecture. The model/message/update/view loop is clear, game updates are delegated cleanly from the root update, messages are schema-backed, and the tests mostly match the architecture through `foldkit/test` stories and scenes.
 
-Effect-TS is used productively, but mostly as boundary glue rather than as a fuller application effect system. That is a reasonable choice for a small browser game app. The main opportunity is to move more browser-resource lifecycle work into Effect/Foldkit boundaries instead of relying on module-level mutable state, raw timers, global listeners, and direct DOM/audio side effects inside update functions.
+Effect-TS is useful here, but the app uses it mostly as boundary glue for browser APIs rather than as a full service/runtime layer. That is a reasonable choice for this app. The best next improvements are not broad rewrites; they are small boundary hardening changes with regression tests.
 
-Overall rating: **7.5/10**
+Overall rating: **8/10**
 
 - Foldkit usage: **8.5/10**
-- Effect-TS usage: **6.5/10**
+- Effect-TS usage: **7/10**
 - Type/schema discipline: **8/10**
-- Resource lifecycle discipline: **6/10**
-- Test alignment with architecture: **8/10**
+- Resource lifecycle discipline: **7/10**
+- Test alignment with architecture: **8.5/10**
+
+## Important Lesson: Do Not Refactor Working Web Audio Casually
+
+During follow-up work, an uncommitted attempt to improve the shared audio lifecycle broke sound in Safari. Counter, Bubbles, and MusicBox all went silent, which showed the issue was not the piano keybinds but the shared browser audio path.
+
+The reverted experiments included broad app-level audio unlock behavior, capture-phase gesture listeners, silent priming audio, `webkitAudioContext` fallback wiring, and changes to shared `audio.ts` construction/unlock behavior. Even plausible Web Audio changes can break Safari because playback depends on exact trusted-gesture timing, browser policy, and current `AudioContext` state.
+
+Rule going forward:
+
+- Treat `src/audio.ts` and MusicBox Web Audio internals as high-risk.
+- Do not bundle audio changes with type/schema cleanup.
+- Do not add global audio unlock listeners without a browser-side diagnostic first.
+- Change one audio behavior at a time, test in real Safari, then commit.
+- Unit tests cannot prove Safari gesture-unlock correctness.
+
+If audio needs work again, first add a temporary diagnostic that reports:
+
+- whether the user gesture handler fired
+- whether `AudioContext` construction succeeded
+- context state before and after `resume()`
+- whether oscillator `start()` ran
+- whether the command ran inside or after the trusted gesture
+
+## Improvements Already Made
+
+### Settings Persistence
+
+Settings are now schema-backed and persistence side effects are represented as commands.
+
+Good current patterns:
+
+- `PersistedSettingsSchema` and `SettingsExportSchema` define runtime boundaries.
+- `loadSettings` decodes persisted JSON through Effect Schema.
+- import/export uses one shared parse/apply path.
+- `PersistSettings` and `RemoveSettings` perform `localStorage` writes/removes inside command effects.
+- tests run those command effects and assert real `localStorage` results.
+
+This is a strong Effect/Foldkit improvement: update declares the effect, and tests can resolve or run it.
+
+### Root Mount Cleanup
+
+`preventDoubleTapZoomStream` now uses `Effect.acquireRelease`, so the `touchend` listener has a real teardown path.
+
+This is the right pattern for DOM listeners that live outside normal element event attributes.
+
+### Speech Command
+
+`speech.ts` is more robust:
+
+- `speak()` uses `Effect.callback`.
+- it handles missing browser speech APIs.
+- the deferred speak timer is cleaned up if the effect is interrupted.
+- tests cover missing speech APIs and interruption before deferred `speak()`.
+
+This is a good example of wrapping callback/browser behavior with Effect rather than pretending it is synchronous.
+
+### Counter Press State
+
+Counter no longer relies on view-local variables for press timing. Pointer-down time and pressed button are part of the model, so rerenders do not turn quick taps into long holds.
+
+This is exactly the right Foldkit move: interaction state that affects update behavior belongs in the model.
+
+### MusicBox Listener Lifecycle
+
+MusicBox keyboard and wake monitor state is better controlled:
+
+- shortcut listeners now have stable handler references
+- `resetKeyboardControls()` removes document listeners in tests
+- the wake monitor has explicit start/reset functions
+- tests cover listener cleanup and wake monitor cleanup
+
+This is an improvement, though MusicBox remains the biggest imperative module.
 
 ## What Is Working Well
 
-### 1. Foldkit Runtime Shape Is Clear
+### 1. Foldkit Runtime Shape
 
-`src/entry.ts` creates one Foldkit program with `Runtime.makeProgram`, passing `Model`, `init`, `update`, `view`, `subscriptions`, and dev tools message schema. That is the right top-level shape for Foldkit.
+The app follows the expected Foldkit shape:
 
-The app keeps the core Foldkit loop easy to follow:
+- `src/main.ts` defines the root model, message union, update, and view.
+- each game owns its own model/message/update/view.
+- root update delegates to game updates.
+- page rendering uses exhaustive matching.
+- commands are returned from updates rather than being executed from views.
 
-- `src/main.ts` defines the root `Model` and root `Message`.
-- Each game module owns its own model, message union, update, and view.
-- Root update delegates submessages to `Counter.update`, `FindIt.update`, `Bubbles.update`, and `MusicBox.update`.
-- Page rendering is selected with an exhaustive page match.
+This foundation is good and should be preserved.
 
-This is a good Foldkit foundation.
+### 2. Schema-Backed Messages
 
-### 2. Message Modeling Is Strong
+Messages are consistently built with `m()` and Effect Schema payloads. This gives both type pressure and runtime metadata.
 
-Messages are consistently created with `m()` from `foldkit/message`, with payloads declared using Effect Schema. This gives the app both runtime validation metadata and useful static types.
+Best examples:
 
-Examples:
+- root messages in `src/message.ts`
+- Counter messages with duration payloads
+- FindIt drag/drop messages
+- Bubbles color/pop messages
+- MusicBox playback, note, keyboard, transpose, and drag messages
 
-- `src/message.ts` for top-level app/settings messages
-- `src/games/counter.ts` for counter messages
-- `src/games/findit.ts` for game messages and drag/drop messages
-- `src/games/bubbles.ts` for bubble/color messages
-- `src/games/musicbox.ts` for playback, piano, transpose, and song-order messages
+### 3. Exhaustive Update Matching
 
-This is one of the codebase's best uses of Foldkit.
+The app uses `Match.tagsExhaustive` across root and game updates. This makes message additions visible at compile time.
 
-### 3. Exhaustive Updates Are Doing Real Work
+Keep this pattern.
 
-The app consistently uses `Match.tagsExhaustive` in update functions. That means adding a message without handling it is a compile-time event instead of a quiet runtime bug.
+### 4. Tests Match The Architecture
 
-This pattern appears in:
+The test suite uses:
 
-- Root `update` in `src/main.ts`
-- `Counter.update`
-- `FindIt.update`
-- `Bubbles.update`
-- `MusicBox.update`
+- `Story.story` for model transitions and command production
+- `Story.Command.resolveAll` for command loops
+- `Scene.scene` for view and mount behavior
+- direct `Effect.runPromise` for command effects
 
-That is exactly the kind of type pressure that makes Foldkit/Effect pleasant.
+This is the right testing style for Foldkit.
 
-### 4. Commands Represent Most User-Facing Effects
+## Remaining Gaps
 
-Audio and speech actions are usually returned as `Command.Command<Message>` values rather than being run directly from views. This keeps the user-flow effects connected to messages and testable through Foldkit stories.
+### 1. MusicBox Still Mixes Model, Runtime State, DOM, And Audio
 
-Good examples:
+MusicBox is feature-rich, but it is still the largest architectural outlier.
 
-- `src/audio.ts` exposes generic `click`, `pop`, `chime`, `boing`, and `swoosh` command factories.
-- `src/speech.ts` wraps `SpeechSynthesisUtterance` in `Effect.callback`.
-- `Counter.update`, `FindIt.update`, and `Bubbles.update` return sound/speech commands.
-- `MusicBoxPlay` returns a `PlayMusicBox` command instead of trying to play the full song directly in the view.
+Remaining concerns:
 
-### 5. Subscriptions Are Used Appropriately
-
-`src/subscriptions.ts` uses `Subscription.make` for document-level settings-panel drag behavior. This is the right tool for events that are not naturally scoped to a single rendered element.
-
-The dependency mapping is simple:
-
-- dependency: `isDraggingSettings`
-- active streams: `pointermove` and `pointerup`
-- emitted messages: `SettingsDragMoved` and `SettingsDragEnded`
-
-This is a good Foldkit subscription example.
-
-### 6. Mount Hooks Are Used For Imperative Widgets
-
-The app uses `h.OnMount` where imperative browser APIs are unavoidable:
-
-- counter ball physics
-- bubbles animation and mutation tracking
-- color-selector pointer capture
-- music-box piano pointer streams
-- dark-mode media-query listener
-- audio-test controls
-
-The better mount hooks use `Stream.callback` plus `Effect.acquireRelease`, which gives a clear setup/cleanup lifecycle. `Bubbles` is a good example here.
-
-### 7. Tests Match The Architecture
-
-The tests use `foldkit/test` well:
-
-- `Story.story` checks model transitions and command production.
-- `Story.Command.resolveAll` verifies command-to-message loops.
-- `Scene.scene` checks rendered text and mounted streams.
-- Direct `Effect.runPromise` tests exist for command effects such as audio/speech.
-
-Current verification:
-
-- `npm run typecheck` passes.
-- `npm test` passes: 11 files, 191 tests.
-
-## Main Gaps
-
-### 1. Too Much Module-Level Mutable Runtime State
-
-Several browser resources and runtime flags live in module scope:
-
-- `src/audio.ts`: shared `AudioContext` via `MutableRef`
-- `src/speech.ts`: global `speechSynthesis.cancel()`
-- `src/main.ts`: persisted settings debounce timer
-- `src/games/bubbles.ts`: global pointer-down ref
-- `src/games/musicbox.ts`: audio context, compressor, playback flags, active notes, current lyric line, keyboard binding flags
-
-Some module-level state is acceptable for singleton browser resources, but the code currently mixes app state, runtime state, and resource state. That makes behavior harder to reason about under remounts, tests, hot reload, page sleep/wake, and multiple active flows.
-
-Recommended direction:
-
-- Keep domain state in Foldkit models.
-- Keep browser resources in small services/modules with explicit acquire/release operations.
-- Prefer `Effect.acquireRelease`, `Effect.addFinalizer`, `Scope`, or `OnMount` lifecycles for long-lived listeners and animation loops.
-- Avoid mutating singleton flags directly from update handlers when a command can express the effect.
-
-### 2. Some Side Effects Happen Directly Inside Update
-
-The architecture is cleanest when `update` is pure and returns commands. A few places break that boundary:
-
-- `ConfirmResetSettings` directly calls `localStorage.removeItem`.
-- import handlers directly write `localStorage`.
-- `MusicBox.update` directly calls `getCtx`, `startNote`, `stopNote`, `stopAllNotes`, and DOM highlight helpers.
-- `MusicBox` tempo/pause/transpose handlers directly mutate `MutableRef` playback flags.
-
-This is pragmatic and works, but it weakens testability and makes updates less replayable. Since Foldkit already has `Command`, these should gradually move behind commands.
-
-Recommended direction:
-
-- Create named commands for localStorage writes/removes.
-- Create named commands for music box note-on/note-off/stop-all/highlight behavior.
-- Keep update as "calculate next model + declare effects".
-
-### 3. Persistence Is Not Using Effect Scheduling
-
-`persistSettings` creates a command but performs the actual debounce setup immediately through a module-level `setTimeout`. The returned command only resolves `SettingsPersisted`.
-
-That means the main side effect is outside the command's `Effect`, so Foldkit/Effect cannot supervise, cancel, or test it directly.
-
-Recommended direction:
-
-- Put the timer/write inside the command effect.
-- Consider an Effect queue/debounce loop if persistence becomes more complex.
-- At minimum, make `PersistSettings` perform the `localStorage.setItem` in `Effect.sync`, and use a single app-level subscription/command loop for debouncing.
-
-### 4. Runtime Data Validation Stops Short At Boundaries
-
-Models and messages use Effect Schema, which is great. But persisted/imported settings are parsed as JSON and then manually checked with partial guards.
-
-Current behavior checks things like version and language, and filters some arrays. But `PersistedSettings` itself is only a TypeScript interface, not an Effect Schema.
-
-Recommended direction:
-
-- Define `PersistedSettingsSchema` with `Schema.Struct`.
-- Decode imported JSON with Effect Schema.
-- Use transforms/defaults to normalize old or partial settings.
-- Reuse the same schema for `loadSettings`, import, export, and tests.
-
-This would make settings import/export feel much more "Effect-native".
-
-### 5. Resource Cleanup Is Mixed
-
-Some mount hooks clean up well with `Effect.acquireRelease`. Others install global resources without a matching teardown:
-
-- `main.ts` adds a `touchend` listener in `preventDoubleTapZoom` but returns `Stream.never`, with no cleanup.
-- `musicbox.ts` binds keyboard listeners globally from `init()` via module-level flags.
-- `musicbox.ts` adds `pageshow` and interval wake checks at module load.
-
-Recommended direction:
-
-- Move global listeners into subscriptions or `OnMount` streams with cleanup.
-- Avoid binding listeners in `init()`.
-- Give long-running intervals a release path.
-
-### 6. MusicBox Is The Largest Architectural Outlier
-
-`MusicBox` is feature-rich, but it is also where the app departs most from Foldkit purity:
-
-- audio nodes are created and stopped from helper functions called by update
+- note start/stop happens directly inside update handlers
 - playback flags are module-level `MutableRef`s
-- keyboard listeners are bound from `init()`
-- DOM highlighting is done with `document.querySelectorAll`
-- song playback is an Effect command, but note-level imperative state is outside the model/command boundary
+- active notes and compressor state live outside the model
+- DOM highlighting uses direct document queries
+- keyboard listeners are still bound from `init()`
 
-This is not a disaster; music/audio often needs imperative work. But it would benefit from a clearer boundary.
+Recommended direction, but only in small steps:
+
+- first add diagnostics and tests around existing behavior
+- then move one imperative operation at a time behind a named command
+- avoid changing Web Audio construction/unlock behavior unless testing in Safari immediately
+
+### 2. Audio Is A Special Case
+
+`src/audio.ts` is intentionally simple and currently working. The audit should not pressure broad changes there.
+
+Acceptable future audio changes:
+
+- tiny, isolated, browser-tested fixes
+- diagnostic-only additions
+- tests that verify command names and command completion
+
+Avoid:
+
+- app-wide audio unlock streams
+- global capture listeners for every gesture
+- changing oscillator/gain cleanup without testing in Safari
+- changing context construction and MusicBox behavior in the same patch
+
+### 3. Some Update Handlers Still Perform Direct Side Effects
+
+Most settings side effects are now commands, but MusicBox still performs direct audio and DOM effects from update.
+
+This weakens replayability and makes stories less representative of real runtime behavior.
 
 Recommended direction:
 
-- Introduce a small `MusicAudio` module with commands:
-  - `playSong`
-  - `stopSong`
-  - `noteOn`
-  - `noteOff`
-  - `stopAllNotes`
-- Keep all Web Audio nodes inside that module.
-- Let update return commands instead of touching audio directly.
-- Keep keyboard/pointer listeners mounted by the piano view or root subscriptions.
+- move non-audio DOM cleanup to commands first
+- leave audio internals alone until a diagnostic proves the change is needed
+- prefer command wrappers for stop/highlight cleanup before touching oscillator logic
 
-### 7. Types Are Good, But Domain Types Could Be Sharper
+### 4. Domain Types Can Still Be Sharper
 
-The recent translation key split is a good improvement: `t()` now accepts string-valued keys, while `tf()` handles function-valued keys. That prevents accidentally passing `greeted`/`whereIs` into `t()`.
+Some string/numeric fields remain broad:
 
-Other opportunities:
+- language is still mostly a string in the current committed app
+- `settingsOverlay` is a string
+- song keys and instrument keys are plain strings
+- settings tags are string literals in a `Set`
 
-- `language` is still mostly `string`; it could be a `Language` literal union/schema.
-- song keys and instrument keys are plain strings; they could be literal unions derived from data.
-- model fields like `settingsOverlay` could be a tagged union or literal union instead of `string`.
-- numeric fields such as tempo, transpose, white key count, and panel width could be branded/refined schemas if invalid values matter at runtime.
+Good future targets:
 
-The codebase is already strict TypeScript. These refinements would make the domain more self-documenting and less defensive.
+- `Language` literal schema
+- `settingsOverlay` literal union
+- typed settings-affecting message classifier
+- literal unions for song and instrument keys
 
-## Prioritized Recommendations
+These are safer than audio work and should be preferred.
 
-### High Impact
+### 5. `SETTINGS_TAGS` Is Still Stringly Typed
 
-1. **Move localStorage side effects fully into commands.**
-   Keep `update` pure and make persistence testable through command resolution.
+`SETTINGS_TAGS` depends on message `_tag` strings matching actual message tags.
 
-2. **Schema-decode persisted/imported settings.**
-   Replace the `PersistedSettings` interface plus ad hoc guards with a real Effect Schema.
+This works, but a future rename could silently skip persistence.
 
-3. **Create an explicit MusicBox audio boundary.**
-   Keep Web Audio resource mutation behind commands/services instead of inside update.
+Possible improvement:
 
-### Medium Impact
+- create a typed helper around settings-affecting message tags
+- or colocate persistence behavior with message handlers
 
-4. **Move global listeners into subscriptions or acquired mount hooks.**
-   Start with music-box keyboard listeners and `preventDoubleTapZoom`.
+## Updated Recommendations
 
-5. **Replace stringly state with literal unions.**
-   Good first targets: `language`, `settingsOverlay`, song keys, instrument keys.
+### Highest Priority
 
-6. **Make `SETTINGS_TAGS` safer.**
-   Today it is a string set of message tags. A typed helper or settings-message classifier would reduce drift.
+1. **Protect the working audio path.**
+   Do not refactor `src/audio.ts` or MusicBox Web Audio internals without a diagnostic and real Safari test.
 
-### Lower Impact
+2. **Continue schema/domain typing away from audio.**
+   Good targets are `Language`, `settingsOverlay`, song keys, and instrument keys.
 
-7. **Consolidate shared audio context handling.**
-   `src/audio.ts` exports `getContext`, but `MusicBox` still owns its own `AudioContext`. Sharing a single audio service would simplify resource behavior.
+3. **Move non-audio direct side effects into commands.**
+   Start with DOM/highlight cleanup or settings/UI effects, not oscillator playback.
 
-8. **Add command-level tests for failure cases.**
-   Examples: clipboard failure, speech synthesis unavailable, audio context unavailable, invalid settings import.
+### Medium Priority
 
-9. **Consider smaller model schemas.**
-   Some `S.Struct({...})` definitions are single long lines. Splitting them improves maintainability without changing behavior.
+4. **Make `SETTINGS_TAGS` safer.**
+   Reduce string drift around persistence.
 
-## Best Examples To Preserve
+5. **Continue listener lifecycle cleanup.**
+   Use `Effect.acquireRelease` for document/window listeners where behavior is already understood.
 
-- `m()` message constructors with schema payloads.
-- Root `Message = S.Union([...])`.
-- `Match.tagsExhaustive` in every update.
-- Game-level update delegation from root update.
-- `foldkit/test` stories for command-producing updates.
-- `Stream.fromEventListener` in subscriptions and piano pointer streams.
-- `Effect.acquireRelease` in animation mount hooks.
+6. **Add diagnostics for browser-sensitive systems.**
+   Audio, speech, and media APIs need real runtime observability because unit tests do not model browser policy.
 
-## Risk Assessment
+### Lower Priority
 
-The app is in a healthy state for a small browser game suite. Its biggest risks are not type errors right now; they are lifecycle and replayability risks:
+7. **Split large files only when behavior is stable.**
+   `i18n.ts` and `musicbox.ts` are large, but splitting them should be mechanical and should not coincide with behavior changes.
 
-- global mutable state can survive longer than the model that conceptually owns it
-- direct update side effects make stories less representative of real runtime behavior
-- timers/listeners without clear finalizers can accumulate after hot reloads or remounts
-- imported settings validation is weaker than the model/message schema discipline
+8. **Refine numeric schemas if invalid values become real bugs.**
+   Tempo, transpose, panel width, and white key count could eventually use refined schemas.
 
-None of these require a rewrite. The architecture is good enough that incremental cleanup should work well.
+## Safe Next Work
 
-## Final Rating
+Good next tasks:
 
-FoldKid is using Foldkit strongly and Effect-TS competently. It gets the core typed Elm architecture right: schema-backed messages, exhaustive updates, commands, subscriptions, and Foldkit-specific tests. To use Effect "at its best", the next step is not more abstraction everywhere; it is cleaner resource ownership at the browser boundary.
+- add `Language` schema and normalize persisted/imported language
+- make `settingsOverlay` a literal union
+- tighten import/export tests
+- make settings persistence tags safer
+- add diagnostics-only audio test page fields
+- update stale audit comments after each completed improvement
 
-Final score: **7.5/10**
+Risky next tasks:
 
-With schema-backed settings, command-based persistence, and a cleaner music/audio boundary, this could comfortably become an **8.5-9/10** Effect/Foldkit codebase.
+- changing `src/audio.ts`
+- changing Safari unlock behavior
+- changing MusicBox oscillator/gain/compressor routing
+- moving keyboard listeners and audio unlock in the same patch
+- adding global capture-phase listeners
+
+## Best Patterns To Preserve
+
+- `m()` message constructors with schema payloads
+- root `Message = S.Union([...])`
+- `Match.tagsExhaustive`
+- root-to-game update delegation
+- command factories for effects
+- `Effect.acquireRelease` for mount/listener lifecycles
+- `foldkit/test` stories for update and command assertions
+
+## Final Notes
+
+The app is in a healthier state than the original audit, mainly because settings persistence, import validation, speech cleanup, root mount cleanup, and Counter interaction state have improved.
+
+The main lesson from the failed audio experiment is that "more Effect-managed" is not automatically safer for browser media. For Web Audio, preserving the exact working gesture path matters more than architectural neatness.
