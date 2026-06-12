@@ -2,7 +2,6 @@ import { Schema as S } from 'effect'
 import { m } from 'foldkit/message'
 
 export const ClickedLanding = m('ClickedLanding')
-export const ClickedGreeting = m('ClickedGreeting')
 export const ClickedCounter = m('ClickedCounter')
 export const ClickedFindIt = m('ClickedFindIt')
 export const ClickedBubbles = m('ClickedBubbles')

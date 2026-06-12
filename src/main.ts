@@ -2,14 +2,13 @@ import { Effect, Match as M, MutableRef, Option, Schema as S, Stream } from 'eff
 import { Command } from 'foldkit'
 import { Document, html } from 'foldkit/html'
 
-import { ApplyImport, CancelResetSettings, ClickedAudioTest, ClickedBubbles, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedGreeting, ClickedLanding, ClickedMusicBox, ClickedSettings, ConfirmResetSettings, CopyExportData, DismissMessage, ExportSettings, ImportSettings, ImportedSettings, LandingDragEnded, LandingDragStarted, LandingDroppedOn, ResetSettings, SetExportData, SetLanguage, SettingsDragEnded, SettingsDragMoved, SettingsDragStarted, SettingsImportFailed, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
+import { ApplyImport, CancelResetSettings, ClickedAudioTest, ClickedBubbles, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedLanding, ClickedMusicBox, ClickedSettings, ConfirmResetSettings, CopyExportData, DismissMessage, ExportSettings, ImportSettings, ImportedSettings, LandingDragEnded, LandingDragStarted, LandingDroppedOn, ResetSettings, SetExportData, SetLanguage, SettingsDragEnded, SettingsDragMoved, SettingsDragStarted, SettingsImportFailed, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
 
-import { Page, PageAudioTest, PageBubbles, PageCounter, PageFindIt, PageGreeting, PageLanding, PageMusicBox } from './route'
+import { Page, PageAudioTest, PageBubbles, PageCounter, PageFindIt, PageLanding, PageMusicBox } from './route'
 
 import * as FindIt from './games/findit'
 import * as MusicBox from './games/musicbox'
 import * as Counter from './games/counter'
-import * as Greeting from './games/greeting'
 import * as Bubbles from './games/bubbles'
 import { view as landingView } from './pages/landing'
 import { view as audioTestView } from './pages/audiotest'
@@ -40,7 +39,6 @@ interface PersistedSettings {
   bubblesPopLabel: boolean
   bubblesSayColor: boolean
   bubblesSelectedColor: string
-  greetingVoiceEffect: string
   musicBoxSongOrder: readonly number[]
   musicBoxHiddenSongs: readonly boolean[]
   landingOrder: readonly number[]
@@ -96,7 +94,6 @@ const buildSettingsData = (model: Model): PersistedSettings => ({
   bubblesPopLabel: model.bubbles.popLabel,
   bubblesSayColor: model.bubbles.sayColor,
   bubblesSelectedColor: model.bubbles.selectedColor,
-  greetingVoiceEffect: model.greeting.voiceEffect,
   musicBoxSongOrder: model.musicBox.songOrder,
   musicBoxHiddenSongs: model.musicBox.hiddenSongs,
   landingOrder: model.landingOrder,
@@ -133,7 +130,6 @@ export const Model = S.Struct({
   language: S.String,
   showSettings: S.Boolean,
   muted: S.Boolean,
-  greeting: Greeting.Model,
   musicBox: MusicBox.Model,
   counter: Counter.Model,
   findIt: FindIt.Model,
@@ -160,7 +156,6 @@ export const Message = S.Union([
   SetLanguage,
   SystemDarkModeChanged,
   ToggleMute,
-  ClickedGreeting,
   ClickedCounter,
   ClickedFindIt,
   ClickedBubbles,
@@ -169,14 +164,6 @@ export const Message = S.Union([
   LandingDragStarted,
   LandingDroppedOn,
   LandingDragEnded,
-  Greeting.ClickedReset,
-  Greeting.ClickedRecord,
-  Greeting.ClickedStopRecording,
-  Greeting.RecordedAudio,
-  Greeting.RecordingFailed,
-  Greeting.ClickedPlay,
-  Greeting.SetVoiceEffect,
-  Greeting.HideHello,
   Counter.PointerDown,
   Counter.PressedIncrement,
   Counter.PressedDecrement,
@@ -201,7 +188,6 @@ export const Message = S.Union([
   FindIt.DismissTooltip,
   Bubbles.ClickedPop,
   Bubbles.ClickedReset,
-  Greeting.SoundPlayed,
   Counter.SoundPlayed,
   FindIt.SoundPlayed,
   Bubbles.SoundPlayed,
@@ -280,7 +266,6 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
           ? saved.musicBoxHiddenSongs.map((h: boolean) => h === true)
           : MusicBox.init().hiddenSongs,
       },
-      greeting: { ...Greeting.init, voiceEffect: sanitizeVoiceEffect(saved.greetingVoiceEffect, 'normal') },
       counter: {
         ...Counter.init,
         rate: saved.counterRate ?? Counter.init.rate,
@@ -312,14 +297,6 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
 }
 
 // UPDATE
-
-const updateGreeting = (
-  model: Model,
-  message: Greeting.Message,
-): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
-  const [next, cmds] = Greeting.update(model.greeting, message, model.language, model.muted)
-  return [{ ...model, greeting: next }, cmds]
-}
 
 const updateCounter = (
   model: Model,
@@ -365,7 +342,6 @@ const applyImportData = (model: Model, s: PersistedSettings): Model => ({
   language: s.language ?? model.language,
   darkMode: sanitizeDarkMode(s.darkMode, model.darkMode),
   muted: s.muted ?? model.muted,
-  greeting: { ...model.greeting, voiceEffect: sanitizeVoiceEffect(s.greetingVoiceEffect, model.greeting.voiceEffect) },
   counter: {
     ...model.counter,
     rate: s.counterRate ?? model.counter.rate,
@@ -416,7 +392,6 @@ const _update = (
       ClickedSettings: () => [{ ...model, showSettings: !model.showSettings }, []],
       SetLanguage: (msg) => [{ ...model, language: msg.value }, []],
       ToggleMute: () => [{ ...model, muted: !model.muted }, []],
-      ClickedGreeting: () => [{ ...model, page: PageGreeting() }, []],
       ClickedCounter: () => [{ ...model, page: PageCounter() }, []],
       ClickedFindIt: () => [{ ...model, page: PageFindIt() }, []],
       ClickedBubbles: () => [{ ...model, page: PageBubbles() }, []],
@@ -433,14 +408,6 @@ const _update = (
         return [next, [persistSettings(next)]]
       },
       LandingDragEnded: () => [{ ...model, landingDragIndex: -1 }, []],
-      GreetingClickedRecord: (msg) => updateGreeting(model, msg),
-      GreetingClickedStopRecording: (msg) => updateGreeting(model, msg),
-      GreetingRecordedAudio: (msg) => updateGreeting(model, msg),
-      GreetingRecordingFailed: (msg) => updateGreeting(model, msg),
-      GreetingClickedPlay: (msg) => updateGreeting(model, msg),
-      GreetingClickedReset: (msg) => updateGreeting(model, msg),
-      GreetingSetVoiceEffect: (msg) => updateGreeting(model, msg),
-      GreetingHideHello: (msg) => updateGreeting(model, msg),
       CounterPointerDown: (msg) => updateCounter(model, msg),
       CounterPressedIncrement: (msg) => updateCounter(model, msg),
       CounterPressedDecrement: (msg) => updateCounter(model, msg),
@@ -465,7 +432,6 @@ const _update = (
       FindItDismissTooltip: (msg) => updateFindIt(model, msg),
       BubblesClickedPop: (msg) => updateBubbles(model, msg),
       BubblesClickedReset: (msg) => updateBubbles(model, msg),
-      GreetingSoundPlayed: (msg) => updateGreeting(model, msg),
       CounterSoundPlayed: (msg) => updateCounter(model, msg),
       FindItSoundPlayed: (msg) => updateFindIt(model, msg),
       BubblesSoundPlayed: (msg) => updateBubbles(model, msg),
@@ -576,7 +542,6 @@ const SETTINGS_TAGS = new Set([
   'CounterSetRate', 'CounterSetPitch', 'CounterSetDisplayMode',
   'FindItSetAnyWins', 'FindItSetVoiceMode', 'FindItSetPairsMode',
   'BubblesSetPopLabel', 'BubblesSetSayColor',
-  'GreetingSetVoiceEffect',
   'MusicBoxToggleSongVisibility', 'MusicBoxSongDroppedOn',
 ])
 
@@ -598,7 +563,6 @@ const pageTitle = (model: Model): string =>
     M.withReturnType<string>(),
     M.tagsExhaustive({
       PageLanding: () => t('pageTitleLanding', model.language),
-      PageGreeting: () => t('pageTitleGreeting', model.language),
       PageCounter: () => t('pageTitleCounter', model.language),
       PageFindIt: () => t('pageTitleFindIt', model.language),
       PageBubbles: () => t('pageTitleBubbles', model.language),
@@ -904,7 +868,6 @@ export const view = (model: Model): Document => {
           M.value(model.page).pipe(
             M.tagsExhaustive({
               PageLanding: () => landingView([...model.landingOrder], model.language, model.landingDragIndex),
-              PageGreeting: () => Greeting.view(model.greeting, model.language),
               PageCounter: () => Counter.view(model.counter, model.language),
               PageFindIt: () => FindIt.view(model.findIt, model.language),
               PageBubbles: () => Bubbles.view(model.bubbles, model.language),

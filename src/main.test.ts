@@ -1,24 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import { Story } from 'foldkit/test'
 import * as Main from './main'
-import * as Greeting from './games/greeting'
 import * as Counter from './games/counter'
 import * as FindIt from './games/findit'
 import * as Bubbles from './games/bubbles'
 import * as MusicBox from './games/musicbox'
-import { PageGreeting } from './route'
-import { ClickedLanding, ClickedGreeting, ClickedCounter, ClickedFindIt, ClickedBubbles, ClickedDarkMode, ImportedSettings, SettingsPersisted } from './message'
+import { ClickedLanding, ClickedCounter, ClickedFindIt, ClickedBubbles, ClickedDarkMode, ImportedSettings, SettingsPersisted } from './message'
 
 const resolveSettings = [{ name: 'PersistSettings' }, SettingsPersisted()] as const
 
 describe('settings persistence', () => {
   const nonSettingsMessages: Array<{ label: string; msg: Main.Message; resolves?: readonly [readonly [{ readonly name: string }, Main.Message], ...readonly (readonly [{ readonly name: string }, Main.Message])[]] }> = [
     { label: 'ClickedLanding', msg: ClickedLanding() },
-    { label: 'ClickedGreeting', msg: ClickedGreeting() },
     { label: 'ClickedCounter', msg: ClickedCounter() },
     { label: 'ClickedFindIt', msg: ClickedFindIt() },
     { label: 'ClickedBubbles', msg: ClickedBubbles() },
-    { label: 'GreetingClickedRecord', msg: Greeting.ClickedRecord(), resolves: [[{ name: 'Record' }, Greeting.RecordingFailed()]] },
     { label: 'CounterPointerDown', msg: Counter.PointerDown() },
     { label: 'FindItClickedCell', msg: FindIt.ClickedCell({ id: 0 }) },
     { label: 'BubblesClickedPop', msg: Bubbles.ClickedPop({ id: 0 }) },
@@ -31,9 +27,7 @@ describe('settings persistence', () => {
         Main.update,
         Story.with(createModel()),
         Story.message(msg),
-        label === 'GreetingClickedRecord'
-          ? Story.Command.resolveAll([{ name: 'Record' }, Greeting.RecordingFailed()])
-          : Story.Command.expectNone(),
+        Story.Command.expectNone(),
       )
     })
   }
@@ -46,7 +40,6 @@ describe('Main', () => {
     expect(model.darkMode).toBe('auto')
     expect(model.language).toBe('en')
     expect(model.showSettings).toBe(false)
-    expect(model.greeting).toStrictEqual({ status: 'idle', audioUrl: '', playCount: 0, autoPlay: false, recordingId: 0, hellos: [], voiceEffect: 'normal' })
     expect(model.counter.count).toBe(0)
     expect(model.bubbles).toStrictEqual({ bubbles: [], score: 0, nextId: 0, rainbowMode: false, popLabel: false, sayColor: false, selectedColor: '' })
   })
@@ -56,23 +49,10 @@ describe('Main', () => {
       Main.update,
       Story.with({
         ...createModel(),
-        page: PageGreeting(),
       }),
       Story.message(ClickedLanding()),
       Story.model((model) => {
         expect(model.page._tag).toBe('PageLanding')
-      }),
-      Story.Command.expectNone(),
-    )
-  })
-
-  it('ClickedGreeting sets page to greeting', () => {
-    Story.story(
-      Main.update,
-      Story.with(createModel()),
-      Story.message(ClickedGreeting()),
-      Story.model((model) => {
-        expect(model.page._tag).toBe('PageGreeting')
       }),
       Story.Command.expectNone(),
     )
@@ -151,19 +131,6 @@ describe('Main', () => {
     )
   })
 
-  it('delegates GreetingClickedRecord to greeting update', () => {
-    Story.story(
-      Main.update,
-      Story.with(createModel()),
-      Story.message(Greeting.ClickedRecord()),
-      Story.model((model) => {
-        expect(model.greeting.status).toBe('recording')
-      }),
-      Story.Command.resolveAll([{ name: 'Record' }, Greeting.RecordingFailed()]),
-      Story.Command.expectNone(),
-    )
-  })
-
   describe('settings import', () => {
     it('filters out-of-bounds song indices', () => {
       Story.story(
@@ -181,26 +148,6 @@ describe('Main', () => {
         })),
         Story.model((model) => {
           expect(model.musicBox.songOrder).toEqual([0, 1])
-        }),
-        Story.Command.expectNone(),
-      )
-    })
-
-    it('sanitizes invalid voice effect', () => {
-      Story.story(
-        Main.update,
-        Story.with(createModel()),
-        Story.message(ImportedSettings({
-          data: JSON.stringify({
-            version: 1,
-            settings: {
-              language: 'en',
-              greetingVoiceEffect: 'invalid',
-            },
-          }),
-        })),
-        Story.model((model) => {
-          expect(model.greeting.voiceEffect).toBe('normal')
         }),
         Story.Command.expectNone(),
       )

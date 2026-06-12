@@ -1,10 +1,9 @@
 import { html } from 'foldkit/html'
 
-import { ClickedAudioTest, ClickedBubbles, ClickedCounter, ClickedFindIt, ClickedGreeting, ClickedMusicBox, LandingDragEnded, LandingDragStarted, LandingDroppedOn } from '../message'
+import { ClickedAudioTest, ClickedBubbles, ClickedCounter, ClickedFindIt, ClickedMusicBox, LandingDragEnded, LandingDragStarted, LandingDroppedOn } from '../message'
 import { t } from '../i18n'
 
-type Message = ReturnType<typeof ClickedGreeting>
-  | ReturnType<typeof ClickedCounter>
+type Message = ReturnType<typeof ClickedCounter>
   | ReturnType<typeof ClickedFindIt>
   | ReturnType<typeof ClickedBubbles>
   | ReturnType<typeof ClickedMusicBox>
@@ -14,7 +13,6 @@ type Message = ReturnType<typeof ClickedGreeting>
   | ReturnType<typeof LandingDragEnded>
 
 const GAMES = [
-  { msg: ClickedGreeting, title: 'greetingTitle' as const, emoji: '👋' },
   { msg: ClickedCounter, title: 'counterTitle' as const, emoji: '🔢' },
   { msg: ClickedFindIt, title: 'findItTitle' as const, emoji: '🔎' },
   { msg: ClickedBubbles, title: 'bubblesTitle' as const, emoji: '🫧' },

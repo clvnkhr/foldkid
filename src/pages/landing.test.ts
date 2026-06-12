@@ -4,7 +4,7 @@ import { view } from './landing'
 import * as Main from '../main'
 
 describe('Landing', () => {
-  const defaultOrder = [0, 1, 2, 3, 4]
+  const defaultOrder = [0, 1, 2, 3]
 
   it('renders title and subtitle', () => {
     Scene.scene(
@@ -16,11 +16,10 @@ describe('Landing', () => {
     )
   })
 
-  it('renders all 5 game cards', () => {
+  it('renders all 4 game cards', () => {
     Scene.scene(
       { update: Main.update, view: () => view(defaultOrder, 'en', -1) },
       Scene.with(Main.init()[0]),
-      Scene.expect(Scene.text('Say Hello')).toExist(),
       Scene.expect(Scene.text('Counter')).toExist(),
       Scene.expect(Scene.text('Find It!')).toExist(),
       Scene.expect(Scene.text('Bubbles!')).toExist(),
@@ -30,8 +29,8 @@ describe('Landing', () => {
   })
 
   it('renders cards in custom order', () => {
-    Scene.scene(
-      { update: Main.update, view: () => view([2, 0, 1, 3, 4], 'en', -1) },
+      Scene.scene(
+        { update: Main.update, view: () => view([2, 0, 1, 3], 'en', -1) },
       Scene.with(Main.init()[0]),
       Scene.Command.expectNone(),
     )
