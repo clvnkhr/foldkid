@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Scene, Story } from 'foldkit/test'
 import * as Counter from './counter'
-import { numberToWord } from './counter'
+import { numberToWord, parseBallCount, parseBallFontSize } from './counter'
 
 const resolveClick = [{ name: 'PlayClick' }, Counter.SoundPlayed()] as const
 const resolveSwoosh = [{ name: 'PlaySwoosh' }, Counter.SoundPlayed()] as const
@@ -12,6 +12,7 @@ describe('Counter', () => {
   it('init state', () => {
     expect(Counter.init).toStrictEqual({
       count: 0, fontSize: 3, holding: false, rate: 0.85, pitch: 1.1, displayMode: 'number',
+      pointerDownTime: 0, pressedButton: null,
     })
   })
 
@@ -73,6 +74,28 @@ describe('Counter', () => {
     )
   })
 
+  it('quick press after pointer-down rerender keeps number small', () => {
+    Story.story(
+      Counter.update,
+      Story.with(Counter.init),
+      Story.message(Counter.PointerDown({ timeStamp: 100, button: 'inc' })),
+      Story.model((model) => {
+        expect(model.holding).toBe(true)
+        expect(model.pointerDownTime).toBe(100)
+      }),
+      Story.Command.expectNone(),
+      Story.message(Counter.PressedIncrement({ duration: 40 })),
+      Story.model((model) => {
+        expect(model.count).toBe(1)
+        expect(model.fontSize).toBe(3)
+        expect(model.holding).toBe(false)
+        expect(model.pressedButton).toBeNull()
+      }),
+      Story.Command.resolveAll(resolveClick, resolveSpeak),
+      Story.Command.expectNone(),
+    )
+  })
+
   it('renders initial state', () => {
     Scene.scene(
       { update: Counter.update, view: Counter.view },
@@ -103,10 +126,12 @@ describe('Counter', () => {
     Story.story(
       Counter.update,
       Story.with(Counter.init),
-      Story.message(Counter.PointerDown()),
+      Story.message(Counter.PointerDown({ timeStamp: 100, button: 'inc' })),
       Story.model((model) => {
         expect(model.holding).toBe(true)
         expect(model.count).toBe(0)
+        expect(model.pointerDownTime).toBe(100)
+        expect(model.pressedButton).toBe('inc')
       }),
       Story.Command.expectNone(),
       Story.message(Counter.PressedIncrement({ duration: 2000 })),
@@ -124,9 +149,11 @@ describe('Counter', () => {
     Story.story(
       Counter.update,
       Story.with(Counter.init),
-      Story.message(Counter.PointerDown()),
+      Story.message(Counter.PointerDown({ timeStamp: 100, button: 'dec' })),
       Story.model((model) => {
         expect(model.holding).toBe(true)
+        expect(model.pointerDownTime).toBe(100)
+        expect(model.pressedButton).toBe('dec')
       }),
       Story.Command.expectNone(),
       Story.message(Counter.PressedDecrement({ duration: 0 })),
@@ -155,9 +182,11 @@ describe('Counter', () => {
     Story.story(
       Counter.update,
       Story.with(Counter.init),
-      Story.message(Counter.PointerDown()),
+      Story.message(Counter.PointerDown({ timeStamp: 250, button: 'inc' })),
       Story.model((model) => {
         expect(model.holding).toBe(true)
+        expect(model.pointerDownTime).toBe(250)
+        expect(model.pressedButton).toBe('inc')
       }),
       Story.Command.expectNone(),
     )
@@ -251,12 +280,38 @@ describe('numberToWord', () => {
   })
 })
 
+describe('counter ball attribute parsing', () => {
+  it('parses finite integer ball counts and preserves negative direction', () => {
+    expect(parseBallCount('12')).toBe(12)
+    expect(parseBallCount('-4')).toBe(-4)
+    expect(parseBallCount('3.9')).toBe(3)
+  })
+
+  it('falls back to zero for invalid ball counts', () => {
+    expect(parseBallCount(null)).toBe(0)
+    expect(parseBallCount('NaN')).toBe(0)
+    expect(parseBallCount('Infinity')).toBe(0)
+  })
+
+  it('parses finite font sizes within the animation range', () => {
+    expect(parseBallFontSize('10')).toBe(10)
+    expect(parseBallFontSize('0')).toBe(3)
+    expect(parseBallFontSize('99')).toBe(20)
+  })
+
+  it('falls back to the default font size for invalid values', () => {
+    expect(parseBallFontSize(null)).toBe(3)
+    expect(parseBallFontSize('NaN')).toBe(3)
+    expect(parseBallFontSize('Infinity')).toBe(3)
+  })
+})
+
 describe('Counter global state', () => {
   it('PointerDown then PressedIncrement works without module-level state', () => {
     Story.story(
       Counter.update,
       Story.with(Counter.init),
-      Story.message(Counter.PointerDown()),
+      Story.message(Counter.PointerDown({ timeStamp: 100, button: 'inc' })),
       Story.model((model) => {
         expect(model.holding).toBe(true)
       }),
@@ -295,7 +350,7 @@ describe('Counter global state', () => {
     Story.story(
       Counter.update,
       Story.with(Counter.init),
-      Story.message(Counter.PointerDown()),
+      Story.message(Counter.PointerDown({ timeStamp: 100, button: 'dec' })),
       Story.model((model) => {
         expect(model.holding).toBe(true)
       }),

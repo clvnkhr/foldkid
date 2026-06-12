@@ -46,18 +46,22 @@ export const numberToWord = (n: number, language: string = 'en'): string => {
 }
 
 const DisplayMode = S.Union([S.Literal('number'), S.Literal('word'), S.Literal('both')])
+const PressedButton = S.Union([S.Literal('inc'), S.Literal('dec')])
+type PressedButton = typeof PressedButton.Type
 
 export const Model = S.Struct({
   count: S.Number,
   fontSize: S.Number,
   holding: S.Boolean,
+  pointerDownTime: S.Number,
+  pressedButton: S.Union([PressedButton, S.Null]),
   rate: S.Number,
   pitch: S.Number,
   displayMode: DisplayMode,
 })
 export type Model = typeof Model.Type
 
-export const PointerDown = m('CounterPointerDown')
+export const PointerDown = m('CounterPointerDown', { timeStamp: S.Number, button: PressedButton })
 export const PressedIncrement = m('CounterPressedIncrement', { duration: S.Number })
 export const PressedDecrement = m('CounterPressedDecrement', { duration: S.Number })
 export const ClickedReset = m('CounterClickedReset')
@@ -69,11 +73,26 @@ export const SoundPlayed = m('CounterSoundPlayed')
 export const Message = S.Union([PointerDown, PressedIncrement, PressedDecrement, ClickedReset, SetRate, SetPitch, SetDisplayMode, SoundPlayed])
 export type Message = typeof Message.Type
 
-export const init: Model = { count: 0, fontSize: 3, holding: false, rate: 0.85, pitch: 1.1, displayMode: 'number' }
+export const init: Model = { count: 0, fontSize: 3, holding: false, pointerDownTime: 0, pressedButton: null, rate: 0.85, pitch: 1.1, displayMode: 'number' }
 
 const calcFontSize = (duration: number): number => {
-  const s = duration / 1000
+  const safeDuration = Number.isFinite(duration) ? Math.max(0, duration) : 0
+  const s = safeDuration / 1000
   return Math.min(20, Math.max(3, Math.round(3 + (s / 2) * 17)))
+}
+
+export const parseBallCount = (value: string | null): number => {
+  if (!value) return 0
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return 0
+  return Math.trunc(parsed)
+}
+
+export const parseBallFontSize = (value: string | null): number => {
+  if (!value) return 3
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return 3
+  return Math.min(20, Math.max(3, parsed))
 }
 
 export const update = (
@@ -87,16 +106,16 @@ export const update = (
       readonly [Model, ReadonlyArray<Command.Command<Message>>]
     >(),
     M.tagsExhaustive({
-      CounterPointerDown: () => [
-        { ...model, holding: true },
+      CounterPointerDown: (msg) => [
+        { ...model, holding: true, pointerDownTime: msg.timeStamp, pressedButton: msg.button },
         [],
       ],
       CounterPressedIncrement: (msg) => [
-        { ...model, count: model.count + 1, fontSize: calcFontSize(msg.duration), holding: false },
+        { ...model, count: model.count + 1, fontSize: calcFontSize(msg.duration), holding: false, pressedButton: null },
         muted ? [] : [click(SoundPlayed()), speak(numberToWord(model.count + 1, language), SoundPlayed(), { rate: model.rate, pitch: model.pitch, lang: language })],
       ],
       CounterPressedDecrement: (msg) => [
-        { ...model, count: model.count - 1, fontSize: calcFontSize(msg.duration), holding: false },
+        { ...model, count: model.count - 1, fontSize: calcFontSize(msg.duration), holding: false, pressedButton: null },
         muted ? [] : [click(SoundPlayed()), speak(numberToWord(model.count - 1, language), SoundPlayed(), { rate: model.rate, pitch: model.pitch, lang: language })],
       ],
       CounterClickedReset: () => [
@@ -378,8 +397,6 @@ const tick = (state: TickState, parent: HTMLElement, activeParticles: Set<HTMLEl
 
 export const view = (model: Model, language: string = 'en') => {
   const h = html<Message>()
-  let pointerDownTime = 0
-  let pressedButton: 'inc' | 'dec' | null = null
 
   const displayText = (): string => {
     if (model.displayMode === 'word') return numberToWord(model.count, language)
@@ -390,18 +407,14 @@ export const view = (model: Model, language: string = 'en') => {
   const btnAttrs = (msg: (d: number) => Message, btn: 'inc' | 'dec') => [
     h.Class('btn btn-primary'),
     h.OnPointerDown((_pt, _btn, _sx, _sy, ts) => {
-      pointerDownTime = ts
-      pressedButton = btn
-      return O.some(PointerDown())
+      return O.some(PointerDown({ timeStamp: ts, button: btn }))
     }),
     h.OnPointerUp((_sx, _sy, _pt, ts) => {
-      pressedButton = null
-      return O.some(msg(ts - pointerDownTime))
+      return O.some(msg(ts - model.pointerDownTime))
     }),
     h.OnPointerLeave(() => {
-      if (!pressedButton) return O.none()
-      const d = performance.now() - pointerDownTime
-      pressedButton = null
+      if (model.pressedButton !== btn) return O.none()
+      const d = performance.now() - model.pointerDownTime
       return O.some(msg(d))
     }),
   ] as const
@@ -455,10 +468,8 @@ export const view = (model: Model, language: string = 'en') => {
                       const ro = new ResizeObserver(() => { state.dirty = true })
                       ro.observe(parent)
                       const mo = new MutationObserver(() => {
-                        const cs = parent.getAttribute('data-count')
-                        state.target = cs ? parseInt(cs) : 0
-                        const fs = parent.getAttribute('data-fontsize')
-                        state.fontSize = fs ? parseFloat(fs) : 3
+                        state.target = parseBallCount(parent.getAttribute('data-count'))
+                        state.fontSize = parseBallFontSize(parent.getAttribute('data-fontsize'))
                       })
                       mo.observe(parent, { attributes: true, attributeFilter: ['data-count', 'data-fontsize'] })
                       const loop = () => {

@@ -41,7 +41,7 @@ describe('settings persistence', () => {
     { label: 'ClickedCounter', msg: ClickedCounter() },
     { label: 'ClickedFindIt', msg: ClickedFindIt() },
     { label: 'ClickedBubbles', msg: ClickedBubbles() },
-    { label: 'CounterPointerDown', msg: Counter.PointerDown() },
+    { label: 'CounterPointerDown', msg: Counter.PointerDown({ timeStamp: 0, button: 'inc' }) },
     { label: 'FindItClickedCell', msg: FindIt.ClickedCell({ id: 0 }) },
     { label: 'BubblesClickedPop', msg: Bubbles.ClickedPop({ id: 0 }) },
     { label: 'MusicBoxNoteOn', msg: MusicBox.NoteOn({ pitch: 'C4' }) },

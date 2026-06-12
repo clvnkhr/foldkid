@@ -40,15 +40,20 @@ const playTone = (
     osc.type = type
     osc.frequency.value = frequency
     gain.gain.setValueAtTime(0.15, ctx.currentTime)
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration)
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration)
     osc.connect(gain)
     gain.connect(ctx.destination)
     osc.start()
     osc.stop(ctx.currentTime + duration)
-    osc.onended = () => {
+    let cleaned = false
+    const cleanup = (): void => {
+      if (cleaned) return
+      cleaned = true
       osc.disconnect()
       gain.disconnect()
     }
+    osc.onended = cleanup
+    globalThis.setTimeout(cleanup, duration * 1000 + 50)
   })
 
 export const click = <Msg>(msg: Msg) => ({

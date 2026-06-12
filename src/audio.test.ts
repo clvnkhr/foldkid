@@ -1,16 +1,21 @@
 import { Effect } from 'effect'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { click, pop, chime, boing, swoosh, resetContext } from './audio'
 import * as MusicBox from './games/musicbox'
 
 const originalAudioContext = globalThis.AudioContext
+const rampTargets: number[] = []
+let disconnectCount = 0
 
 const makeAudioParam = (initial = 0): AudioParam => ({
   value: initial,
   automationRate: 'a-rate',
   cancelAndHoldAtTime: () => makeAudioParam(initial),
   cancelScheduledValues: () => makeAudioParam(initial),
-  exponentialRampToValueAtTime: () => makeAudioParam(initial),
+  exponentialRampToValueAtTime: (value: number) => {
+    rampTargets.push(value)
+    return makeAudioParam(initial)
+  },
   linearRampToValueAtTime: () => makeAudioParam(initial),
   setTargetAtTime: () => makeAudioParam(initial),
   setValueAtTime: () => makeAudioParam(initial),
@@ -19,7 +24,7 @@ const makeAudioParam = (initial = 0): AudioParam => ({
 
 const makeAudioNode = (): AudioNode => ({
   connect: () => makeAudioNode(),
-  disconnect: () => {},
+  disconnect: () => { disconnectCount += 1 },
 } as unknown as AudioNode)
 
 class MockAudioContext {
@@ -77,7 +82,10 @@ class MockAudioContext {
 afterEach(() => {
   resetContext()
   MockAudioContext.created = 0
+  rampTargets.length = 0
+  disconnectCount = 0
   globalThis.AudioContext = originalAudioContext
+  vi.useRealTimers()
 })
 
 describe('audio', () => {
@@ -110,6 +118,26 @@ describe('audio', () => {
     const cmd = click('result')
     const result = await Effect.runPromise(cmd.effect)
     expect(result).toBe('result')
+  })
+
+  it('uses a quiet exponential fade target', async () => {
+    globalThis.AudioContext = MockAudioContext as unknown as typeof AudioContext
+
+    await Effect.runPromise(click('result').effect)
+
+    expect(rampTargets).toContain(0.0001)
+  })
+
+  it('disconnects tone nodes even when oscillator onended does not fire', async () => {
+    vi.useFakeTimers()
+    globalThis.AudioContext = MockAudioContext as unknown as typeof AudioContext
+
+    await Effect.runPromise(click('result').effect)
+    expect(disconnectCount).toBe(0)
+
+    vi.advanceTimersByTime(111)
+
+    expect(disconnectCount).toBe(2)
   })
 
   it('shares one AudioContext between simple sounds and MusicBox notes', async () => {
