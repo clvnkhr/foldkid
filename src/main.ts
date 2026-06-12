@@ -1,4 +1,4 @@
-import { Effect, Match as M, MutableRef, Option, Schema as S, Stream } from 'effect'
+import { Effect, Match as M, Option, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { Document, html } from 'foldkit/html'
 
@@ -25,34 +25,46 @@ const ICON_VOICE_MODE = '🔊'
 const STORAGE_KEY = 'foldkid-settings'
 const SETTINGS_VERSION = 1
 
-interface PersistedSettings {
-  version: number
-  language: string
-  darkMode: DarkMode
-  muted: boolean
-  counterRate: number
-  counterPitch: number
-  counterDisplayMode: string
-  findItAnyWins: boolean
-  findItVoiceMode: boolean
-  findItPairsMode: boolean
-  bubblesPopLabel: boolean
-  bubblesSayColor: boolean
-  bubblesSelectedColor: string
-  musicBoxSongOrder: readonly number[]
-  musicBoxHiddenSongs: readonly boolean[]
-  landingOrder: readonly number[]
-}
-
 const DarkModeValues = ['auto', 'light', 'dark'] as const
 type DarkMode = typeof DarkModeValues[number]
 const DisplayModeValues = ['number', 'word', 'both'] as const
+const DarkModeType = S.Union([S.Literal('auto'), S.Literal('light'), S.Literal('dark')])
+
+const PersistedSettingsSchema = S.Struct({
+  version: S.optionalKey(S.Number),
+  language: S.optionalKey(S.String),
+  darkMode: S.optionalKey(DarkModeType),
+  muted: S.optionalKey(S.Boolean),
+  counterRate: S.optionalKey(S.Number),
+  counterPitch: S.optionalKey(S.Number),
+  counterDisplayMode: S.optionalKey(S.String),
+  findItAnyWins: S.optionalKey(S.Boolean),
+  findItVoiceMode: S.optionalKey(S.Boolean),
+  findItPairsMode: S.optionalKey(S.Boolean),
+  bubblesPopLabel: S.optionalKey(S.Boolean),
+  bubblesSayColor: S.optionalKey(S.Boolean),
+  bubblesSelectedColor: S.optionalKey(S.String),
+  musicBoxSongOrder: S.optionalKey(S.Array(S.Number)),
+  musicBoxHiddenSongs: S.optionalKey(S.Array(S.Boolean)),
+  landingOrder: S.optionalKey(S.Array(S.Number)),
+})
+type PersistedSettings = typeof PersistedSettingsSchema.Type
+
+const SettingsExportSchema = S.Struct({
+  version: S.Number,
+  exportedAt: S.optionalKey(S.String),
+  settings: PersistedSettingsSchema,
+})
+
+const decodePersistedSettings = S.decodeUnknownOption(PersistedSettingsSchema)
+const decodeSettingsExport = S.decodeUnknownOption(SettingsExportSchema)
 
 const loadSettings = (): Partial<PersistedSettings> => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return {}
-    return JSON.parse(raw)
+    const decoded = decodePersistedSettings(JSON.parse(raw))
+    return Option.isSome(decoded) ? decoded.value : {}
   } catch {
     return {}
   }
@@ -89,19 +101,22 @@ const buildSettingsData = (model: Model): PersistedSettings => ({
   landingOrder: model.landingOrder,
 })
 
-const persistTimer = MutableRef.make<ReturnType<typeof setTimeout> | undefined>(undefined)
-
 const persistSettings = (model: Model): Command.Command<Message> => {
-  const tid = MutableRef.get(persistTimer)
-  if (tid) clearTimeout(tid)
-  MutableRef.set(persistTimer, setTimeout(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(buildSettingsData(model)))
-  }, 200))
+  const settings = buildSettingsData(model)
   return {
     name: 'PersistSettings',
-    effect: Effect.succeed(SettingsPersisted()),
+    effect: Effect.sync(() => {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
+    }).pipe(Effect.as(SettingsPersisted())),
   }
 }
+
+const removeSettings = (): Command.Command<Message> => ({
+  name: 'RemoveSettings',
+  effect: Effect.sync(() => {
+    localStorage.removeItem(STORAGE_KEY)
+  }).pipe(Effect.as(SettingsPersisted())),
+})
 
 const copyExportCmd = (text: string): Command.Command<Message> => ({
   name: 'CopyExport',
@@ -111,8 +126,6 @@ const copyExportCmd = (text: string): Command.Command<Message> => ({
 })
 
 // MODEL
-
-const DarkModeType = S.Union([S.Literal('auto'), S.Literal('light'), S.Literal('dark')])
 
 export const Model = S.Struct({
   page: Page,
@@ -364,6 +377,47 @@ const applyImportData = (model: Model, s: PersistedSettings): Model => ({
   importExportMessage: t('settingsImportSuccess', model.language),
 })
 
+type ParseImportResult =
+  | { readonly _tag: 'Success'; readonly value: PersistedSettings }
+  | { readonly _tag: 'Invalid' }
+  | { readonly _tag: 'VersionMismatch' }
+
+const parseImportData = (data: string): ParseImportResult => {
+  try {
+    const parsed: unknown = JSON.parse(data)
+    if (typeof parsed !== 'object' || parsed === null || !('version' in parsed)) {
+      return { _tag: 'Invalid' }
+    }
+    if ((parsed as { version?: unknown }).version !== SETTINGS_VERSION) {
+      return { _tag: 'VersionMismatch' }
+    }
+    const decoded = decodeSettingsExport(parsed)
+    if (Option.isSome(decoded)) return { _tag: 'Success', value: decoded.value.settings }
+    return { _tag: 'Invalid' }
+  } catch {
+    return { _tag: 'Invalid' }
+  }
+}
+
+const importSettingsResult = (
+  model: Model,
+  data: string,
+  closeOverlay: boolean,
+): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
+  const close = closeOverlay ? { settingsOverlay: '' } : {}
+  const parsed = parseImportData(data)
+  switch (parsed._tag) {
+    case 'VersionMismatch':
+      return [{ ...model, ...close, importExportMessage: t('settingsImportVersionMismatch', model.language), showResetConfirm: false }, []]
+    case 'Invalid':
+      return [{ ...model, ...close, importExportMessage: t('settingsImportInvalid', model.language), showResetConfirm: false }, []]
+    case 'Success': {
+      const next = applyImportData(model, parsed.value)
+      return [{ ...next, ...close }, [persistSettings(next)]]
+    }
+  }
+}
+
 const _update = (
   model: Model,
   message: Message,
@@ -473,9 +527,11 @@ const _update = (
       ResetSettings: () => [{ ...model, showResetConfirm: true }, []],
       CancelResetSettings: () => [{ ...model, showResetConfirm: false }, []],
       ConfirmResetSettings: () => {
-        localStorage.removeItem(STORAGE_KEY)
         const fresh = init()[0]
-        return [{ ...fresh, showSettings: model.showSettings, settingsPanelWidth: model.settingsPanelWidth, showResetConfirm: false, importExportMessage: t('settingsResetConfirm', model.language) }, []]
+        return [
+          { ...fresh, showSettings: model.showSettings, settingsPanelWidth: model.settingsPanelWidth, showResetConfirm: false, importExportMessage: t('settingsResetConfirm', model.language) },
+          [removeSettings()],
+        ]
       },
       ExportSettings: () => {
         const data = {
@@ -488,40 +544,8 @@ const _update = (
       CopyExportData: () => [model, [copyExportCmd(model.exportData)]],
       ImportSettings: () => [{ ...model, settingsOverlay: 'import', exportData: '', showResetConfirm: false, importExportMessage: '' }, []],
       SetExportData: (msg) => [{ ...model, exportData: msg.value }, []],
-      ImportedSettings: (msg) => {
-        try {
-          const parsed = JSON.parse(msg.data)
-          if (!parsed || parsed.version !== SETTINGS_VERSION) {
-            return [{ ...model, importExportMessage: t('settingsImportVersionMismatch', model.language), showResetConfirm: false }, []]
-          }
-          const s = parsed.settings
-          if (!s || typeof s.language !== 'string') {
-            return [{ ...model, importExportMessage: t('settingsImportInvalid', model.language), showResetConfirm: false }, []]
-          }
-          const next = applyImportData(model, s)
-          try { localStorage.setItem(STORAGE_KEY, JSON.stringify(buildSettingsData(next))) } catch { /* ok */ }
-          return [next, []]
-        } catch {
-          return [{ ...model, importExportMessage: t('settingsImportInvalid', model.language), showResetConfirm: false }, []]
-        }
-      },
-      ApplyImport: () => {
-        try {
-          const parsed = JSON.parse(model.exportData)
-          if (!parsed || parsed.version !== SETTINGS_VERSION) {
-            return [{ ...model, importExportMessage: t('settingsImportVersionMismatch', model.language), showResetConfirm: false, settingsOverlay: '' }, []]
-          }
-          const s = parsed.settings
-          if (!s || typeof s.language !== 'string') {
-            return [{ ...model, importExportMessage: t('settingsImportInvalid', model.language), showResetConfirm: false, settingsOverlay: '' }, []]
-          }
-          const next = applyImportData(model, s)
-          try { localStorage.setItem(STORAGE_KEY, JSON.stringify(buildSettingsData(next))) } catch { /* ok */ }
-          return [next, []]
-        } catch {
-          return [{ ...model, importExportMessage: t('settingsImportInvalid', model.language), showResetConfirm: false, settingsOverlay: '' }, []]
-        }
-      },
+      ImportedSettings: (msg) => importSettingsResult(model, msg.data, false),
+      ApplyImport: () => importSettingsResult(model, model.exportData, true),
       SettingsImportFailed: () => [{ ...model, importExportMessage: t('settingsImportFailed', model.language) }, []],
       DismissMessage: () => [{ ...model, settingsOverlay: '', importExportMessage: '', exportData: '' }, []],
     }),
@@ -561,6 +585,28 @@ const pageTitle = (model: Model): string =>
     }),
   )
 
+export const preventDoubleTapZoomStream = (): Stream.Stream<never> =>
+  Stream.callback<never>(() =>
+    Effect.gen(function* () {
+      yield* Effect.acquireRelease(
+        Effect.sync(() => {
+          let lastTouchEnd = 0
+          const onTouchEnd = (event: TouchEvent): void => {
+            const now = Date.now()
+            if (now - lastTouchEnd <= 300) event.preventDefault()
+            lastTouchEnd = now
+          }
+          document.addEventListener('touchend', onTouchEnd, { passive: false })
+          return onTouchEnd
+        }),
+        onTouchEnd => Effect.sync(() => {
+          document.removeEventListener('touchend', onTouchEnd)
+        }),
+      )
+      return yield* Effect.never
+    }),
+  )
+
 export const view = (model: Model): Document => {
   const h = html<Message>()
 
@@ -581,15 +627,7 @@ export const view = (model: Model): Document => {
         ),
       }), h.OnMount({
         name: 'preventDoubleTapZoom',
-        f: () => {
-          let lastTouchEnd = 0
-          document.addEventListener('touchend', (e) => {
-            const now = Date.now()
-            if (now - lastTouchEnd <= 300) e.preventDefault()
-            lastTouchEnd = now
-          }, { passive: false })
-          return Stream.never
-        },
+        f: preventDoubleTapZoomStream,
       })],
       [
           !isLanding
