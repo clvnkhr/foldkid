@@ -1,4 +1,4 @@
-import { Effect, Fiber, Stream } from 'effect'
+import { Effect, Fiber, Option, Schema as S, Stream } from 'effect'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { Story } from 'foldkit/test'
 import * as Main from './main'
@@ -6,7 +6,7 @@ import * as Counter from './games/counter'
 import * as FindIt from './games/findit'
 import * as Bubbles from './games/bubbles'
 import * as MusicBox from './games/musicbox'
-import { ApplyImport, ClickedLanding, ClickedCounter, ClickedFindIt, ClickedBubbles, ClickedDarkMode, ConfirmResetSettings, ImportedSettings, SetExportData, SettingsPersisted } from './message'
+import { ApplyImport, ClickedLanding, ClickedCounter, ClickedFindIt, ClickedBubbles, ClickedDarkMode, ConfirmResetSettings, ImportedSettings, SetExportData, SetLanguage, SettingsPersisted, ToggleMute } from './message'
 
 const resolveSettings = [{ name: 'PersistSettings' }, SettingsPersisted()] as const
 const STORAGE_KEY = 'foldkid-settings'
@@ -36,6 +36,22 @@ beforeEach(() => {
 })
 
 describe('settings persistence', () => {
+  const settingsMessages: Array<{ label: string; msg: Main.Message }> = [
+    { label: 'ClickedDarkMode', msg: ClickedDarkMode() },
+    { label: 'SetLanguage', msg: SetLanguage({ value: 'fr' }) },
+    { label: 'ToggleMute', msg: ToggleMute() },
+    { label: 'CounterSetRate', msg: Counter.SetRate({ value: 1.2 }) },
+    { label: 'CounterSetPitch', msg: Counter.SetPitch({ value: 0.9 }) },
+    { label: 'CounterSetDisplayMode', msg: Counter.SetDisplayMode({ value: 'both' }) },
+    { label: 'FindItSetAnyWins', msg: FindIt.SetAnyWins({ value: true }) },
+    { label: 'FindItSetVoiceMode', msg: FindIt.SetVoiceMode({ value: true }) },
+    { label: 'FindItSetPairsMode', msg: FindIt.SetPairsMode({ value: true }) },
+    { label: 'BubblesSetPopLabel', msg: Bubbles.SetPopLabel({ value: true }) },
+    { label: 'BubblesSetSayColor', msg: Bubbles.SetSayColor({ value: true }) },
+    { label: 'MusicBoxToggleSongVisibility', msg: MusicBox.ToggleSongVisibility({ index: 1 }) },
+    { label: 'MusicBoxSongDroppedOn', msg: MusicBox.SongDroppedOn({ index: 1 }) },
+  ]
+
   const nonSettingsMessages: Array<{ label: string; msg: Main.Message; resolves?: readonly [readonly [{ readonly name: string }, Main.Message], ...readonly (readonly [{ readonly name: string }, Main.Message])[]] }> = [
     { label: 'ClickedLanding', msg: ClickedLanding() },
     { label: 'ClickedCounter', msg: ClickedCounter() },
@@ -46,6 +62,18 @@ describe('settings persistence', () => {
     { label: 'BubblesClickedPop', msg: Bubbles.ClickedPop({ id: 0 }) },
     { label: 'MusicBoxNoteOn', msg: MusicBox.NoteOn({ pitch: 'C4' }) },
   ]
+
+  for (const { label, msg } of settingsMessages) {
+    it(`persists settings on ${label}`, () => {
+      Story.story(
+        Main.update,
+        Story.with(createModel()),
+        Story.message(msg),
+        Story.Command.resolveAll(resolveSettings),
+        Story.Command.expectNone(),
+      )
+    })
+  }
 
   for (const { label, msg } of nonSettingsMessages) {
     it(`does not persist settings on ${label}`, () => {
@@ -68,6 +96,50 @@ describe('Main', () => {
     expect(model.showSettings).toBe(false)
     expect(model.counter.count).toBe(0)
     expect(model.bubbles).toStrictEqual({ bubbles: [], score: 0, nextId: 0, rainbowMode: false, popLabel: false, sayColor: false, selectedColor: '' })
+  })
+
+  describe('schema boundaries', () => {
+    const decodeMessage = S.decodeUnknownOption(Main.Message)
+    const decodeModel = S.decodeUnknownOption(Main.Model)
+
+    it('decodes supported language messages at the Foldkit message boundary', () => {
+      const decoded = decodeMessage({ _tag: 'SetLanguage', value: 'zh-HK' })
+
+      expect(Option.isSome(decoded)).toBe(true)
+      if (Option.isSome(decoded)) {
+        expect(decoded.value).toStrictEqual(SetLanguage({ value: 'zh-HK' }))
+      }
+    })
+
+    it('rejects unsupported language messages before update can persist them', () => {
+      const decoded = decodeMessage({ _tag: 'SetLanguage', value: 'xx' })
+
+      expect(Option.isNone(decoded)).toBe(true)
+    })
+
+    it('keeps the app model schema honest about language and nested game state', () => {
+      expect(Option.isSome(decodeModel(createModel()))).toBe(true)
+      expect(Option.isNone(decodeModel({ ...createModel(), language: 'xx' }))).toBe(true)
+      expect(Option.isNone(decodeModel({
+        ...createModel(),
+        counter: { ...createModel().counter, displayMode: 'huge' },
+      }))).toBe(true)
+    })
+
+    it('falls back to defaults when persisted settings fail schema decoding', () => {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        language: 'xx',
+        darkMode: 'dark',
+        muted: true,
+      }))
+
+      const [model, cmds] = Main.init()
+
+      expect(model.language).toBe('en')
+      expect(model.darkMode).toBe('auto')
+      expect(model.muted).toBe(false)
+      expect(cmds).toHaveLength(0)
+    })
   })
 
   it('ClickedLanding sets page to landing', () => {
@@ -216,6 +288,26 @@ describe('Main', () => {
       )
     })
 
+    it('rejects unsupported language codes with no persistence command', () => {
+      Story.story(
+        Main.update,
+        Story.with(createModel()),
+        Story.message(ImportedSettings({
+          data: JSON.stringify({
+            version: 1,
+            settings: {
+              language: 'xx',
+            },
+          }),
+        })),
+        Story.model((model) => {
+          expect(model.language).toBe('en')
+          expect(model.importExportMessage).toBeTruthy()
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
     it('resolves PersistSettings command', () => {
       Story.story(
         Main.update,
@@ -241,6 +333,26 @@ describe('Main', () => {
 
       const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') as { darkMode?: string }
       expect(stored.darkMode).toBe(next.darkMode)
+    })
+
+    it('persists a schema-decoded language change through a command effect', async () => {
+      const decodeMessage = S.decodeUnknownOption(Main.Message)
+      const decoded = decodeMessage({ _tag: 'SetLanguage', value: 'ja' })
+      if (Option.isNone(decoded)) throw new Error('SetLanguage should decode')
+
+      const [next, cmds] = Main.update(createModel(), decoded.value)
+      const cmd = cmds[0]
+
+      expect(next.language).toBe('ja')
+      expect(cmd?.name).toBe('PersistSettings')
+      expect(localStorage.getItem(STORAGE_KEY)).toBeNull()
+
+      if (!cmd) throw new Error('missing PersistSettings command')
+      const result = await Effect.runPromise(cmd.effect)
+      expect(result).toStrictEqual(SettingsPersisted())
+
+      const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') as { language?: string }
+      expect(stored.language).toBe('ja')
     })
 
     it('persists successfully imported settings through a command effect', async () => {

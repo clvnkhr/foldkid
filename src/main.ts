@@ -12,7 +12,7 @@ import * as Counter from './games/counter'
 import * as Bubbles from './games/bubbles'
 import { view as landingView } from './pages/landing'
 import { view as audioTestView } from './pages/audiotest'
-import { t, tf } from './i18n'
+import { Language, normalizeLanguage, t, tf } from './i18n'
 import { speak } from './speech'
 
 const ICON_UNMUTED = '🔊'
@@ -32,7 +32,7 @@ const DarkModeType = S.Union([S.Literal('auto'), S.Literal('light'), S.Literal('
 
 const PersistedSettingsSchema = S.Struct({
   version: S.optionalKey(S.Number),
-  language: S.optionalKey(S.String),
+  language: S.optionalKey(Language),
   darkMode: S.optionalKey(DarkModeType),
   muted: S.optionalKey(S.Boolean),
   counterRate: S.optionalKey(S.Number),
@@ -130,7 +130,7 @@ const copyExportCmd = (text: string): Command.Command<Message> => ({
 export const Model = S.Struct({
   page: Page,
   darkMode: DarkModeType,
-  language: S.String,
+  language: Language,
   showSettings: S.Boolean,
   muted: S.Boolean,
   musicBox: MusicBox.Model,
@@ -245,19 +245,20 @@ export type Message = typeof Message.Type
 
 export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
   const saved = loadSettings()
+  const language = normalizeLanguage(saved.language)
   const pairsMode = saved.findItPairsMode ?? false
   const findItInit = FindIt.init(pairsMode)
   const cmds: Command.Command<Message>[] = []
   const voiceMode = saved.findItVoiceMode ?? false
   if (voiceMode && !saved.findItAnyWins && !saved.muted) {
-    cmds.push(speak(tf('whereIs', saved.language ?? 'en', FindIt.emojiName(findItInit.target, saved.language ?? 'en')), FindIt.SoundPlayed(), { lang: saved.language ?? 'en' }))
+    cmds.push(speak(tf('whereIs', language, FindIt.emojiName(findItInit.target, language)), FindIt.SoundPlayed(), { lang: language }))
   }
   const bubblesSelectedColor = saved.bubblesSelectedColor ?? ''
   return [
     {
       page: PageLanding(),
       darkMode: sanitizeDarkMode(saved.darkMode, 'auto'),
-      language: saved.language ?? 'en',
+      language,
       showSettings: false,
       muted: saved.muted ?? false,
       musicBox: {

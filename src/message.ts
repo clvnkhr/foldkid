@@ -1,5 +1,6 @@
 import { Schema as S } from 'effect'
 import { m } from 'foldkit/message'
+import { Language } from './i18n'
 
 export const ClickedLanding = m('ClickedLanding')
 export const ClickedCounter = m('ClickedCounter')
@@ -9,7 +10,7 @@ export const ClickedMusicBox = m('ClickedMusicBox')
 export const ClickedAudioTest = m('ClickedAudioTest')
 export const ClickedDarkMode = m('ClickedDarkMode')
 export const ClickedSettings = m('ClickedSettings')
-export const SetLanguage = m('SetLanguage', { value: S.String })
+export const SetLanguage = m('SetLanguage', { value: Language })
 export const SystemDarkModeChanged = m('SystemDarkModeChanged')
 export const ToggleMute = m('ToggleMute')
 export const SettingsPersisted = m('SettingsPersisted')

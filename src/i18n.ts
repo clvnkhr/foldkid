@@ -1,3 +1,5 @@
+import { Schema as S } from 'effect'
+
 export const translations = {
   en: {
     appName: 'FoldKid',
@@ -970,6 +972,24 @@ export const translations = {
   },
 } as const
 
+export const Language = S.Union([
+  S.Literal('en'),
+  S.Literal('zh'),
+  S.Literal('fr'),
+  S.Literal('de'),
+  S.Literal('fa'),
+  S.Literal('ms'),
+  S.Literal('zh-HK'),
+  S.Literal('ja'),
+])
+export type Language = typeof Language.Type
+
+export const isLanguage = (value: string | undefined): value is Language =>
+  value !== undefined && value in translations
+
+export const normalizeLanguage = (value: string | undefined): Language =>
+  isLanguage(value) ? value : 'en'
+
 export type TranslationKey = keyof typeof translations[keyof typeof translations]
 
 export type StringKey = {
@@ -977,7 +997,7 @@ export type StringKey = {
 }[TranslationKey]
 
 export const t = (key: StringKey, language: string = 'en'): string => {
-  const lang = translations[language as keyof typeof translations] ?? translations.en
+  const lang = translations[normalizeLanguage(language)]
   return lang[key]
 }
 
@@ -990,7 +1010,7 @@ export const tf = <K extends FunctionKey>(
   language: string,
   ...args: Parameters<(typeof translations.en)[K]>
 ): string => {
-  const lang = translations[language as keyof typeof translations] ?? translations.en
+  const lang = translations[normalizeLanguage(language)]
   const fn = lang[key] as (...args: Parameters<(typeof translations.en)[K]>) => string
   return fn(...args)
 }

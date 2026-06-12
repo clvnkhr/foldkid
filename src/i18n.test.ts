@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { Option, Schema as S } from 'effect'
 import * as i18n from './i18n'
 
 describe('i18n completeness', () => {
@@ -29,5 +30,33 @@ describe('i18n completeness', () => {
         ).toBe(true)
       }
     }
+  })
+
+  it('normalizes supported and unsupported language codes', () => {
+    expect(i18n.normalizeLanguage('ja')).toBe('ja')
+    expect(i18n.normalizeLanguage('xx')).toBe('en')
+    expect(i18n.normalizeLanguage(undefined)).toBe('en')
+  })
+
+  it('decodes the supported language set through Effect Schema', () => {
+    const decodeLanguage = S.decodeUnknownOption(i18n.Language)
+
+    for (const lang of langKeys) {
+      const decoded = decodeLanguage(lang)
+      expect(Option.isSome(decoded), `${lang} should decode as a supported language`).toBe(true)
+      if (Option.isSome(decoded)) {
+        expect(decoded.value).toBe(lang)
+      }
+    }
+
+    expect(Option.isSome(decodeLanguage('en'))).toBe(true)
+    expect(Option.isSome(decodeLanguage('zh-HK'))).toBe(true)
+    expect(Option.isNone(decodeLanguage('en-GB'))).toBe(true)
+    expect(Option.isNone(decodeLanguage(123))).toBe(true)
+  })
+
+  it('falls back to English for unsupported language lookups', () => {
+    expect(i18n.t('appName', 'xx')).toBe(i18n.translations.en.appName)
+    expect(i18n.tf('whereIs', 'xx', '⭐')).toBe(i18n.translations.en.whereIs('⭐'))
   })
 })
