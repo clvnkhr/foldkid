@@ -316,14 +316,24 @@ body {
   padding: 2rem;
   width: 260px;
   text-align: center;
-  cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.2s;
+  cursor: grab;
+  user-select: none;
+  transition: transform 0.2s, box-shadow 0.2s, opacity 0.2s;
   box-shadow: 0 8px 30px var(--shadow-color);
+}
+
+.game-card:active {
+  cursor: grabbing;
 }
 
 .game-card:hover {
   transform: translateY(-4px);
   box-shadow: 0 12px 40px var(--shadow-color-strong);
+}
+
+.game-card--dragging {
+  opacity: 0.35;
+  transform: scale(0.95);
 }
 
 .game-emoji {

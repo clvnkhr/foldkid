@@ -4,9 +4,11 @@ import { view } from './landing'
 import * as Main from '../main'
 
 describe('Landing', () => {
+  const defaultOrder = [0, 1, 2, 3, 4]
+
   it('renders title and subtitle', () => {
     Scene.scene(
-      { update: Main.update, view: () => view('en') },
+      { update: Main.update, view: () => view(defaultOrder, 'en', -1) },
       Scene.with(Main.init()[0]),
       Scene.expect(Scene.text('FoldKid')).toExist(),
       Scene.expect(Scene.text('Pick a game to play!')).toExist(),
@@ -14,21 +16,30 @@ describe('Landing', () => {
     )
   })
 
-  it('renders all 4 game cards', () => {
+  it('renders all 5 game cards', () => {
     Scene.scene(
-      { update: Main.update, view: () => view('en') },
+      { update: Main.update, view: () => view(defaultOrder, 'en', -1) },
       Scene.with(Main.init()[0]),
       Scene.expect(Scene.text('Say Hello')).toExist(),
       Scene.expect(Scene.text('Counter')).toExist(),
       Scene.expect(Scene.text('Find It!')).toExist(),
       Scene.expect(Scene.text('Bubbles!')).toExist(),
+      Scene.expect(Scene.text('Music Box')).toExist(),
+      Scene.Command.expectNone(),
+    )
+  })
+
+  it('renders cards in custom order', () => {
+    Scene.scene(
+      { update: Main.update, view: () => view([2, 0, 1, 3, 4], 'en', -1) },
+      Scene.with(Main.init()[0]),
       Scene.Command.expectNone(),
     )
   })
 
   it('renders built with Foldkit link', () => {
     Scene.scene(
-      { update: Main.update, view: () => view('en') },
+      { update: Main.update, view: () => view(defaultOrder, 'en', -1) },
       Scene.with(Main.init()[0]),
       Scene.expect(Scene.text('Made with Foldkit')).toExist(),
       Scene.Command.expectNone(),

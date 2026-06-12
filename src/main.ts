@@ -2,7 +2,7 @@ import { Effect, Match as M, Option, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { Document, html } from 'foldkit/html'
 
-import { ApplyImport, CancelResetSettings, ClickedAudioTest, ClickedBubbles, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedGreeting, ClickedLanding, ClickedMusicBox, ClickedSettings, ConfirmResetSettings, CopyExportData, DismissMessage, ExportSettings, ImportSettings, ImportedSettings, ResetSettings, SetExportData, SetLanguage, SettingsDragEnded, SettingsDragMoved, SettingsDragStarted, SettingsImportFailed, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
+import { ApplyImport, CancelResetSettings, ClickedAudioTest, ClickedBubbles, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedGreeting, ClickedLanding, ClickedMusicBox, ClickedSettings, ConfirmResetSettings, CopyExportData, DismissMessage, ExportSettings, ImportSettings, ImportedSettings, LandingDragEnded, LandingDragStarted, LandingDroppedOn, ResetSettings, SetExportData, SetLanguage, SettingsDragEnded, SettingsDragMoved, SettingsDragStarted, SettingsImportFailed, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
 
 import { Page, PageAudioTest, PageBubbles, PageCounter, PageFindIt, PageGreeting, PageLanding, PageMusicBox } from './route'
 
@@ -43,6 +43,7 @@ interface PersistedSettings {
   greetingVoiceEffect: string
   musicBoxSongOrder: readonly number[]
   musicBoxHiddenSongs: readonly boolean[]
+  landingOrder: readonly number[]
 }
 
 const DarkModeValues = ['auto', 'light', 'dark'] as const
@@ -98,6 +99,7 @@ const buildSettingsData = (model: Model): PersistedSettings => ({
   greetingVoiceEffect: model.greeting.voiceEffect,
   musicBoxSongOrder: model.musicBox.songOrder,
   musicBoxHiddenSongs: model.musicBox.hiddenSongs,
+  landingOrder: model.landingOrder,
 })
 
 let persistTimer: ReturnType<typeof setTimeout> | undefined
@@ -142,6 +144,8 @@ export const Model = S.Struct({
   importExportMessage: S.String,
   exportData: S.String,
   settingsOverlay: S.String,
+  landingOrder: S.Array(S.Number),
+  landingDragIndex: S.Number,
 })
 
 export type Model = typeof Model.Type
@@ -161,6 +165,9 @@ export const Message = S.Union([
   ClickedBubbles,
   ClickedMusicBox,
   ClickedAudioTest,
+  LandingDragStarted,
+  LandingDroppedOn,
+  LandingDragEnded,
   Greeting.ClickedReset,
   Greeting.ClickedRecord,
   Greeting.ClickedStopRecording,
@@ -294,6 +301,10 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
       importExportMessage: '',
       exportData: '',
       settingsOverlay: '',
+      landingOrder: Array.isArray(saved.landingOrder) && saved.landingOrder.length === 5
+        ? [...saved.landingOrder]
+        : [0, 1, 2, 3, 4],
+      landingDragIndex: -1,
     },
     cmds,
   ]
@@ -410,6 +421,17 @@ const _update = (
       ClickedBubbles: () => [{ ...model, page: PageBubbles() }, []],
       ClickedMusicBox: () => [{ ...model, page: PageMusicBox() }, []],
       ClickedAudioTest: () => [{ ...model, page: PageAudioTest() }, []],
+      LandingDragStarted: (msg) => [{ ...model, landingDragIndex: msg.index }, []],
+      LandingDroppedOn: (msg) => {
+        if (model.landingDragIndex < 0 || model.landingDragIndex === msg.index) return [{ ...model, landingDragIndex: -1 }, []]
+        const order = [...model.landingOrder]
+        const tmp = order[model.landingDragIndex]
+        order[model.landingDragIndex] = order[msg.index]!
+        order[msg.index] = tmp!
+        const next = { ...model, landingOrder: order, landingDragIndex: -1 }
+        return [next, [persistSettings(next)]]
+      },
+      LandingDragEnded: () => [{ ...model, landingDragIndex: -1 }, []],
       GreetingClickedRecord: (msg) => updateGreeting(model, msg),
       GreetingClickedStopRecording: (msg) => updateGreeting(model, msg),
       GreetingRecordedAudio: (msg) => updateGreeting(model, msg),
@@ -880,7 +902,7 @@ export const view = (model: Model): Document => {
         ]),
           M.value(model.page).pipe(
             M.tagsExhaustive({
-              PageLanding: () => landingView(model.language),
+              PageLanding: () => landingView([...model.landingOrder], model.language, model.landingDragIndex),
               PageGreeting: () => Greeting.view(model.greeting, model.language),
               PageCounter: () => Counter.view(model.counter, model.language),
               PageFindIt: () => FindIt.view(model.findIt, model.language),

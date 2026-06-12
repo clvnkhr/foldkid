@@ -1,6 +1,6 @@
 import { html } from 'foldkit/html'
 
-import { ClickedAudioTest, ClickedBubbles, ClickedCounter, ClickedFindIt, ClickedGreeting, ClickedMusicBox } from '../message'
+import { ClickedAudioTest, ClickedBubbles, ClickedCounter, ClickedFindIt, ClickedGreeting, ClickedMusicBox, LandingDragEnded, LandingDragStarted, LandingDroppedOn } from '../message'
 import { t } from '../i18n'
 
 type Message = ReturnType<typeof ClickedGreeting>
@@ -9,8 +9,19 @@ type Message = ReturnType<typeof ClickedGreeting>
   | ReturnType<typeof ClickedBubbles>
   | ReturnType<typeof ClickedMusicBox>
   | ReturnType<typeof ClickedAudioTest>
+  | ReturnType<typeof LandingDragStarted>
+  | ReturnType<typeof LandingDroppedOn>
+  | ReturnType<typeof LandingDragEnded>
 
-export const view = (language: string) => {
+const GAMES = [
+  { msg: ClickedGreeting, title: 'greetingTitle' as const, emoji: '👋' },
+  { msg: ClickedCounter, title: 'counterTitle' as const, emoji: '🔢' },
+  { msg: ClickedFindIt, title: 'findItTitle' as const, emoji: '🔎' },
+  { msg: ClickedBubbles, title: 'bubblesTitle' as const, emoji: '🫧' },
+  { msg: ClickedMusicBox, title: 'musicBoxTitle' as const, emoji: '🎵' },
+]
+
+export const view = (order: number[], language: string, dragIndex: number) => {
   const h = html<Message>()
 
   return h.div(
@@ -21,42 +32,27 @@ export const view = (language: string) => {
         h.p([h.Class('subtitle')], [t('pickGame', language)]),
       ]),
       h.div([h.Class('game-grid')], [
-        h.div(
-          [h.OnClick(ClickedGreeting()), h.Class('game-card')],
-          [
-            h.div([h.Class('game-emoji')], ['👋']),
-            h.h2([h.Class('game-name')], [t('greetingTitle', language)]),
-          ],
-        ),
-        h.div(
-          [h.OnClick(ClickedCounter()), h.Class('game-card')],
-          [
-            h.div([h.Class('game-emoji')], ['🔢']),
-            h.h2([h.Class('game-name')], [t('counterTitle', language)]),
-          ],
-        ),
-        h.div(
-          [h.OnClick(ClickedFindIt()), h.Class('game-card')],
-          [
-            h.div([h.Class('game-emoji')], ['🔎']),
-            h.h2([h.Class('game-name')], [t('findItTitle', language)]),
-          ],
-        ),
-        h.div(
-          [h.OnClick(ClickedBubbles()), h.Class('game-card')],
-          [
-            h.div([h.Class('game-emoji')], ['🫧']),
-            h.h2([h.Class('game-name')], [t('bubblesTitle', language)]),
-          ],
-        ),
-        h.div(
-          [h.OnClick(ClickedMusicBox()), h.Class('game-card')],
-          [
-            h.div([h.Class('game-emoji')], ['🎵']),
-            h.h2([h.Class('game-name')], [t('musicBoxTitle', language)]),
-          ],
-        ),
-      ]      ),
+        ...order.map((gameIdx, displayIdx) => {
+          const game = GAMES[gameIdx]
+          if (!game) return null
+          return h.div(
+            [
+              h.OnClick(game.msg()),
+              h.Class('game-card' + (dragIndex === displayIdx ? ' game-card--dragging' : '')),
+              h.Attribute('draggable', 'true'),
+              h.OnDragStart(LandingDragStarted({ index: displayIdx })),
+              h.AllowDrop(),
+              h.OnDrop(LandingDroppedOn({ index: displayIdx })),
+              h.OnDragEnd(LandingDragEnded()),
+              h.Key(gameIdx.toString()),
+            ],
+            [
+              h.div([h.Class('game-emoji')], [game.emoji]),
+              h.h2([h.Class('game-name')], [t(game.title, language)]),
+            ],
+          )
+        }),
+      ]),
       h.div([h.Class('landing-footer')], [
         h.a(
           [h.Href('http://foldkit.dev'), h.Class('built-with'), h.Target('_blank')],
