@@ -219,6 +219,7 @@ const handleKeyUp = (e: KeyboardEvent): void => {
 }
 
 const SILENT_WAV = 'data:audio/wav;base64,UklGRiYAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQIAAAAAAA=='
+let firstTouchHandler: (() => void) | undefined
 
 const bindKeyboard = (): void => {
   if (MutableRef.get(keyboardBound)) return
@@ -243,37 +244,54 @@ const bindKeyboard = (): void => {
     getCtx()
     document.removeEventListener('pointerup', firstTouch, { capture: true })
     document.removeEventListener('keydown', firstTouch)
+    firstTouchHandler = undefined
   }
+  firstTouchHandler = firstTouch
   document.addEventListener('pointerup', firstTouch, { capture: true })
   document.addEventListener('keydown', firstTouch)
+}
+
+const handleShortcutKeyDown = (e: KeyboardEvent): void => {
+  if (e.repeat) return
+  if (!(e.target instanceof HTMLElement)) return
+  const target = e.target
+  if (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA') return
+  const key = e.key.toLowerCase()
+  if (key === 'z') {
+    e.preventDefault()
+    document.getElementById('octave-down')?.click()
+  } else if (key === 'x') {
+    e.preventDefault()
+    document.getElementById('octave-up')?.click()
+  } else if (key === ' ') {
+    e.preventDefault()
+    const playBtn = document.getElementById('musicbox-play')
+    const pauseBtn = document.getElementById('musicbox-pause')
+    if (playBtn instanceof HTMLButtonElement && !playBtn.disabled) {
+      playBtn.click()
+    } else if (pauseBtn instanceof HTMLButtonElement && !pauseBtn.disabled) {
+      pauseBtn.click()
+    }
+  }
 }
 
 const bindShortcutKeys = (): void => {
   if (MutableRef.get(shortcutKeysBound)) return
   MutableRef.set(shortcutKeysBound, true)
-  document.addEventListener('keydown', (e: KeyboardEvent): void => {
-    if (e.repeat) return
-    if (!(e.target instanceof HTMLElement)) return
-    const target = e.target
-    if (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA') return
-    const key = e.key.toLowerCase()
-    if (key === 'z') {
-      e.preventDefault()
-      document.getElementById('octave-down')?.click()
-    } else if (key === 'x') {
-      e.preventDefault()
-      document.getElementById('octave-up')?.click()
-    } else if (key === ' ') {
-      e.preventDefault()
-      const playBtn = document.getElementById('musicbox-play')
-      const pauseBtn = document.getElementById('musicbox-pause')
-      if (playBtn instanceof HTMLButtonElement && !playBtn.disabled) {
-        playBtn.click()
-      } else if (pauseBtn instanceof HTMLButtonElement && !pauseBtn.disabled) {
-        pauseBtn.click()
-      }
-    }
-  })
+  document.addEventListener('keydown', handleShortcutKeyDown)
+}
+
+export const resetKeyboardControls = (): void => {
+  document.removeEventListener('keydown', handleKeyDown)
+  document.removeEventListener('keyup', handleKeyUp)
+  document.removeEventListener('keydown', handleShortcutKeyDown)
+  if (firstTouchHandler) {
+    document.removeEventListener('pointerup', firstTouchHandler, { capture: true })
+    document.removeEventListener('keydown', firstTouchHandler)
+    firstTouchHandler = undefined
+  }
+  MutableRef.set(keyboardBound, false)
+  MutableRef.set(shortcutKeysBound, false)
 }
 
 const highlightKey = (pitch: string): void => {

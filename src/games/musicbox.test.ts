@@ -1,10 +1,85 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { Scene, Story } from 'foldkit/test'
+import { resetContext } from '../audio'
 import * as MusicBox from './musicbox'
 
 const resolvePianoTop = [{ name: 'piano-top' as const }, MusicBox.NoteOn({ pitch: 'C4' })] as const
 const resolvePianoBot = [{ name: 'piano-bot' as const }, MusicBox.NoteOn({ pitch: 'C3' })] as const
 const resolveMount = [resolvePianoTop]
+const originalAudioContext = globalThis.AudioContext
+
+const startedFrequencies: number[] = []
+
+const makeAudioParam = (initial = 0): AudioParam => ({
+  value: initial,
+  automationRate: 'a-rate',
+  cancelAndHoldAtTime: () => makeAudioParam(initial),
+  cancelScheduledValues: () => makeAudioParam(initial),
+  exponentialRampToValueAtTime: () => makeAudioParam(initial),
+  linearRampToValueAtTime: () => makeAudioParam(initial),
+  setTargetAtTime: () => makeAudioParam(initial),
+  setValueAtTime: () => makeAudioParam(initial),
+  setValueCurveAtTime: () => makeAudioParam(initial),
+} as unknown as AudioParam)
+
+const makeAudioNode = (): AudioNode => ({
+  connect: () => makeAudioNode(),
+  disconnect: () => {},
+} as unknown as AudioNode)
+
+class MockAudioContext {
+  state: AudioContextState = 'running'
+  currentTime = 0
+  destination = makeAudioNode() as AudioDestinationNode
+
+  createOscillator(): OscillatorNode {
+    const frequency = makeAudioParam(440)
+    return {
+      ...makeAudioNode(),
+      type: 'sine',
+      frequency,
+      detune: makeAudioParam(0),
+      start: () => { startedFrequencies.push(frequency.value) },
+      stop: () => {},
+    } as unknown as OscillatorNode
+  }
+
+  createGain(): GainNode {
+    return {
+      ...makeAudioNode(),
+      gain: makeAudioParam(1),
+    } as unknown as GainNode
+  }
+
+  createDynamicsCompressor(): DynamicsCompressorNode {
+    return {
+      ...makeAudioNode(),
+      threshold: makeAudioParam(-24),
+      knee: makeAudioParam(30),
+      ratio: makeAudioParam(12),
+      attack: makeAudioParam(0.003),
+      release: makeAudioParam(0.25),
+    } as unknown as DynamicsCompressorNode
+  }
+
+  close(): Promise<void> {
+    this.state = 'closed'
+    return Promise.resolve()
+  }
+
+  resume(): Promise<void> {
+    this.state = 'running'
+    return Promise.resolve()
+  }
+}
+
+afterEach(() => {
+  MusicBox.resetKeyboardControls()
+  resetContext()
+  startedFrequencies.length = 0
+  document.body.innerHTML = ''
+  globalThis.AudioContext = originalAudioContext
+})
 
 describe('MusicBox', () => {
   it('init state', () => {
@@ -13,6 +88,67 @@ describe('MusicBox', () => {
       whiteKeys: 8, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, lyricsExpanded: false,
       songOrder: [0, 1, 2, 3, 4, 5, 6], hiddenSongs: [false, false, false, false, false, false, false], dragIndex: -1,
     })
+  })
+
+  it('QWERTY A key starts and releases C4', () => {
+    globalThis.AudioContext = MockAudioContext as unknown as typeof AudioContext
+    MusicBox.init()
+
+    const down = new KeyboardEvent('keydown', { key: 'a', cancelable: true })
+    document.dispatchEvent(down)
+
+    expect(down.defaultPrevented).toBe(true)
+    expect(startedFrequencies[0]!).toBeCloseTo(MusicBox.FREQUENCIES.C4!)
+
+    const up = new KeyboardEvent('keyup', { key: 'a', cancelable: true })
+    document.dispatchEvent(up)
+
+    expect(up.defaultPrevented).toBe(true)
+  })
+
+  it('QWERTY keys follow the rendered octave offset', () => {
+    globalThis.AudioContext = MockAudioContext as unknown as typeof AudioContext
+    const model = { ...MusicBox.init(), octaveOffset: 1 }
+    MusicBox.view(model)
+
+    const down = new KeyboardEvent('keydown', { key: 'a', cancelable: true })
+    document.dispatchEvent(down)
+
+    expect(startedFrequencies[0]!).toBeCloseTo(MusicBox.FREQUENCIES.C5!)
+  })
+
+  it('resetKeyboardControls removes the document listeners installed by init', () => {
+    const originalAdd = document.addEventListener.bind(document)
+    const originalRemove = document.removeEventListener.bind(document)
+    const added: Array<{ type: string; listener: EventListenerOrEventListenerObject }> = []
+    const removed: Array<{ type: string; listener: EventListenerOrEventListenerObject }> = []
+
+    document.addEventListener = ((type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) => {
+      if (type === 'keydown' || type === 'keyup' || type === 'pointerup') {
+        added.push({ type, listener })
+      }
+      return originalAdd(type, listener, options)
+    }) as Document['addEventListener']
+    document.removeEventListener = ((type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) => {
+      if (type === 'keydown' || type === 'keyup' || type === 'pointerup') {
+        removed.push({ type, listener })
+      }
+      return originalRemove(type, listener, options)
+    }) as Document['removeEventListener']
+
+    try {
+      MusicBox.init()
+      MusicBox.resetKeyboardControls()
+
+      expect(added.map(entry => entry.type)).toEqual(['keydown', 'keyup', 'pointerup', 'keydown', 'keydown'])
+      expect(removed).toHaveLength(added.length)
+      for (const entry of added) {
+        expect(removed).toContainEqual(entry)
+      }
+    } finally {
+      document.addEventListener = originalAdd as Document['addEventListener']
+      document.removeEventListener = originalRemove as Document['removeEventListener']
+    }
   })
 
   describe('message handlers', () => {
