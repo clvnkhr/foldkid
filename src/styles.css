@@ -1339,9 +1339,7 @@ body {
 }
 
 @media (max-width: 480px) {
-  .musicbox-controls > .musicbox-dropdown:nth-child(3) .musicbox-dropdown-label,
   .musicbox-controls > .musicbox-dropdown:nth-child(3) .tempo-label,
-  .musicbox-controls > .musicbox-dropdown:nth-child(4) .musicbox-dropdown-label,
   .musicbox-controls > .musicbox-dropdown:nth-child(4) .tempo-label,
   .piano-controls > .octave-indicator,
   .piano-controls > .piano-range-label,
@@ -1696,5 +1694,4 @@ body {
 .dark .piano-key-glow--active {
   animation: glowFlashDark 0.25s ease-out forwards;
 }
-
 
