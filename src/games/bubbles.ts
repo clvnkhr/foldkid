@@ -3,7 +3,7 @@ import { Command } from 'foldkit'
 import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
 import { pop, chime, swoosh } from '../audio'
-import { t, tf, type TranslationKey } from '../i18n'
+import { t, tf, type StringKey } from '../i18n'
 
 const Bubble = S.Struct({ id: S.Number, color: S.String, popped: S.Boolean, size: S.Number })
 type Bubble = typeof Bubble.Type
@@ -14,7 +14,7 @@ const RAINBOW_GRADIENT = 'linear-gradient(135deg, #ff6b6b, #ffd93d, #6bcb5e, #4e
 const RAINBOW_COLORS = ['#ff6b6b', '#ffd93d', '#6bcb5e', '#4ecdc4', '#667eea', '#ff8b94']
 const BUBBLE_GLOSS = 'radial-gradient(circle at 30% 25%, rgba(255,255,255,0.5) 0%, transparent 55%),radial-gradient(circle at 70% 80%, rgba(0,0,0,0.08) 0%, transparent 45%)'
 
-const COLOR_NAME_KEYS: Record<string, TranslationKey> = {
+const COLOR_NAME_KEYS: Record<string, StringKey> = {
   '#FF4757': 'colorRed',
   '#FF7F00': 'colorOrange',
   '#FFD93D': 'colorYellow',
@@ -26,7 +26,7 @@ const COLOR_NAME_KEYS: Record<string, TranslationKey> = {
   '#666666': 'colorGrey',
 }
 
-const getColorName = (color: string): TranslationKey => COLOR_NAME_KEYS[color] ?? 'colorRainbow'
+const getColorName = (color: string): StringKey => COLOR_NAME_KEYS[color] ?? 'colorRainbow'
 
 const isPointerDown = MutableRef.make(false)
 

@@ -972,12 +972,16 @@ export const translations = {
 
 export type TranslationKey = keyof typeof translations[keyof typeof translations]
 
-export const t = (key: TranslationKey, language: string = 'en'): string => {
+export type StringKey = {
+  [K in TranslationKey]: typeof translations.en[K] extends string ? K : never
+}[TranslationKey]
+
+export const t = (key: StringKey, language: string = 'en'): string => {
   const lang = translations[language as keyof typeof translations] ?? translations.en
-  return lang[key] as string
+  return lang[key]
 }
 
-type FunctionKey = {
+export type FunctionKey = {
   [K in TranslationKey]: typeof translations.en[K] extends (...args: never) => string ? K : never
 }[TranslationKey]
 
@@ -987,6 +991,6 @@ export const tf = <K extends FunctionKey>(
   ...args: Parameters<(typeof translations.en)[K]>
 ): string => {
   const lang = translations[language as keyof typeof translations] ?? translations.en
-  const fn = lang[key] as (...args: never) => string
-  return fn(...args as never)
+  const fn = lang[key] as (...args: Parameters<(typeof translations.en)[K]>) => string
+  return fn(...args)
 }

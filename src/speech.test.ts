@@ -2,17 +2,17 @@ import { Effect } from 'effect'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { findVoice, speak } from './speech'
 
-let lastUtterance: SpeechSynthesisUtterance | null = null
+let lastSpokenText = ''
 
 beforeAll(() => {
   // Mock speechSynthesis for test environment
   const mockVoices: SpeechSynthesisVoice[] = []
   const mockSpeechSynthesis = {
     getVoices: () => mockVoices,
-    cancel: () => { lastUtterance = null },
+    cancel: () => { lastSpokenText = '' },
     speak: (utterance: SpeechSynthesisUtterance) => {
-      lastUtterance = utterance
-      setTimeout(() => utterance.onend?.(), 0)
+      lastSpokenText = utterance.text
+      setTimeout(() => utterance.onend?.(new Event('end') as SpeechSynthesisEvent), 0)
     },
     pending: false,
     speaking: false,
@@ -67,5 +67,6 @@ describe('speech', () => {
     const cmd = speak('test', 'result_msg')
     const result = await Effect.runPromise(cmd.effect)
     expect(result).toBe('result_msg')
+    expect(lastSpokenText).toBe('test')
   })
 })

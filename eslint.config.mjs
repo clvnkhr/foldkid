@@ -34,6 +34,13 @@ export default [
           destructuredArrayIgnorePattern: '^_',
         },
       ],
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'TSAsExpression[typeAnnotation.type=\'TSNeverKeyword\']',
+          message: 'Casting to \'never\' bypasses type safety. Use a proper type assertion instead.',
+        },
+      ],
     },
   },
 ]

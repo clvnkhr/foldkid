@@ -2,7 +2,7 @@ import { Effect, Match as M, MutableRef, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
-import { t, type TranslationKey } from '../i18n'
+import { t, type StringKey } from '../i18n'
 
 interface Note {
   pitch: string
@@ -733,7 +733,7 @@ export const INSTRUMENTS: Instrument[] = [
   },
 ]
 
-export const SONG_TKEYS: Record<string, TranslationKey> = {
+export const SONG_TKEYS: Record<string, StringKey> = {
   twinkle: 'musicBoxTwinkle',
   mary: 'musicBoxMary',
   london: 'musicBoxLondon',
@@ -743,7 +743,7 @@ export const SONG_TKEYS: Record<string, TranslationKey> = {
   birthday: 'musicBoxHappyBirthday',
 }
 
-const INST_TKEYS: Record<string, TranslationKey> = {
+const INST_TKEYS: Record<string, StringKey> = {
   bell: 'musicBoxBell',
   flute: 'musicBoxFlute',
   sawtooth: 'musicBoxSawtooth',

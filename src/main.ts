@@ -28,7 +28,7 @@ const SETTINGS_VERSION = 1
 interface PersistedSettings {
   version: number
   language: string
-  darkMode: string
+  darkMode: DarkMode
   muted: boolean
   counterRate: number
   counterPitch: number
@@ -69,16 +69,6 @@ const isDisplayMode = (value: string | undefined): value is 'number' | 'word' | 
 
 const sanitizeDisplayMode = (value: string | undefined, fallback: 'number' | 'word' | 'both'): 'number' | 'word' | 'both' =>
   isDisplayMode(value) ? value : fallback
-
-const VOICE_EFFECT_VALUES = ['normal', 'high', 'low', 'echo', 'highpass', 'lowpass', 'reverse', 'robot', 'alien', 'chipmunk'] as const
-
-type VoiceEffectValue = typeof VOICE_EFFECT_VALUES[number]
-
-const isVoiceEffect = (value: string | undefined): value is VoiceEffectValue =>
-  value !== undefined && (VOICE_EFFECT_VALUES).includes(value as VoiceEffectValue)
-
-const sanitizeVoiceEffect = (value: string | undefined, fallback: VoiceEffectValue): VoiceEffectValue =>
-  isVoiceEffect(value) ? value : fallback
 
 const buildSettingsData = (model: Model): PersistedSettings => ({
   version: SETTINGS_VERSION,
@@ -925,4 +915,3 @@ export const view = (model: Model): Document => {
       ),
     };
   }
-
