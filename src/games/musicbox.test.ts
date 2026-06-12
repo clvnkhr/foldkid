@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Scene, Story } from 'foldkit/test'
 import { resetContext } from '../audio'
 import * as MusicBox from './musicbox'
@@ -75,10 +75,12 @@ class MockAudioContext {
 
 afterEach(() => {
   MusicBox.resetKeyboardControls()
+  MusicBox.resetWakeMonitor()
   resetContext()
   startedFrequencies.length = 0
   document.body.innerHTML = ''
   globalThis.AudioContext = originalAudioContext
+  vi.restoreAllMocks()
 })
 
 describe('MusicBox', () => {
@@ -149,6 +151,24 @@ describe('MusicBox', () => {
       document.addEventListener = originalAdd as Document['addEventListener']
       document.removeEventListener = originalRemove as Document['removeEventListener']
     }
+  })
+
+  it('starts one removable wake monitor from init', () => {
+    const addSpy = vi.spyOn(window, 'addEventListener')
+    const removeSpy = vi.spyOn(window, 'removeEventListener')
+    const intervalId = 123 as unknown as ReturnType<typeof window.setInterval>
+    const setIntervalSpy = vi.spyOn(window, 'setInterval').mockReturnValue(intervalId)
+    const clearIntervalSpy = vi.spyOn(window, 'clearInterval').mockImplementation(() => {})
+
+    MusicBox.init()
+    MusicBox.init()
+    MusicBox.resetWakeMonitor()
+
+    expect(setIntervalSpy).toHaveBeenCalledTimes(1)
+    expect(addSpy.mock.calls.filter(([type]) => type === 'pageshow')).toHaveLength(1)
+    expect(clearIntervalSpy).toHaveBeenCalledWith(intervalId)
+    const pageshowListener = addSpy.mock.calls.find(([type]) => type === 'pageshow')?.[1]
+    expect(removeSpy).toHaveBeenCalledWith('pageshow', pageshowListener)
   })
 
   describe('message handlers', () => {

@@ -1,16 +1,18 @@
-import { Effect } from 'effect'
-import { beforeAll, describe, expect, it } from 'vitest'
+import { Effect, Fiber } from 'effect'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { findVoice, speak } from './speech'
 
 let lastSpokenText = ''
+let speakCount = 0
 
-beforeAll(() => {
+const installSpeechMock = (): void => {
   // Mock speechSynthesis for test environment
   const mockVoices: SpeechSynthesisVoice[] = []
   const mockSpeechSynthesis = {
     getVoices: () => mockVoices,
     cancel: () => { lastSpokenText = '' },
     speak: (utterance: SpeechSynthesisUtterance) => {
+      speakCount += 1
       lastSpokenText = utterance.text
       setTimeout(() => utterance.onend?.(new Event('end') as SpeechSynthesisEvent), 0)
     },
@@ -39,6 +41,17 @@ beforeAll(() => {
     onboundary: ((e: SpeechSynthesisEvent) => void) | null = null
     constructor(text: string) { this.text = text }
   } as unknown as typeof SpeechSynthesisUtterance
+}
+
+beforeEach(() => {
+  lastSpokenText = ''
+  speakCount = 0
+  installSpeechMock()
+})
+
+afterEach(() => {
+  vi.useRealTimers()
+  vi.restoreAllMocks()
 })
 
 describe('speech', () => {
@@ -68,5 +81,32 @@ describe('speech', () => {
     const result = await Effect.runPromise(cmd.effect)
     expect(result).toBe('result_msg')
     expect(lastSpokenText).toBe('test')
+  })
+
+  it('speak completes without browser speech APIs', async () => {
+    const originalSpeechSynthesis = globalThis.speechSynthesis
+    const originalUtterance = globalThis.SpeechSynthesisUtterance
+    globalThis.speechSynthesis = undefined as unknown as SpeechSynthesis
+    globalThis.SpeechSynthesisUtterance = undefined as unknown as typeof SpeechSynthesisUtterance
+
+    try {
+      const result = await Effect.runPromise(speak('silent', 'result_msg').effect)
+      expect(result).toBe('result_msg')
+      expect(lastSpokenText).toBe('')
+    } finally {
+      globalThis.speechSynthesis = originalSpeechSynthesis
+      globalThis.SpeechSynthesisUtterance = originalUtterance
+    }
+  })
+
+  it('clears the deferred speak timer when interrupted', async () => {
+    vi.useFakeTimers()
+
+    const fiber = Effect.runFork(speak('interrupted', 'result_msg').effect)
+    await Effect.runPromise(Fiber.interrupt(fiber))
+    vi.runAllTimers()
+
+    expect(speakCount).toBe(0)
+    expect(lastSpokenText).toBe('')
   })
 })
