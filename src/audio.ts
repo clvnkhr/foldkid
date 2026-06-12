@@ -2,17 +2,28 @@ import { Effect, MutableRef } from 'effect'
 
 const sharedCtx = MutableRef.make<AudioContext | undefined>(undefined)
 
+const isRetiredContext = (ctx: AudioContext): boolean =>
+  ctx.state === 'closed' || ctx.state === 'interrupted'
+
+export const resetContext = (): void => {
+  const ctx = MutableRef.get(sharedCtx)
+  if (ctx) {
+    try { ctx.close() } catch { /* ignore */ }
+  }
+  MutableRef.set(sharedCtx, undefined)
+}
+
 export const getContext = (): AudioContext | undefined => {
   let ctx = MutableRef.get(sharedCtx)
-  if (ctx?.state === 'closed') {
-    MutableRef.set(sharedCtx, undefined)
+  if (ctx && isRetiredContext(ctx)) {
+    resetContext()
     ctx = undefined
   }
   if (!ctx) {
     try { ctx = new AudioContext() } catch { return undefined }
     MutableRef.set(sharedCtx, ctx)
   }
-  if (ctx.state === 'suspended') ctx.resume()
+  if (ctx.state === 'suspended') ctx.resume().catch(() => {})
   return ctx
 }
 

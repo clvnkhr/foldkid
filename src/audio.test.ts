@@ -1,6 +1,84 @@
 import { Effect } from 'effect'
-import { describe, expect, it } from 'vitest'
-import { click, pop, chime, boing, swoosh } from './audio'
+import { afterEach, describe, expect, it } from 'vitest'
+import { click, pop, chime, boing, swoosh, resetContext } from './audio'
+import * as MusicBox from './games/musicbox'
+
+const originalAudioContext = globalThis.AudioContext
+
+const makeAudioParam = (initial = 0): AudioParam => ({
+  value: initial,
+  automationRate: 'a-rate',
+  cancelAndHoldAtTime: () => makeAudioParam(initial),
+  cancelScheduledValues: () => makeAudioParam(initial),
+  exponentialRampToValueAtTime: () => makeAudioParam(initial),
+  linearRampToValueAtTime: () => makeAudioParam(initial),
+  setTargetAtTime: () => makeAudioParam(initial),
+  setValueAtTime: () => makeAudioParam(initial),
+  setValueCurveAtTime: () => makeAudioParam(initial),
+} as unknown as AudioParam)
+
+const makeAudioNode = (): AudioNode => ({
+  connect: () => makeAudioNode(),
+  disconnect: () => {},
+} as unknown as AudioNode)
+
+class MockAudioContext {
+  static created = 0
+
+  state: AudioContextState = 'running'
+  currentTime = 0
+  destination = makeAudioNode() as AudioDestinationNode
+
+  constructor() {
+    MockAudioContext.created += 1
+  }
+
+  createOscillator(): OscillatorNode {
+    return {
+      ...makeAudioNode(),
+      type: 'sine',
+      frequency: makeAudioParam(440),
+      detune: makeAudioParam(0),
+      start: () => {},
+      stop: () => {},
+      onended: null,
+    } as unknown as OscillatorNode
+  }
+
+  createGain(): GainNode {
+    return {
+      ...makeAudioNode(),
+      gain: makeAudioParam(1),
+    } as unknown as GainNode
+  }
+
+  createDynamicsCompressor(): DynamicsCompressorNode {
+    return {
+      ...makeAudioNode(),
+      threshold: makeAudioParam(-24),
+      knee: makeAudioParam(30),
+      ratio: makeAudioParam(12),
+      attack: makeAudioParam(0.003),
+      release: makeAudioParam(0.25),
+    } as unknown as DynamicsCompressorNode
+  }
+
+  close(): Promise<void> {
+    this.state = 'closed'
+    return Promise.resolve()
+  }
+
+  resume(): Promise<void> {
+    this.state = 'running'
+    return Promise.resolve()
+  }
+}
+
+afterEach(() => {
+  resetContext()
+  MockAudioContext.created = 0
+  globalThis.AudioContext = originalAudioContext
+})
 
 describe('audio', () => {
   it('click returns command with PlayClick name', () => {
@@ -32,5 +110,16 @@ describe('audio', () => {
     const cmd = click('result')
     const result = await Effect.runPromise(cmd.effect)
     expect(result).toBe('result')
+  })
+
+  it('shares one AudioContext between simple sounds and MusicBox notes', async () => {
+    globalThis.AudioContext = MockAudioContext as unknown as typeof AudioContext
+
+    const result = await Effect.runPromise(click('result').effect)
+    expect(result).toBe('result')
+
+    MusicBox.update(MusicBox.init(), MusicBox.NoteOn({ pitch: 'C4' }))
+
+    expect(MockAudioContext.created).toBe(1)
   })
 })

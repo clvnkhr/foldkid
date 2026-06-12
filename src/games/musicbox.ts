@@ -2,6 +2,7 @@ import { Effect, Match as M, MutableRef, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
+import { getContext, resetContext } from '../audio'
 import { t, type StringKey } from '../i18n'
 
 interface Note {
@@ -274,8 +275,6 @@ const bindShortcutKeys = (): void => {
     }
   })
 }
-
-
 
 const highlightKey = (pitch: string): void => {
   document.querySelectorAll('.piano-key-glow').forEach(el => {
@@ -750,8 +749,8 @@ const INST_TKEYS: Record<string, StringKey> = {
   guitar: 'musicBoxGuitar',
 }
 
-let sharedCtx: AudioContext | undefined
 let masterCompressor: DynamicsCompressorNode | undefined
+let compressorContext: AudioContext | undefined
 const stopFlag = MutableRef.make(false)
 const pauseFlag = MutableRef.make(false)
 const playbackTempo = MutableRef.make(1)
@@ -759,24 +758,19 @@ const playbackTranspose = MutableRef.make(0)
 const currentLyricLine = MutableRef.make(-1)
 
 const getCtx = (): AudioContext | undefined => {
-  if (sharedCtx?.state === 'closed' || sharedCtx?.state === 'interrupted') {
-    try { sharedCtx.close() } catch { /* ignore */ }
-    sharedCtx = undefined
-  }
-  if (!sharedCtx) {
-    try { sharedCtx = new AudioContext() } catch { return }
-    masterCompressor = sharedCtx.createDynamicsCompressor()
+  const ctx = getContext()
+  if (!ctx) return undefined
+  if (!masterCompressor || compressorContext !== ctx) {
+    masterCompressor = ctx.createDynamicsCompressor()
     masterCompressor.threshold.value = -18
     masterCompressor.knee.value = 12
     masterCompressor.ratio.value = 12
     masterCompressor.attack.value = 0.003
     masterCompressor.release.value = 0.1
-    masterCompressor.connect(sharedCtx.destination)
+    masterCompressor.connect(ctx.destination)
+    compressorContext = ctx
   }
-  if (sharedCtx.state === 'suspended') {
-    sharedCtx.resume().catch(() => { })
-  }
-  return sharedCtx
+  return ctx
 }
 
 if (typeof window !== 'undefined') {
@@ -784,11 +778,9 @@ if (typeof window !== 'undefined') {
   // (state==="running" but no audio) or gets interrupted. Closing and letting
   // the next user gesture recreate is the only reliable fix.
   const recreateCtx = (): void => {
-    if (sharedCtx) {
-      try { sharedCtx.close() } catch { /* ignore */ }
-      sharedCtx = undefined
-    }
+    resetContext()
     masterCompressor = undefined
+    compressorContext = undefined
   }
   // pageshow with persisted=true fires on bfcache restore (includes wake)
   window.addEventListener('pageshow', (e) => {
