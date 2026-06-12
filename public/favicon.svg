@@ -2,13 +2,24 @@
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#667eea"/>
+      <stop offset="50%" stop-color="#a78bfa"/>
       <stop offset="100%" stop-color="#f093fb"/>
     </linearGradient>
-    <linearGradient id="star" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="face" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#fff"/>
-      <stop offset="100%" stop-color="#e0e7ff"/>
+      <stop offset="100%" stop-color="#fef9c3"/>
     </linearGradient>
   </defs>
-  <rect width="512" height="512" rx="100" fill="url(#bg)"/>
-  <path d="M256 80 L280 180 L380 180 L300 240 L325 340 L256 280 L187 340 L212 240 L132 180 L232 180 Z" fill="url(#star)"/>
+  <rect width="512" height="512" rx="115" fill="url(#bg)"/>
+  <circle cx="256" cy="268" r="160" fill="url(#face)"/>
+  <ellipse cx="196" cy="240" rx="22" ry="26" fill="#475569"/>
+  <ellipse cx="316" cy="240" rx="22" ry="26" fill="#475569"/>
+  <circle cx="192" cy="232" r="8" fill="#fff"/>
+  <circle cx="312" cy="232" r="8" fill="#fff"/>
+  <path d="M175 300 Q256 360 337 300" stroke="#475569" stroke-width="14" stroke-linecap="round" fill="none"/>
+  <circle cx="128" cy="120" r="18" fill="#fde047"/>
+  <circle cx="400" cy="160" r="12" fill="#fde047"/>
+  <circle cx="370" cy="100" r="14" fill="#86efac"/>
+  <circle cx="140" cy="380" r="10" fill="#fca5a5"/>
+  <circle cx="380" cy="370" r="16" fill="#c4b5fd"/>
 </svg>

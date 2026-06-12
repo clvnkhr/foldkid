@@ -28,7 +28,23 @@ export const view = (order: number[], language: string, dragIndex: number) => {
     [h.Class('landing')],
     [
       h.div([h.Class('header')], [
-        h.h1([h.Class('logo')], [t('appName', language)]),
+        h.h1([h.Class('logo')], [
+          h.svg([h.Class('landing-icon'), h.ViewBox('0 0 512 512'), h.Width('64'), h.Height('64')], [
+            h.rect([h.Width('512'), h.Height('512'), h.Attribute('rx', '115'), h.Fill('#667eea')], []),
+            h.circle([h.Cx('256'), h.Cy('268'), h.R('160'), h.Fill('#fef9c3')], []),
+            h.ellipse([h.Cx('196'), h.Cy('240'), h.Attribute('rx', '22'), h.Attribute('ry', '26'), h.Fill('#475569')], []),
+            h.ellipse([h.Cx('316'), h.Cy('240'), h.Attribute('rx', '22'), h.Attribute('ry', '26'), h.Fill('#475569')], []),
+            h.circle([h.Cx('192'), h.Cy('232'), h.R('8'), h.Fill('#fff')], []),
+            h.circle([h.Cx('312'), h.Cy('232'), h.R('8'), h.Fill('#fff')], []),
+            h.path([h.D('M175 300 Q256 360 337 300'), h.Stroke('#475569'), h.StrokeWidth('14'), h.Attribute('stroke-linecap', 'round'), h.Fill('none')], []),
+            h.circle([h.Cx('128'), h.Cy('120'), h.R('18'), h.Fill('#fde047')], []),
+            h.circle([h.Cx('400'), h.Cy('160'), h.R('12'), h.Fill('#fde047')], []),
+            h.circle([h.Cx('370'), h.Cy('100'), h.R('14'), h.Fill('#86efac')], []),
+            h.circle([h.Cx('140'), h.Cy('380'), h.R('10'), h.Fill('#fca5a5')], []),
+            h.circle([h.Cx('380'), h.Cy('370'), h.R('16'), h.Fill('#c4b5fd')], []),
+          ]),
+          t('appName', language),
+        ]),
         h.p([h.Class('subtitle')], [t('pickGame', language)]),
       ]),
       h.div([h.Class('game-grid')], [
