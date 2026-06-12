@@ -1,4 +1,4 @@
-import { Effect, Match as M, Schema as S, Stream } from 'effect'
+import { Effect, Match as M, MutableRef, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
@@ -147,15 +147,15 @@ export const PianoKeys = {
   BOTTOM: buildKeyboard('C3', 12),
 }
 
-const activeNotes = new Map<string, {
+const activeNotes = MutableRef.make(new Map<string, {
   nodes: Array<{ osc: OscillatorNode; gain: GainNode }>
   masterGain: GainNode
   release: number
-}>()
-let selectedInstrumentIndex = 0
-let keyboardBound = false
-let shortcutKeysBound = false
-let currentOctaveOffset = 0
+}>())
+const selectedInstrumentIndex = MutableRef.make(0)
+const keyboardBound = MutableRef.make(false)
+const shortcutKeysBound = MutableRef.make(false)
+const currentOctaveOffset = MutableRef.make(0)
 
 
 interface QWERTYKey {
@@ -203,9 +203,9 @@ const handleKeyDown = (e: KeyboardEvent): void => {
   const pitch = QWERTY_MAP[e.key.toLowerCase()]
   if (pitch) {
     e.preventDefault()
-    const instr = INSTRUMENTS[selectedInstrumentIndex]
+    const instr = INSTRUMENTS[MutableRef.get(selectedInstrumentIndex)]
     if (!instr) return
-    startNote(applyOctaveOffset(pitch, currentOctaveOffset), instr)
+    startNote(applyOctaveOffset(pitch, MutableRef.get(currentOctaveOffset)), instr)
   }
 }
 
@@ -213,15 +213,15 @@ const handleKeyUp = (e: KeyboardEvent): void => {
   const pitch = QWERTY_MAP[e.key.toLowerCase()]
   if (pitch) {
     e.preventDefault()
-    stopNote(applyOctaveOffset(pitch, currentOctaveOffset))
+    stopNote(applyOctaveOffset(pitch, MutableRef.get(currentOctaveOffset)))
   }
 }
 
 const SILENT_WAV = 'data:audio/wav;base64,UklGRiYAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQIAAAAAAA=='
 
 const bindKeyboard = (): void => {
-  if (keyboardBound) return
-  keyboardBound = true
+  if (MutableRef.get(keyboardBound)) return
+  MutableRef.set(keyboardBound, true)
   document.addEventListener('keydown', handleKeyDown)
   document.addEventListener('keyup', handleKeyUp)
   // iOS Safari: AudioContext must be created/resumed within a qualifying user
@@ -248,8 +248,8 @@ const bindKeyboard = (): void => {
 }
 
 const bindShortcutKeys = (): void => {
-  if (shortcutKeysBound) return
-  shortcutKeysBound = true
+  if (MutableRef.get(shortcutKeysBound)) return
+  MutableRef.set(shortcutKeysBound, true)
   document.addEventListener('keydown', (e: KeyboardEvent): void => {
     if (e.repeat) return
     if (!(e.target instanceof HTMLElement)) return
@@ -308,13 +308,13 @@ const unhighlightAllKeys = (): void => {
 }
 
 const highlightLyricLine = (index: number): void => {
-  if (index === currentLyricLine) return
-  if (currentLyricLine >= 0) {
-    document.querySelectorAll(`[data-lyric-index="${currentLyricLine}"]`).forEach(el => {
+  if (index === MutableRef.get(currentLyricLine)) return
+  if (MutableRef.get(currentLyricLine) >= 0) {
+    document.querySelectorAll(`[data-lyric-index="${MutableRef.get(currentLyricLine)}"]`).forEach(el => {
       el.classList.remove('lyrics-line--active')
     })
   }
-  currentLyricLine = index
+  MutableRef.set(currentLyricLine, index)
   document.querySelectorAll(`[data-lyric-index="${index}"]`).forEach(el => {
     el.classList.add('lyrics-line--active')
   })
@@ -335,7 +335,7 @@ const unhighlightAllLyricLines = (): void => {
   document.querySelectorAll('.lyrics-line--active').forEach(el => {
     el.classList.remove('lyrics-line--active')
   })
-  currentLyricLine = -1
+  MutableRef.set(currentLyricLine, -1)
 }
 
 const repeat = <T>(arr: T[], n: number): T[] =>
@@ -752,11 +752,11 @@ const INST_TKEYS: Record<string, TranslationKey> = {
 
 let sharedCtx: AudioContext | undefined
 let masterCompressor: DynamicsCompressorNode | undefined
-let stopFlag = false
-let pauseFlag = false
-let playbackTempo = 1
-let playbackTranspose = 0
-let currentLyricLine = -1
+const stopFlag = MutableRef.make(false)
+const pauseFlag = MutableRef.make(false)
+const playbackTempo = MutableRef.make(1)
+const playbackTranspose = MutableRef.make(0)
+const currentLyricLine = MutableRef.make(-1)
 
 const getCtx = (): AudioContext | undefined => {
   if (sharedCtx?.state === 'closed' || sharedCtx?.state === 'interrupted') {
@@ -881,9 +881,9 @@ const playSongCmd = (
 ): Command.Command<ReturnType<typeof SongEnded>> => ({
   name: 'PlayMusicBox',
   effect: Effect.gen(function* () {
-    stopFlag = false
-    pauseFlag = false
-    const instr = INSTRUMENTS[selectedInstrumentIndex]
+    MutableRef.set(stopFlag, false)
+    MutableRef.set(pauseFlag, false)
+    const instr = INSTRUMENTS[MutableRef.get(selectedInstrumentIndex)]
     if (!instr) return msg
     const totalDur = song.notes.reduce((sum, n) => sum + n.dur, 0)
     const nonEmptyIndices = song.lyrics
@@ -892,10 +892,10 @@ const playSongCmd = (
     const beatsPerLine = totalDur / nonEmptyIndices.length
     let cumDur = 0
     for (let i = 0; i < song.notes.length; i++) {
-      if (stopFlag) break
+      if (MutableRef.get(stopFlag)) break
       const note = song.notes[i]!
       if (note.pitch) {
-        const tp = transposePitch(note.pitch, playbackTranspose)
+        const tp = transposePitch(note.pitch, MutableRef.get(playbackTranspose))
         const freq = FREQUENCIES[tp]
         if (freq) playNoteAudio(freq, note.dur, instr)
         highlightKey(tp)
@@ -903,14 +903,14 @@ const playSongCmd = (
       const rawIdx = Math.min(Math.floor(cumDur / beatsPerLine), nonEmptyIndices.length - 1)
       highlightLyricLine(nonEmptyIndices[rawIdx]!)
       cumDur += note.dur
-      yield* Effect.sleep((note.dur * 350) / playbackTempo)
+      yield* Effect.sleep((note.dur * 350) / MutableRef.get(playbackTempo))
       unhighlightAllKeys()
-      while (pauseFlag && !stopFlag) {
+      while (MutableRef.get(pauseFlag) && !MutableRef.get(stopFlag)) {
         yield* Effect.sleep(100)
       }
     }
-    stopFlag = false
-    pauseFlag = false
+    MutableRef.set(stopFlag, false)
+    MutableRef.set(pauseFlag, false)
     unhighlightAllKeys()
     unhighlightAllLyricLines()
     return msg
@@ -919,7 +919,7 @@ const playSongCmd = (
 
 const startNote = (pitch: string, inst: Instrument): void => {
   const freq = FREQUENCIES[pitch]
-  if (!freq || activeNotes.has(pitch)) return
+  if (!freq || MutableRef.get(activeNotes).has(pitch)) return
   const ctx = getCtx()
   if (!ctx) return
   const now = ctx.currentTime + SAFETY_MARGIN
@@ -968,15 +968,15 @@ const startNote = (pitch: string, inst: Instrument): void => {
     nodes.push({ osc: lfo, gain: lfoGain })
   }
 
-  activeNotes.set(pitch, { nodes, masterGain, release: inst.release })
+  MutableRef.get(activeNotes).set(pitch, { nodes, masterGain, release: inst.release })
   highlightKey(pitch)
 }
 
 const stopNote = (pitch: string): void => {
-  const entry = activeNotes.get(pitch)
+  const entry = MutableRef.get(activeNotes).get(pitch)
   if (!entry) return
   const { nodes, masterGain, release } = entry
-  activeNotes.delete(pitch)
+  MutableRef.get(activeNotes).delete(pitch)
   unhighlightKey(pitch)
   const ctx = getCtx()
   const now = (ctx?.currentTime ?? performance.now() / 1000) + SAFETY_MARGIN
@@ -996,7 +996,7 @@ const stopNote = (pitch: string): void => {
 }
 
 const stopAllNotes = (): void => {
-  for (const pitch of activeNotes.keys()) {
+  for (const pitch of MutableRef.get(activeNotes).keys()) {
     stopNote(pitch)
   }
 }
@@ -1054,13 +1054,13 @@ export type Message = typeof Message.Type
 export const init = (): Model => {
   bindKeyboard()
   bindShortcutKeys()
-  stopFlag = false
-  pauseFlag = false
-  selectedInstrumentIndex = 0
-  currentOctaveOffset = 0
-  playbackTempo = 1
-  playbackTranspose = 0
-  currentLyricLine = -1
+  MutableRef.set(stopFlag, false)
+  MutableRef.set(pauseFlag, false)
+  MutableRef.set(selectedInstrumentIndex, 0)
+  MutableRef.set(currentOctaveOffset, 0)
+  MutableRef.set(playbackTempo, 1)
+  MutableRef.set(playbackTranspose, 0)
+  MutableRef.set(currentLyricLine, -1)
   return { selectedSong: 0, selectedInstrument: 0, isPlaying: false, isPaused: false, songTranspose: 0, whiteKeys: 8, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, lyricsExpanded: false, songOrder: SONGS.map((_, i) => i), hiddenSongs: SONGS.map(() => false), dragIndex: -1 }
 }
 
@@ -1073,12 +1073,12 @@ export const update = (
     M.tagsExhaustive({
       MusicBoxPlay: () => {
         if (model.isPaused) {
-          pauseFlag = false
+          MutableRef.set(pauseFlag, false)
           return [{ ...model, isPaused: false }, []]
         }
         getCtx() // Safari: AudioContext must be created within a user gesture
-        playbackTempo = model.tempo
-        playbackTranspose = model.songTranspose
+        MutableRef.set(playbackTempo, model.tempo)
+        MutableRef.set(playbackTranspose, model.songTranspose)
         const song = SONGS[model.selectedSong]
         if (!song) return [model, []]
         return [
@@ -1087,8 +1087,8 @@ export const update = (
         ]
       },
       MusicBoxStop: () => {
-        stopFlag = true
-        pauseFlag = false
+        MutableRef.set(stopFlag, true)
+        MutableRef.set(pauseFlag, false)
         stopAllNotes()
         unhighlightAllKeys()
         unhighlightAllLyricLines()
@@ -1096,8 +1096,8 @@ export const update = (
       },
       MusicBoxSetSong: (msg) => {
         if (model.isPlaying) {
-          stopFlag = true
-          pauseFlag = false
+          MutableRef.set(stopFlag, true)
+          MutableRef.set(pauseFlag, false)
           stopAllNotes()
           unhighlightAllKeys()
         }
@@ -1105,11 +1105,11 @@ export const update = (
         return [{ ...model, selectedSong: msg.value, isPlaying: false, isPaused: false }, []]
       },
       MusicBoxSetInstrument: (msg) => {
-        selectedInstrumentIndex = msg.value
+        MutableRef.set(selectedInstrumentIndex, msg.value)
         return [{ ...model, selectedInstrument: msg.value }, []]
       },
       MusicBoxSongEnded: () => {
-        pauseFlag = false
+        MutableRef.set(pauseFlag, false)
         return [{ ...model, isPlaying: false, isPaused: false }, []]
       },
       MusicBoxNoteOn: (msg) => {
@@ -1147,13 +1147,13 @@ export const update = (
       MusicBoxTempoUp: () => {
         const t = Math.round((model.tempo + 0.25) * 100) / 100
         const next = t > 3 ? model : { ...model, tempo: t }
-        if (next.tempo !== model.tempo) playbackTempo = next.tempo
+        if (next.tempo !== model.tempo) MutableRef.set(playbackTempo, next.tempo)
         return [next, []]
       },
       MusicBoxTempoDown: () => {
         const t = Math.round((model.tempo - 0.25) * 100) / 100
         const next = t < 0.25 ? model : { ...model, tempo: t }
-        if (next.tempo !== model.tempo) playbackTempo = next.tempo
+        if (next.tempo !== model.tempo) MutableRef.set(playbackTempo, next.tempo)
         return [next, []]
       },
       MusicBoxToggleLyrics: () => {
@@ -1161,10 +1161,10 @@ export const update = (
       },
       MusicBoxTogglePause: () => {
         if (model.isPaused) {
-          pauseFlag = false
+          MutableRef.set(pauseFlag, false)
           return [{ ...model, isPaused: false }, []]
         } else {
-          pauseFlag = true
+          MutableRef.set(pauseFlag, true)
           unhighlightAllKeys()
           return [{ ...model, isPaused: true }, []]
         }
@@ -1172,13 +1172,13 @@ export const update = (
       MusicBoxTransposeUp: () => {
         if (model.songTranspose >= MAX_TRANSPOSE) return [model, []]
         const next = model.songTranspose + 1
-        playbackTranspose = next
+        MutableRef.set(playbackTranspose, next)
         return [{ ...model, songTranspose: next }, []]
       },
       MusicBoxTransposeDown: () => {
         if (model.songTranspose <= MIN_TRANSPOSE) return [model, []]
         const next = model.songTranspose - 1
-        playbackTranspose = next
+        MutableRef.set(playbackTranspose, next)
         return [{ ...model, songTranspose: next }, []]
       },
       MusicBoxToggleSongVisibility: (msg) => {
@@ -1213,7 +1213,7 @@ export const update = (
   )
 
 export const view = (model: Model, language: string = 'en') => {
-  currentOctaveOffset = model.octaveOffset
+  MutableRef.set(currentOctaveOffset, model.octaveOffset)
   const h = html<Message>()
   const topKb = buildKeyboard(shiftStart('C4', model.topShift), model.whiteKeys, model.octaveOffset)
   const topWhite = topKb.keys.filter(k => k.type === 'white')

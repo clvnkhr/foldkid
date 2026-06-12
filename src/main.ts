@@ -1,4 +1,4 @@
-import { Effect, Match as M, Option, Schema as S, Stream } from 'effect'
+import { Effect, Match as M, MutableRef, Option, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { Document, html } from 'foldkit/html'
 
@@ -102,13 +102,14 @@ const buildSettingsData = (model: Model): PersistedSettings => ({
   landingOrder: model.landingOrder,
 })
 
-let persistTimer: ReturnType<typeof setTimeout> | undefined
+const persistTimer = MutableRef.make<ReturnType<typeof setTimeout> | undefined>(undefined)
 
 const persistSettings = (model: Model): Command.Command<Message> => {
-  if (persistTimer) clearTimeout(persistTimer)
-  persistTimer = setTimeout(() => {
+  const tid = MutableRef.get(persistTimer)
+  if (tid) clearTimeout(tid)
+  MutableRef.set(persistTimer, setTimeout(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(buildSettingsData(model)))
-  }, 200)
+  }, 200))
   return {
     name: 'PersistSettings',
     effect: Effect.succeed(SettingsPersisted()),

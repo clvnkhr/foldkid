@@ -1,4 +1,4 @@
-import { Effect, Match as M, Option as O, Queue, Schema as S, Stream } from 'effect'
+import { Effect, Match as M, MutableRef, Option as O, Queue, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
@@ -28,7 +28,7 @@ const COLOR_NAME_KEYS: Record<string, TranslationKey> = {
 
 const getColorName = (color: string): TranslationKey => COLOR_NAME_KEYS[color] ?? 'colorRainbow'
 
-let isPointerDown = false
+const isPointerDown = MutableRef.make(false)
 
 export const Model = S.Struct({ bubbles: S.Array(Bubble), score: S.Number, nextId: S.Number, rainbowMode: S.Boolean, popLabel: S.Boolean, sayColor: S.Boolean, selectedColor: S.String })
 export type Model = typeof Model.Type
@@ -440,8 +440,8 @@ export const view = (model: Model, language: string = 'en') => {
                       id: 0,
                     }
 
-                    const onPointerDown = (): void => { isPointerDown = true }
-                    const onPointerUp = (): void => { isPointerDown = false }
+                    const onPointerDown = (): void => { MutableRef.set(isPointerDown, true) }
+                    const onPointerUp = (): void => { MutableRef.set(isPointerDown, false) }
                     document.addEventListener('pointerdown', onPointerDown)
                     document.addEventListener('pointerup', onPointerUp)
                     document.addEventListener('pointerleave', onPointerUp)
@@ -499,7 +499,7 @@ export const view = (model: Model, language: string = 'en') => {
             h.div(
               [
                   h.OnPointerDown(() => O.some(ClickedPop({ id: b.id }))),
-                  h.OnPointerMove(() => isPointerDown ? O.some(ClickedPop({ id: b.id })) : O.none()),
+                  h.OnPointerMove(() => MutableRef.get(isPointerDown) ? O.some(ClickedPop({ id: b.id })) : O.none()),
                   h.Class('bubble'),
                   h.Style({
                     ...(b.color.startsWith('linear-gradient') ? { background: `${b.color},${BUBBLE_GLOSS}` } : { backgroundColor: b.color }),

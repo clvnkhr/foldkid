@@ -142,9 +142,6 @@ const ballGradient = (hue: number, negative: boolean): string => {
   ].join(' ')
 }
 
-let pointerDownTime = 0
-let pressedButton: 'inc' | 'dec' | null = null
-
 // BALL PHYSICS //
 
 interface BallState {
@@ -163,9 +160,7 @@ const FRICTION = 0.995
 const BALL_BOUNCE = 0.3
 const WALL_FRICTION = 0.85
 
-const activeParticles = new Set<HTMLElement>()
-
-const poof = (el: HTMLElement): void => {
+const poof = (el: HTMLElement, activeParticles: Set<HTMLElement>): void => {
   const rect = el.getBoundingClientRect()
   const cx = rect.left + rect.width / 2
   const cy = rect.top + rect.height / 2
@@ -229,7 +224,7 @@ interface TickState {
   frozen: boolean
 }
 
-const tick = (state: TickState, parent: HTMLElement): void => {
+const tick = (state: TickState, parent: HTMLElement, activeParticles: Set<HTMLElement>): void => {
   const dt = 1 / 60
   const { rendered } = state
   const w = state.w
@@ -247,7 +242,7 @@ const tick = (state: TickState, parent: HTMLElement): void => {
 
   while (rendered.length > target) {
     const b = rendered.pop()
-    if (b) poof(b.el)
+    if (b) poof(b.el, activeParticles)
   }
 
   if (rendered.length < target) {
@@ -383,6 +378,8 @@ const tick = (state: TickState, parent: HTMLElement): void => {
 
 export const view = (model: Model, language: string = 'en') => {
   const h = html<Message>()
+  let pointerDownTime = 0
+  let pressedButton: 'inc' | 'dec' | null = null
 
   const displayText = (): string => {
     if (model.displayMode === 'word') return numberToWord(model.count, language)
@@ -437,6 +434,7 @@ export const view = (model: Model, language: string = 'en') => {
               name: 'counterBalls',
               f: (element) => Stream.callback<never>(_queue =>
                 Effect.gen(function* () {
+                  const activeParticles = new Set<HTMLElement>()
                   yield* Effect.acquireRelease(
                     Effect.sync(() => {
                       const parent = element as HTMLElement
@@ -465,7 +463,7 @@ export const view = (model: Model, language: string = 'en') => {
                       mo.observe(parent, { attributes: true, attributeFilter: ['data-count', 'data-fontsize'] })
                       const loop = () => {
                         if (!state.running) return
-                        tick(state, parent)
+                        tick(state, parent, activeParticles)
                         state.id = requestAnimationFrame(loop)
                       }
                       state.id = requestAnimationFrame(loop)

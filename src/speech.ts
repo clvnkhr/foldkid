@@ -12,14 +12,19 @@ export const speak = <Msg>(
   options?: { rate?: number; pitch?: number; lang?: string },
 ) => ({
   name: 'Speak',
-  effect: Effect.sync(() => {
+  effect: Effect.callback<Msg>((resume) => {
     speechSynthesis.cancel()
-    const utterance = new SpeechSynthesisUtterance(text)
-    utterance.rate = options?.rate ?? 0.85
-    utterance.pitch = options?.pitch ?? 1.1
-    utterance.lang = options?.lang ?? 'en'
-    const voice = findVoice(utterance.lang)
-    if (voice) utterance.voice = voice
-    speechSynthesis.speak(utterance)
-  }).pipe(Effect.as(msg)),
+    setTimeout(() => {
+      const utterance = new SpeechSynthesisUtterance(text)
+      utterance.rate = options?.rate ?? 0.85
+      utterance.pitch = options?.pitch ?? 1.1
+      utterance.lang = options?.lang ?? 'en'
+      const voice = findVoice(utterance.lang)
+      if (voice) utterance.voice = voice
+      utterance.onend = () => resume(Effect.succeed(msg))
+      utterance.onerror = () => resume(Effect.succeed(msg))
+      speechSynthesis.speak(utterance)
+    }, 0)
+    return Effect.sync(() => {})
+  }),
 })

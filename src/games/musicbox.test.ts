@@ -662,4 +662,65 @@ describe('MusicBox', () => {
       )
     })
   })
+
+  describe('global state refactor', () => {
+    it('SetSong during playback stops playing and sets isPlaying false', () => {
+      Story.story(
+        MusicBox.update,
+        Story.with({ ...MusicBox.init(), isPlaying: true, isPaused: false }),
+        Story.message(MusicBox.SetSong({ value: 2 })),
+        Story.model((model) => {
+          expect(model.isPlaying).toBe(false)
+          expect(model.isPaused).toBe(false)
+          expect(model.selectedSong).toBe(2)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('Play after SetSong works (stopFlag was reset)', () => {
+      Story.story(
+        MusicBox.update,
+        Story.with({ ...MusicBox.init(), isPlaying: false, selectedSong: 1 }),
+        Story.message(MusicBox.SetSong({ value: 0 })),
+        Story.Command.expectNone(),
+        Story.message(MusicBox.Play()),
+        Story.model((model) => {
+          expect(model.isPlaying).toBe(true)
+        }),
+        Story.Command.resolveAll(
+          [{ name: 'PlayMusicBox' }, MusicBox.SongEnded()],
+        ),
+        Story.model((model) => {
+          expect(model.isPlaying).toBe(false)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('SongEnded sets isPlaying to false', () => {
+      Story.story(
+        MusicBox.update,
+        Story.with({ ...MusicBox.init(), isPlaying: true, isPaused: false }),
+        Story.message(MusicBox.SongEnded()),
+        Story.model((model) => {
+          expect(model.isPlaying).toBe(false)
+          expect(model.isPaused).toBe(false)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('SetInstrument updates selectedInstrument', () => {
+      Story.story(
+        MusicBox.update,
+        Story.with(MusicBox.init()),
+        Story.message(MusicBox.SetInstrument({ value: 2 })),
+        Story.model((model) => {
+          expect(model.selectedInstrument).toBe(2)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+  })
 })

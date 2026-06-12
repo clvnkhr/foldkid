@@ -222,6 +222,19 @@ describe('Main', () => {
         Story.Command.expectNone(),
       )
     })
+
+    it('resolves PersistSettings command', () => {
+      Story.story(
+        Main.update,
+        Story.with(createModel()),
+        Story.message(ClickedDarkMode()),
+        Story.model((model) => {
+          expect(model.darkMode).toBe('light')
+        }),
+        Story.Command.resolveAll(resolveSettings),
+        Story.Command.expectNone(),
+      )
+    })
   })
 })
 

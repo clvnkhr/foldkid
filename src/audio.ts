@@ -1,14 +1,19 @@
-import { Effect } from 'effect'
+import { Effect, MutableRef } from 'effect'
 
-let sharedCtx: AudioContext | undefined
+const sharedCtx = MutableRef.make<AudioContext | undefined>(undefined)
 
-const getContext = (): AudioContext | undefined => {
-  if (sharedCtx?.state === 'closed') sharedCtx = undefined
-  if (!sharedCtx) {
-    try { sharedCtx = new AudioContext() } catch { return undefined }
+export const getContext = (): AudioContext | undefined => {
+  let ctx = MutableRef.get(sharedCtx)
+  if (ctx?.state === 'closed') {
+    MutableRef.set(sharedCtx, undefined)
+    ctx = undefined
   }
-  if (sharedCtx.state === 'suspended') sharedCtx.resume()
-  return sharedCtx
+  if (!ctx) {
+    try { ctx = new AudioContext() } catch { return undefined }
+    MutableRef.set(sharedCtx, ctx)
+  }
+  if (ctx.state === 'suspended') ctx.resume()
+  return ctx
 }
 
 const playTone = (

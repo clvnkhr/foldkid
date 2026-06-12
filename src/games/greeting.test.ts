@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Scene, Story } from 'foldkit/test'
 import * as Greeting from './greeting'
 
@@ -21,6 +21,41 @@ describe('Greeting', () => {
       Story.Command.resolveAll([{ name: 'Record' }, Greeting.RecordingFailed()]),
       Story.Command.expectNone(),
     )
+  })
+
+  it('pointer down on record button calls getUserMedia via OnPointerDown handler', () => {
+    const mockGetUserMedia = vi.fn().mockResolvedValue({} as MediaStream)
+    const originalMediaDevices = Object.getOwnPropertyDescriptor(navigator, 'mediaDevices')
+    Object.defineProperty(navigator, 'mediaDevices', {
+      value: { getUserMedia: mockGetUserMedia },
+      configurable: true,
+      writable: true,
+    })
+
+    Scene.scene(
+      { update: Greeting.update, view: Greeting.view },
+      Scene.with(Greeting.init),
+      Scene.tap(() => {
+        expect(mockGetUserMedia).not.toHaveBeenCalled()
+      }),
+      Scene.Mount.resolveAll(resolveSpeakPrompt),
+      Scene.pointerDown(Scene.text("What's your name?")),
+      Scene.tap(() => {
+        expect(mockGetUserMedia).toHaveBeenCalledTimes(1)
+        expect(mockGetUserMedia).toHaveBeenCalledWith({ audio: true })
+      }),
+      Scene.expect(Scene.text('⏹ Stop')).toExist(),
+      Scene.Mount.expectEnded({ name: 'speakPrompt' }),
+      Scene.Command.resolveAll(
+        [{ name: 'Record' }, Greeting.RecordingFailed()],
+      ),
+      Scene.Command.expectNone(),
+      Scene.Mount.resolveAll(resolveSpeakPrompt),
+    )
+
+    if (originalMediaDevices) {
+      Object.defineProperty(navigator, 'mediaDevices', originalMediaDevices)
+    }
   })
 
   it('RecordedAudio sets idle with autoPlay flag', () => {
@@ -311,5 +346,85 @@ describe('Greeting', () => {
         expect(model.playCount).toBe(1)
       }),
     )
+  })
+
+  describe('global state refactor', () => {
+    it('ClickedStopRecording returns model with status idle immediately', () => {
+      Story.story(
+        Greeting.update,
+        Story.with({ status: 'recording', audioUrl: '', playCount: 0, autoPlay: false }),
+        Story.message(Greeting.ClickedStopRecording()),
+        Story.model((model) => {
+          expect(model.status).toBe('idle')
+        }),
+        Story.Command.resolveAll([{ name: 'Stop' }, Greeting.SoundPlayed()]),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('re-recording after stop works without stale global state', () => {
+      Story.story(
+        Greeting.update,
+        Story.with({ status: 'idle', audioUrl: '', playCount: 0, autoPlay: false, recordingId: 1 }),
+        Story.message(Greeting.ClickedRecord()),
+        Story.model((model) => {
+          expect(model.status).toBe('recording')
+        }),
+        Story.Command.resolveAll([{ name: 'Record' }, Greeting.RecordingFailed()]),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('ClickedStopRecording without active recording dispatches Stop command', () => {
+      Story.story(
+        Greeting.update,
+        Story.with({ status: 'recording', audioUrl: '', playCount: 0, autoPlay: false }),
+        Story.message(Greeting.ClickedStopRecording()),
+        Story.model((model) => {
+          expect(model.status).toBe('idle')
+        }),
+        Story.Command.resolveAll([{ name: 'Stop' }, Greeting.SoundPlayed()]),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('full record-stop-record cycle works without stale state', () => {
+      Story.story(
+        Greeting.update,
+        Story.with(Greeting.init),
+        // Click "What's your name?" → start recording
+        Story.message(Greeting.ClickedRecord()),
+        Story.model((model) => {
+          expect(model.status).toBe('recording')
+        }),
+        Story.Command.resolveAll(
+          [{ name: 'Record' }, Greeting.RecordedAudio({ audioUrl: 'data:audio/wav;base64,test' })],
+        ),
+        Story.model((model) => {
+          expect(model.status).toBe('idle')
+          expect(model.audioUrl).toBe('data:audio/wav;base64,test')
+        }),
+        // Record again — second recording
+        Story.message(Greeting.ClickedRecord()),
+        Story.model((model) => {
+          expect(model.status).toBe('recording')
+        }),
+        Story.Command.resolveAll(
+          [{ name: 'Record' }, Greeting.RecordingFailed()],
+        ),
+        Story.model((model) => {
+          expect(model.status).toBe('idle')
+        }),
+        // Record again — third try
+        Story.message(Greeting.ClickedRecord()),
+        Story.model((model) => {
+          expect(model.status).toBe('recording')
+        }),
+        Story.Command.resolveAll(
+          [{ name: 'Record' }, Greeting.RecordedAudio({ audioUrl: 'data:audio/wav;base64,test3' })],
+        ),
+        Story.Command.expectNone(),
+      )
+    })
   })
 })

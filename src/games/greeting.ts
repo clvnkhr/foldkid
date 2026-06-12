@@ -1,4 +1,4 @@
-import { Effect, Match as M, Schema as S, Stream } from 'effect'
+import { Effect, Match as M, MutableRef, Option, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
@@ -8,8 +8,9 @@ import { findVoice } from '../speech'
 const TRIM_THRESHOLD = 0.02
 const TRIM_PADDING_SAMPLES = 200
 
-let activeMediaRecorder: MediaRecorder | null = null
-let activeMediaStream: MediaStream | null = null
+const activeMediaRecorder = MutableRef.make<MediaRecorder | null>(null)
+const activeMediaStream = MutableRef.make<MediaStream | null>(null)
+const pendingStream = MutableRef.make<Promise<MediaStream> | null>(null)
 
 const StatusType = S.Union([S.Literal('idle'), S.Literal('recording')])
 
@@ -90,6 +91,12 @@ const encodeWav = (samples: Float32Array, sampleRate: number): Blob => {
   return new Blob([buffer], { type: 'audio/wav' })
 }
 
+const getStream = (): Promise<MediaStream> => {
+  const pending = MutableRef.get(pendingStream)
+  MutableRef.set(pendingStream, null)
+  return pending ?? navigator.mediaDevices.getUserMedia({ audio: true })
+}
+
 const record = (): Command.Command<Message> => ({
   name: 'Record',
   effect: Effect.callback<Message>((resume) => {
@@ -102,14 +109,14 @@ const record = (): Command.Command<Message> => ({
       resume(Effect.succeed(RecordingFailed()))
     }
 
-    navigator.mediaDevices.getUserMedia({ audio: true })
+    getStream()
       .then((ms) => {
         if (cancelled) {
           ms.getTracks().forEach((t) => t.stop())
           return
         }
         stream = ms
-        activeMediaStream = ms
+        MutableRef.set(activeMediaStream, ms)
         audioCtx = new AudioContext()
         const source = audioCtx.createMediaStreamSource(ms)
         const analyser = audioCtx.createAnalyser()
@@ -118,7 +125,7 @@ const record = (): Command.Command<Message> => ({
 
         const recorder = new MediaRecorder(ms)
         mediaRecorder = recorder
-        activeMediaRecorder = recorder
+        MutableRef.set(activeMediaRecorder, recorder)
         const chunks: Blob[] = []
 
         recorder.ondataavailable = (e) => {
@@ -128,8 +135,8 @@ const record = (): Command.Command<Message> => ({
         const processAudio = (): void => {
           source.disconnect()
           ms.getTracks().forEach((t) => t.stop())
-          activeMediaRecorder = null
-          activeMediaStream = null
+          MutableRef.set(activeMediaRecorder, null)
+          MutableRef.set(activeMediaStream, null)
 
           const blob = new Blob(chunks, { type: recorder.mimeType })
           blob.arrayBuffer().then((arrayBuffer) => {
@@ -158,8 +165,8 @@ const record = (): Command.Command<Message> => ({
         recorder.onerror = () => {
           source.disconnect()
           ms.getTracks().forEach((t) => t.stop())
-          activeMediaRecorder = null
-          activeMediaStream = null
+          MutableRef.set(activeMediaRecorder, null)
+          MutableRef.set(activeMediaStream, null)
           if (audioCtx) audioCtx.close()
           fail()
         }
@@ -326,13 +333,15 @@ const randomHelloColor = (): string =>
 const stopRecordingCmd = (): Command.Command<Message> => ({
   name: 'Stop',
   effect: Effect.sync(() => {
-    if (activeMediaRecorder && activeMediaRecorder.state === 'recording') {
-      activeMediaRecorder.stop()
-    } else if (activeMediaStream) {
-      activeMediaStream.getTracks().forEach((t) => t.stop())
-      activeMediaStream = null
+    const recorder = MutableRef.get(activeMediaRecorder)
+    const stream = MutableRef.get(activeMediaStream)
+    if (recorder && recorder.state === 'recording') {
+      recorder.stop()
+    } else if (stream) {
+      stream.getTracks().forEach((t) => t.stop())
+      MutableRef.set(activeMediaStream, null)
     }
-    activeMediaRecorder = null
+    MutableRef.set(activeMediaRecorder, null)
     return SoundPlayed()
   }),
 })
@@ -360,7 +369,7 @@ export const update = (
         [record()],
       ],
       GreetingClickedStopRecording: () => [
-        model,
+        { ...model, status: 'idle' },
         [stopRecordingCmd()],
       ],
       GreetingRecordedAudio: (msg) => [
@@ -426,7 +435,11 @@ export const view = (model: Model, language: string = 'en') => {
                 ? [h.OnClick(ClickedStopRecording())]
                 : model.audioUrl
                   ? [h.OnClick(ClickedPlay())]
-                  : [h.OnClick(ClickedRecord())]),
+                  : [h.OnPointerDown((_pt, _btn, _sx, _sy, _ts, _cx, _cy) => {
+                      const promise = navigator.mediaDevices.getUserMedia({ audio: true })
+                      MutableRef.set(pendingStream, promise)
+                      return Option.some(ClickedRecord())
+                    })]),
               ...(model.status === 'idle' && !model.audioUrl
                 ? [h.OnMount({
                   name: 'speakPrompt',

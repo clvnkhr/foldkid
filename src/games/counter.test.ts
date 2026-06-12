@@ -250,3 +250,66 @@ describe('numberToWord', () => {
     expect(numberToWord(5, 'xx')).toBe('5')
   })
 })
+
+describe('Counter global state', () => {
+  it('PointerDown then PressedIncrement works without module-level state', () => {
+    Story.story(
+      Counter.update,
+      Story.with(Counter.init),
+      Story.message(Counter.PointerDown()),
+      Story.model((model) => {
+        expect(model.holding).toBe(true)
+      }),
+      Story.Command.expectNone(),
+      Story.message(Counter.PressedIncrement({ duration: 500 })),
+      Story.model((model) => {
+        expect(model.count).toBe(1)
+        expect(model.holding).toBe(false)
+      }),
+      Story.Command.resolveAll(
+        [{ name: 'PlayClick' }, Counter.SoundPlayed()],
+        [{ name: 'Speak' }, Counter.SoundPlayed()],
+      ),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('consecutive increments without pointer down between them', () => {
+    Story.story(
+      Counter.update,
+      Story.with(Counter.init),
+      Story.message(Counter.PressedIncrement({ duration: 100 })),
+      Story.model((model) => {
+        expect(model.count).toBe(1)
+        expect(model.holding).toBe(false)
+      }),
+      Story.Command.resolveAll(
+        [{ name: 'PlayClick' }, Counter.SoundPlayed()],
+        [{ name: 'Speak' }, Counter.SoundPlayed()],
+      ),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('pointer down then decrement works (window listener path)', () => {
+    Story.story(
+      Counter.update,
+      Story.with(Counter.init),
+      Story.message(Counter.PointerDown()),
+      Story.model((model) => {
+        expect(model.holding).toBe(true)
+      }),
+      Story.Command.expectNone(),
+      Story.message(Counter.PressedDecrement({ duration: 0 })),
+      Story.model((model) => {
+        expect(model.count).toBe(-1)
+        expect(model.holding).toBe(false)
+      }),
+      Story.Command.resolveAll(
+        [{ name: 'PlayClick' }, Counter.SoundPlayed()],
+        [{ name: 'Speak' }, Counter.SoundPlayed()],
+      ),
+      Story.Command.expectNone(),
+    )
+  })
+})

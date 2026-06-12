@@ -237,3 +237,36 @@ describe('Bubbles', () => {
     )
   })
 })
+
+describe('Bubbles global state', () => {
+  it('pop by id works correctly', () => {
+    const bubble = { id: 1, color: '#FF6B6B', popped: false, size: 20 }
+    Story.story(
+      Bubbles.update,
+      Story.with({ ...Bubbles.init(), bubbles: [bubble], score: 0, nextId: 1 }),
+      Story.message(Bubbles.ClickedPop({ id: 1 })),
+      Story.model((model) => {
+        expect(model.bubbles[0]?.popped).toBe(true)
+        expect(model.score).toBe(1)
+      }),
+      Story.Command.resolveAll(resolvePop),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('reset works correctly after multiple pops', () => {
+    const b1 = { id: 1, color: '#FF6B6B', popped: true, size: 20 }
+    const b2 = { id: 2, color: '#4ECDC4', popped: false, size: 20 }
+    Story.story(
+      Bubbles.update,
+      Story.with({ ...Bubbles.init(), bubbles: [b1, b2], score: 3, nextId: 2 }),
+      Story.message(Bubbles.ClickedReset()),
+      Story.model((model) => {
+        expect(model.bubbles).toHaveLength(0)
+        expect(model.score).toBe(0)
+      }),
+      Story.Command.resolveAll(resolveSwoosh),
+      Story.Command.expectNone(),
+    )
+  })
+})
