@@ -1222,8 +1222,8 @@ export const view = (model: Model, language: string = 'en') => {
   return h.div(
     [h.Class('page')],
     [
-      h.div([h.Class('card musicbox-card')], [
-        h.div([h.Class('musicbox-card-inner')], [
+        h.div([h.Class('card musicbox-card'), h.Key('card')], [
+        h.div([h.Class('musicbox-card-inner'), h.Key('inner')], [
           h.h1([h.Class('title')], [t('musicBoxTitle', language)]),
 
           h.div([h.Class('musicbox-controls')], [
@@ -1310,7 +1310,7 @@ export const view = (model: Model, language: string = 'en') => {
             ),
           ]),
 
-        h.div([h.Class('piano-controls')], [
+        h.div([h.Class('piano-controls'), h.Key('controls')], [
           h.button(
             [h.Id('octave-down'), h.OnClick(OctaveDown()), h.Class('btn btn-tiny'), h.Disabled(model.octaveOffset <= MIN_OCTAVE)],
             ['−8'],
@@ -1349,8 +1349,8 @@ export const view = (model: Model, language: string = 'en') => {
             ],
           ),
         ]),
-        renderPiano(h, topWhite, topBlack, topKb.blacks, model.whiteKeys, 'top'),
-        h.div([h.Class('shift-controls-row')], [
+        renderPiano(h, topWhite, topBlack, topKb.blacks, model.whiteKeys, 'top', 'piano-top'),
+        h.div([h.Class('shift-controls-row'), h.Key('shift-row')], [
           h.div([h.Class('shift-controls')], [
             h.button(
               [h.OnClick(ShiftTop({ delta: -1 })), h.Class('btn btn-tiny'), h.Disabled(model.topShift <= -7)],
@@ -1383,11 +1383,11 @@ export const view = (model: Model, language: string = 'en') => {
             const botWhite = botKb.keys.filter(k => k.type === 'white')
             const botBlack = botKb.keys.filter(k => k.type === 'black')
             return [
-              renderPiano(h, botWhite, botBlack, botKb.blacks, model.whiteKeys, 'bot'),
+              renderPiano(h, botWhite, botBlack, botKb.blacks, model.whiteKeys, 'bot', 'piano-bot'),
             ]
           })()
           : []),
-        h.div([h.Class('keybind-info')], [
+        h.div([h.Class('keybind-info'), h.Key('keybind')], [
           'i',
           h.div([h.Class('tooltip')], ['Z/X: Octave  Space: Play/Pause  QWERTY: Piano']),
         ]),
@@ -1474,10 +1474,12 @@ const renderPiano = (
   blacks: Record<string, number>,
   whiteCount: number,
   prefix: string,
+  vnodeKey?: string,
 ) => {
   return h.div([
     h.Class('piano-container'),
     h.Style({ touchAction: 'none' }),
+    ...(vnodeKey ? [h.Key(vnodeKey)] : []),
     h.OnMount({
       name: `piano-${prefix}`,
       f: pointerStream,
