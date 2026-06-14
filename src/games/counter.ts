@@ -62,8 +62,8 @@ export const Model = S.Struct({
 export type Model = typeof Model.Type
 
 export const PointerDown = m('CounterPointerDown', { timeStamp: S.Number, button: PressedButton })
-export const PressedIncrement = m('CounterPressedIncrement', { duration: S.Number })
-export const PressedDecrement = m('CounterPressedDecrement', { duration: S.Number })
+export const PressedIncrement = m('CounterPressedIncrement', { duration: S.Number, button: S.optionalKey(PressedButton) })
+export const PressedDecrement = m('CounterPressedDecrement', { duration: S.Number, button: S.optionalKey(PressedButton) })
 export const ClickedReset = m('CounterClickedReset')
 export const SetRate = m('CounterSetRate', { value: S.Number })
 export const SetPitch = m('CounterSetPitch', { value: S.Number })
@@ -80,6 +80,9 @@ const calcFontSize = (duration: number): number => {
   const s = safeDuration / 1000
   return Math.min(20, Math.max(3, Math.round(3 + (s / 2) * 17)))
 }
+
+const shouldCompletePress = (model: Model, button: PressedButton | undefined): boolean =>
+  button === undefined || model.pressedButton === button
 
 export const parseBallCount = (value: string | null): number => {
   if (!value) return 0
@@ -111,12 +114,16 @@ export const update = (
         [],
       ],
       CounterPressedIncrement: (msg) => [
-        { ...model, count: model.count + 1, fontSize: calcFontSize(msg.duration), holding: false, pressedButton: null },
-        muted ? [] : [click(SoundPlayed()), speak(numberToWord(model.count + 1, language), SoundPlayed(), { rate: model.rate, pitch: model.pitch, lang: language })],
+        shouldCompletePress(model, msg.button)
+          ? { ...model, count: model.count + 1, fontSize: calcFontSize(msg.duration), holding: false, pressedButton: null }
+          : model,
+        shouldCompletePress(model, msg.button) && !muted ? [click(SoundPlayed()), speak(numberToWord(model.count + 1, language), SoundPlayed(), { rate: model.rate, pitch: model.pitch, lang: language })] : [],
       ],
       CounterPressedDecrement: (msg) => [
-        { ...model, count: model.count - 1, fontSize: calcFontSize(msg.duration), holding: false, pressedButton: null },
-        muted ? [] : [click(SoundPlayed()), speak(numberToWord(model.count - 1, language), SoundPlayed(), { rate: model.rate, pitch: model.pitch, lang: language })],
+        shouldCompletePress(model, msg.button)
+          ? { ...model, count: model.count - 1, fontSize: calcFontSize(msg.duration), holding: false, pressedButton: null }
+          : model,
+        shouldCompletePress(model, msg.button) && !muted ? [click(SoundPlayed()), speak(numberToWord(model.count - 1, language), SoundPlayed(), { rate: model.rate, pitch: model.pitch, lang: language })] : [],
       ],
       CounterClickedReset: () => [
         { ...model, count: 0 },
@@ -404,18 +411,18 @@ export const view = (model: Model, language: string = 'en') => {
     return model.count.toString()
   }
 
-  const btnAttrs = (msg: (d: number) => Message, btn: 'inc' | 'dec') => [
+  const btnAttrs = (msg: (d: number, btn: 'inc' | 'dec') => Message, btn: 'inc' | 'dec') => [
     h.Class('btn btn-primary'),
     h.OnPointerDown((_pt, _btn, _sx, _sy, ts) => {
       return O.some(PointerDown({ timeStamp: ts, button: btn }))
     }),
     h.OnPointerUp((_sx, _sy, _pt, ts) => {
-      return O.some(msg(ts - model.pointerDownTime))
+      return O.some(msg(ts - model.pointerDownTime, btn))
     }),
     h.OnPointerLeave(() => {
       if (model.pressedButton !== btn) return O.none()
       const d = performance.now() - model.pointerDownTime
-      return O.some(msg(d))
+      return O.some(msg(d, btn))
     }),
   ] as const
 
@@ -426,7 +433,7 @@ export const view = (model: Model, language: string = 'en') => {
         h.h1([h.Class('title')], [t('counterTitle', language)]),
         h.div([h.Class('buttons counter-actions')], [
           h.button(
-            btnAttrs((d) => PressedDecrement({ duration: d }), 'dec'),
+            btnAttrs((d, btn) => PressedDecrement({ duration: d, button: btn }), 'dec'),
             ['-1'],
           ),
           h.button(
@@ -434,7 +441,7 @@ export const view = (model: Model, language: string = 'en') => {
             [t('reset', language)],
           ),
           h.button(
-            btnAttrs((d) => PressedIncrement({ duration: d }), 'inc'),
+            btnAttrs((d, btn) => PressedIncrement({ duration: d, button: btn }), 'inc'),
             ['+1'],
           ),
         ]),

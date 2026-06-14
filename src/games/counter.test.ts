@@ -96,6 +96,48 @@ describe('Counter', () => {
     )
   })
 
+  it('mobile tap duplicate pointerup and pointerleave increments only once', () => {
+    Story.story(
+      Counter.update,
+      Story.with(Counter.init),
+      Story.message(Counter.PointerDown({ timeStamp: 100, button: 'inc' })),
+      Story.Command.expectNone(),
+      Story.message(Counter.PressedIncrement({ duration: 40, button: 'inc' })),
+      Story.model((model) => {
+        expect(model.count).toBe(1)
+        expect(model.pressedButton).toBeNull()
+      }),
+      Story.Command.resolveAll(resolveClick, resolveSpeak),
+      Story.Command.expectNone(),
+      Story.message(Counter.PressedIncrement({ duration: 45, button: 'inc' })),
+      Story.model((model) => {
+        expect(model.count).toBe(1)
+      }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('mobile tap duplicate pointerup and pointerleave decrements only once', () => {
+    Story.story(
+      Counter.update,
+      Story.with(Counter.init),
+      Story.message(Counter.PointerDown({ timeStamp: 100, button: 'dec' })),
+      Story.Command.expectNone(),
+      Story.message(Counter.PressedDecrement({ duration: 40, button: 'dec' })),
+      Story.model((model) => {
+        expect(model.count).toBe(-1)
+        expect(model.pressedButton).toBeNull()
+      }),
+      Story.Command.resolveAll(resolveClick, resolveSpeak),
+      Story.Command.expectNone(),
+      Story.message(Counter.PressedDecrement({ duration: 45, button: 'dec' })),
+      Story.model((model) => {
+        expect(model.count).toBe(-1)
+      }),
+      Story.Command.expectNone(),
+    )
+  })
+
   it('renders initial state', () => {
     Scene.scene(
       { update: Counter.update, view: Counter.view },
@@ -145,6 +187,27 @@ describe('Counter', () => {
     )
   })
 
+  it('dragging off the increment button still completes exactly once', () => {
+    Story.story(
+      Counter.update,
+      Story.with(Counter.init),
+      Story.message(Counter.PointerDown({ timeStamp: 100, button: 'inc' })),
+      Story.model((model) => {
+        expect(model.holding).toBe(true)
+        expect(model.pressedButton).toBe('inc')
+      }),
+      Story.Command.expectNone(),
+      Story.message(Counter.PressedIncrement({ duration: 750, button: 'inc' })),
+      Story.model((model) => {
+        expect(model.count).toBe(1)
+        expect(model.fontSize).toBeGreaterThan(3)
+        expect(model.pressedButton).toBeNull()
+      }),
+      Story.Command.resolveAll(resolveClick, resolveSpeak),
+      Story.Command.expectNone(),
+    )
+  })
+
   it('pointer down then up off-button still decrements (window listener path)', () => {
     Story.story(
       Counter.update,
@@ -160,6 +223,27 @@ describe('Counter', () => {
       Story.model((model) => {
         expect(model.count).toBe(-1)
         expect(model.holding).toBe(false)
+      }),
+      Story.Command.resolveAll(resolveClick, resolveSpeak),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('dragging off the decrement button still completes exactly once', () => {
+    Story.story(
+      Counter.update,
+      Story.with(Counter.init),
+      Story.message(Counter.PointerDown({ timeStamp: 100, button: 'dec' })),
+      Story.model((model) => {
+        expect(model.holding).toBe(true)
+        expect(model.pressedButton).toBe('dec')
+      }),
+      Story.Command.expectNone(),
+      Story.message(Counter.PressedDecrement({ duration: 750, button: 'dec' })),
+      Story.model((model) => {
+        expect(model.count).toBe(-1)
+        expect(model.fontSize).toBeGreaterThan(3)
+        expect(model.pressedButton).toBeNull()
       }),
       Story.Command.resolveAll(resolveClick, resolveSpeak),
       Story.Command.expectNone(),
