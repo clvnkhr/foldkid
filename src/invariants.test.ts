@@ -1,4 +1,7 @@
+import { Option, Schema as S } from 'effect'
 import { afterEach, describe, expect, it } from 'vitest'
+import * as Bubbles from './games/bubbles'
+import * as Counter from './games/counter'
 import * as FindIt from './games/findit'
 import * as MusicBox from './games/musicbox'
 import * as Main from './main'
@@ -81,6 +84,34 @@ describe('codebase invariants', () => {
     const englishKeys = Object.keys(translations.en).sort()
     for (const [language, dict] of Object.entries(translations)) {
       expect(Object.keys(dict).sort(), `${language} translation keys`).toEqual(englishKeys)
+    }
+  })
+
+  it('initial game and app models decode through their Effect schemas', () => {
+    const modelCases = [
+      ['Counter', Counter.Model, Counter.init],
+      ['FindIt', FindIt.Model, FindIt.init()],
+      ['Bubbles', Bubbles.Model, Bubbles.init()],
+      ['MusicBox', MusicBox.Model, MusicBox.init()],
+      ['Main', Main.Model, Main.init()[0]],
+    ] as const
+
+    for (const [label, schema, model] of modelCases) {
+      expect(Option.isSome(S.decodeUnknownOption(schema)(model)), `${label} model`).toBe(true)
+    }
+  })
+
+  it('rejects invalid nested messages at Effect schema boundaries', () => {
+    const messageCases = [
+      ['Counter display mode', Counter.Message, { _tag: 'CounterSetDisplayMode', value: 'huge' }],
+      ['FindIt emoji pack', FindIt.Message, { _tag: 'FindItSetEmojiPackEnabled', key: 'space', value: true }],
+      ['Bubbles color duration', Bubbles.Message, { _tag: 'BubblesClickedColor', color: '#fff', duration: 'fast' }],
+      ['MusicBox song index', MusicBox.Message, { _tag: 'MusicBoxToggleSongVisibility', index: '1' }],
+      ['Main nested FindIt message', Main.Message, { _tag: 'FindItSetEmojiPackEnabled', key: 'space', value: true }],
+    ] as const
+
+    for (const [label, schema, payload] of messageCases) {
+      expect(Option.isNone(S.decodeUnknownOption(schema)(payload)), label).toBe(true)
     }
   })
 })

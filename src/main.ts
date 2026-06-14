@@ -405,6 +405,9 @@ const applyImportData = (model: Model, s: PersistedSettings): Model => {
         ? s.musicBoxHiddenSongs.map((h: boolean) => h === true)
         : model.musicBox.hiddenSongs,
     },
+    landingOrder: isLandingOrder(s.landingOrder)
+      ? [...s.landingOrder]
+      : model.landingOrder,
     showResetConfirm: false,
     importExportMessage: t('settingsImportSuccess', model.language),
   }
@@ -884,6 +887,7 @@ export const view = (model: Model): Document => {
                   .map((songIdx, displayIdx) => {
                     const song = MusicBox.SONGS[songIdx]!
                     const isHidden = model.musicBox.hiddenSongs[songIdx]
+                    const isLastVisibleSong = !isHidden && model.musicBox.songOrder.filter(i => !model.musicBox.hiddenSongs[i]).length <= 1
                     const isDragged = model.musicBox.dragIndex === displayIdx
                     const songKey = MusicBox.SONG_TKEYS[song.key]
                     return h.div(
@@ -902,7 +906,7 @@ export const view = (model: Model): Document => {
                           `${song.emoji} ${t(songKey ?? 'musicBoxTwinkle', model.language)}`,
                         ]),
                         h.button(
-                          [h.Class('btn btn-tiny'), h.OnClick(MusicBox.ToggleSongVisibility({ index: songIdx }))],
+                          [h.Class('btn btn-tiny'), h.Disabled(isLastVisibleSong), h.OnClick(MusicBox.ToggleSongVisibility({ index: songIdx }))],
                           [isHidden ? t('musicBoxShow', model.language) : t('musicBoxHide', model.language)],
                         ),
                     ],

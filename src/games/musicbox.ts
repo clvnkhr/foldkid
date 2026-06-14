@@ -1231,7 +1231,11 @@ export const update = (
         return [{ ...model, songTranspose: next }, []]
       },
       MusicBoxToggleSongVisibility: (msg) => {
+        if (msg.index < 0 || msg.index >= SONGS.length) return [model, []]
         const hidden = [...model.hiddenSongs]
+        const currentlyHidden = hidden[msg.index] === true
+        const visibleCount = model.songOrder.filter(i => !hidden[i]).length
+        if (!currentlyHidden && visibleCount <= 1) return [model, []]
         hidden[msg.index] = !hidden[msg.index]
         let selected = model.selectedSong
         if (hidden[msg.index] && selected === msg.index) {

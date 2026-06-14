@@ -943,5 +943,51 @@ describe('MusicBox', () => {
         Story.Command.expectNone(),
       )
     })
+
+    it('ToggleSongVisibility does not hide the last visible song', () => {
+      const model = {
+        ...MusicBox.init(),
+        selectedSong: 0,
+        hiddenSongs: MusicBox.SONGS.map((_, index) => index !== 0),
+      }
+      Story.story(
+        MusicBox.update,
+        Story.with(model),
+        Story.message(MusicBox.ToggleSongVisibility({ index: 0 })),
+        Story.model((next) => {
+          expect(next.hiddenSongs).toStrictEqual(model.hiddenSongs)
+          expect(next.selectedSong).toBe(0)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('ToggleSongVisibility ignores out-of-bounds song indices', () => {
+      const model = MusicBox.init()
+      Story.story(
+        MusicBox.update,
+        Story.with(model),
+        Story.message(MusicBox.ToggleSongVisibility({ index: MusicBox.SONGS.length + 10 })),
+        Story.model((next) => {
+          expect(next.hiddenSongs).toStrictEqual(model.hiddenSongs)
+          expect(next.songOrder).toStrictEqual(model.songOrder)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('ToggleSongVisibility moves selection when hiding the selected song', () => {
+      const model = { ...MusicBox.init(), selectedSong: 0 }
+      Story.story(
+        MusicBox.update,
+        Story.with(model),
+        Story.message(MusicBox.ToggleSongVisibility({ index: 0 })),
+        Story.model((next) => {
+          expect(next.hiddenSongs[0]).toBe(true)
+          expect(next.selectedSong).toBe(1)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
   })
 })

@@ -6,6 +6,8 @@ const resolveWin = [
   [{ name: 'PlayBoing' }, FindIt.SoundPlayed()] as const,
   [{ name: 'Speak' }, FindIt.SoundPlayed()] as const,
 ] as const
+const segmentEmoji = (emoji: string): string[] =>
+  [...new Intl.Segmenter().segment(emoji)].map(segment => segment.segment)
 
 describe('FindIt', () => {
   it('init creates a valid game', () => {
@@ -58,6 +60,31 @@ describe('FindIt', () => {
       }),
       Story.Command.expectNone(),
     )
+  })
+
+  it('pack combinations generate valid single and pairs games', () => {
+    const packCombos = [
+      ['fun'],
+      ['numbers'],
+      ['animals'],
+      ['fun', 'numbers'],
+      ['numbers', 'animals'],
+      FindIt.DEFAULT_EMOJI_PACK_KEYS,
+    ] as const
+
+    for (const packs of packCombos) {
+      const pool = new Set(FindIt.emojiPoolForPacks(packs))
+      const single = FindIt.init(false, packs)
+      expect(single.grid).toHaveLength(9)
+      expect(single.grid.some(cell => cell.emoji === single.target), `${packs.join(',')} single target`).toBe(true)
+      expect(single.grid.every(cell => pool.has(cell.emoji)), `${packs.join(',')} single pool`).toBe(true)
+
+      const pairs = FindIt.init(true, packs)
+      expect(pairs.grid).toHaveLength(9)
+      expect(pairs.grid.some(cell => cell.emoji === pairs.target), `${packs.join(',')} pairs target`).toBe(true)
+      expect(pairs.grid.every(cell => segmentEmoji(cell.emoji).every(emoji => pool.has(emoji))), `${packs.join(',')} pairs pool`).toBe(true)
+      expect(FindIt.emojiName(pairs.target)).not.toBe(pairs.target)
+    }
   })
 
   it('correct cell shows win', () => {

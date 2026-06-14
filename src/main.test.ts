@@ -6,10 +6,12 @@ import * as Counter from './games/counter'
 import * as FindIt from './games/findit'
 import * as Bubbles from './games/bubbles'
 import * as MusicBox from './games/musicbox'
-import { ApplyImport, ClickedLanding, ClickedCounter, ClickedFindIt, ClickedBubbles, ClickedDarkMode, ConfirmResetSettings, ImportedSettings, SetExportData, SetLanguage, SettingsPersisted, ToggleMute } from './message'
+import { ApplyImport, ClickedLanding, ClickedCounter, ClickedFindIt, ClickedBubbles, ClickedDarkMode, ConfirmResetSettings, ExportSettings, ImportedSettings, SetExportData, SetLanguage, SettingsPersisted, ToggleMute } from './message'
 
 const resolveSettings = [{ name: 'PersistSettings' }, SettingsPersisted()] as const
 const STORAGE_KEY = 'foldkid-settings'
+const segmentEmoji = (emoji: string): string[] =>
+  [...new Intl.Segmenter().segment(emoji)].map(segment => segment.segment)
 
 const makeStorage = (): Storage => {
   const store = new Map<string, string>()
@@ -418,6 +420,76 @@ describe('Main', () => {
 
       const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') as { language?: string }
       expect(stored.language).toBe('de')
+    })
+
+    it('roundtrips exported settings into a fresh model', () => {
+      const order = MusicBox.SONGS.map((_, index) => index)
+      const reorderedSongs = order.length > 1 ? [order[1]!, order[0]!, ...order.slice(2)] : order
+      const hiddenSongs = MusicBox.SONGS.map((_, index) => index === 1)
+      const landingOrder = createModel().landingOrder
+      const reorderedLanding = landingOrder.length > 1
+        ? [landingOrder[1]!, landingOrder[0]!, ...landingOrder.slice(2)]
+        : landingOrder
+      const customized = {
+        ...createModel(),
+        language: 'ja' as const,
+        darkMode: 'dark' as const,
+        muted: true,
+        counter: {
+          ...createModel().counter,
+          rate: 1.6,
+          pitch: 0.7,
+          displayMode: 'both' as const,
+        },
+        findIt: {
+          ...createModel().findIt,
+          anyWins: true,
+          voiceMode: true,
+          pairsMode: true,
+          enabledPacks: ['numbers'] as FindIt.EmojiPackKey[],
+        },
+        bubbles: {
+          ...createModel().bubbles,
+          popLabel: true,
+          sayColor: true,
+          selectedColor: 'rainbow',
+          rainbowMode: true,
+        },
+        musicBox: {
+          ...createModel().musicBox,
+          selectedSong: 0,
+          songOrder: reorderedSongs,
+          hiddenSongs,
+        },
+        landingOrder: reorderedLanding,
+      }
+      const [exported] = Main.update(customized, ExportSettings())
+      const [imported, cmds] = Main.update(
+        { ...createModel(), exportData: exported.exportData, settingsOverlay: 'import' },
+        ApplyImport(),
+      )
+      const numbers = new Set(FindIt.emojiPoolForPacks(['numbers']))
+
+      expect(imported.settingsOverlay).toBe('')
+      expect(imported.language).toBe(customized.language)
+      expect(imported.darkMode).toBe(customized.darkMode)
+      expect(imported.muted).toBe(customized.muted)
+      expect(imported.counter.rate).toBe(customized.counter.rate)
+      expect(imported.counter.pitch).toBe(customized.counter.pitch)
+      expect(imported.counter.displayMode).toBe(customized.counter.displayMode)
+      expect(imported.findIt.anyWins).toBe(customized.findIt.anyWins)
+      expect(imported.findIt.voiceMode).toBe(customized.findIt.voiceMode)
+      expect(imported.findIt.pairsMode).toBe(customized.findIt.pairsMode)
+      expect(imported.findIt.enabledPacks).toEqual(customized.findIt.enabledPacks)
+      expect(imported.findIt.grid.every(cell => segmentEmoji(cell.emoji).every(emoji => numbers.has(emoji)))).toBe(true)
+      expect(imported.bubbles.popLabel).toBe(customized.bubbles.popLabel)
+      expect(imported.bubbles.sayColor).toBe(customized.bubbles.sayColor)
+      expect(imported.bubbles.selectedColor).toBe(customized.bubbles.selectedColor)
+      expect(imported.bubbles.rainbowMode).toBe(true)
+      expect(imported.musicBox.songOrder).toEqual(customized.musicBox.songOrder)
+      expect(imported.musicBox.hiddenSongs).toEqual(customized.musicBox.hiddenSongs)
+      expect(imported.landingOrder).toEqual(customized.landingOrder)
+      expect(cmds[0]?.name).toBe('PersistSettings')
     })
 
     it('reset removes persisted settings through a command effect', async () => {
