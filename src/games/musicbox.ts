@@ -761,7 +761,7 @@ export const SONG_TKEYS: Record<string, StringKey> = {
   birthday: 'musicBoxHappyBirthday',
 }
 
-const INST_TKEYS: Record<string, StringKey> = {
+export const INST_TKEYS: Record<string, StringKey> = {
   bell: 'musicBoxBell',
   flute: 'musicBoxFlute',
   sawtooth: 'musicBoxSawtooth',

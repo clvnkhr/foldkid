@@ -19,6 +19,8 @@ const GAMES = [
   { msg: ClickedMusicBox, title: 'musicBoxTitle' as const, emoji: '🎵' },
 ]
 
+export const LANDING_GAME_COUNT = GAMES.length
+
 export const view = (order: number[], language: string, dragIndex: number) => {
   const h = html<Message>()
 

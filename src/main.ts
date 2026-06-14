@@ -10,7 +10,7 @@ import * as FindIt from './games/findit'
 import * as MusicBox from './games/musicbox'
 import * as Counter from './games/counter'
 import * as Bubbles from './games/bubbles'
-import { view as landingView } from './pages/landing'
+import { LANDING_GAME_COUNT, view as landingView } from './pages/landing'
 import { view as audioTestView } from './pages/audiotest'
 import { Language, normalizeLanguage, t, tf } from './i18n'
 import { speak } from './speech'
@@ -24,6 +24,7 @@ const ICON_VOICE_MODE = '🔊'
 
 const STORAGE_KEY = 'foldkid-settings'
 const SETTINGS_VERSION = 1
+const DEFAULT_LANDING_ORDER = Array.from({ length: LANDING_GAME_COUNT }, (_, i) => i)
 
 const DarkModeValues = ['auto', 'light', 'dark'] as const
 type DarkMode = typeof DarkModeValues[number]
@@ -85,6 +86,12 @@ const sanitizeDisplayMode = (value: string | undefined, fallback: 'number' | 'wo
 
 const sameStringArray = (a: readonly string[], b: readonly string[]): boolean =>
   a.length === b.length && a.every((value, index) => value === b[index])
+
+const isLandingOrder = (value: readonly number[] | undefined): value is number[] =>
+  Array.isArray(value) &&
+  value.length === LANDING_GAME_COUNT &&
+  new Set(value).size === LANDING_GAME_COUNT &&
+  value.every(index => Number.isInteger(index) && index >= 0 && index < LANDING_GAME_COUNT)
 
 const buildSettingsData = (model: Model): PersistedSettings => ({
   version: SETTINGS_VERSION,
@@ -298,9 +305,9 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
       importExportMessage: '',
       exportData: '',
       settingsOverlay: '',
-      landingOrder: Array.isArray(saved.landingOrder) && saved.landingOrder.length === 5
+      landingOrder: isLandingOrder(saved.landingOrder)
         ? [...saved.landingOrder]
-        : [0, 1, 2, 3, 4],
+        : [...DEFAULT_LANDING_ORDER],
       landingDragIndex: -1,
     },
     cmds,

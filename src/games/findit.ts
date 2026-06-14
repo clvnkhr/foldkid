@@ -35,6 +35,7 @@ const EMOJIS = [
 ] as const
 
 const EMOJI_POOL: string[] = EMOJIS.map(([emoji]) => emoji)
+export const EMOJI_COUNT = EMOJIS.length
 
 const EMOJI_NAMES: Record<string, string> = Object.fromEntries(EMOJIS.map(([emoji, name]) => [emoji, name]))
 
@@ -57,7 +58,7 @@ export const emojiPoolForPacks = (keys: readonly string[] | undefined): string[]
     .map(([emoji]) => emoji)
 }
 
-const EMOJI_NAMES_BY_LANG: Record<string, string[]> = {
+export const EMOJI_NAMES_BY_LANG: Record<string, string[]> = {
   zh: ['气球', '派对炮', '五彩纸屑', '礼物', '泰迪熊', '棒棒糖', '糖果', '生日蛋糕', '彩虹', '樱花', '星星', '披萨', '汉堡', '玉米饼', '甜甜圈', '杯子蛋糕', '零', '一', '二', '三', '四', '五', '六', '七', '八', '九', '猫', '狗', '兔子', '蝴蝶', '独角兽', '熊', '熊猫', '考拉', '狮子', '老虎', '青蛙', '猴子', '狐狸', '马', '浣熊', '牛', '猪', '章鱼', '企鹅', '鸟', '鹰', '猫头鹰', '小鸡', '鸭子', '乌龟', '蛇', '蜥蜴', '鳄鱼', '鲸鱼', '海豚', '鲨鱼', '鱼', '河豚', '蜜蜂', '瓢虫', '蟋蟀', '蚂蚁'],
   fr: ['Ballon', 'Coton', 'Confetti', 'Cadeau', 'Ours en peluche', 'Sucette', 'Bonbon', 'Gâteau d\'anniversaire', 'Arc-en-ciel', 'Fleur de cerisier', 'Étoile', 'Pizza', 'Burger', 'Taco', 'Donut', 'Petit gâteau', 'Zéro', 'Un', 'Deux', 'Trois', 'Quatre', 'Cinq', 'Six', 'Sept', 'Huit', 'Neuf', 'Chat', 'Chien', 'Lapin', 'Papillon', 'Licorne', 'Ours', 'Panda', 'Koala', 'Lion', 'Tigre', 'Grenouille', 'Singe', 'Renard', 'Cheval', 'Raton laveur', 'Vache', 'Cochon', 'Pieuvre', 'Manchot', 'Oiseau', 'Aigle', 'Hibou', 'Poussin', 'Canard', 'Tortue', 'Serpent', 'Lézard', 'Crocodile', 'Baleine', 'Dauphin', 'Requin', 'Poisson', 'Poisson-globe', 'Abeille', 'Coccinelle', 'Grillon', 'Fourmi'],
   de: ['Ballon', 'Partyknaller', 'Konfetti', 'Geschenk', 'Teddybär', 'Lutscher', 'Bonbon', 'Geburtstagskuchen', 'Regenbogen', 'Kirschblüte', 'Stern', 'Pizza', 'Burger', 'Taco', 'Donut', 'Törtchen', 'Null', 'Eins', 'Zwei', 'Drei', 'Vier', 'Fünf', 'Sechs', 'Sieben', 'Acht', 'Neun', 'Katze', 'Hund', 'Hase', 'Schmetterling', 'Einhorn', 'Bär', 'Panda', 'Koala', 'Löwe', 'Tiger', 'Frosch', 'Affe', 'Fuchs', 'Pferd', 'Waschbär', 'Kuh', 'Schwein', 'Krake', 'Pinguin', 'Vogel', 'Adler', 'Eule', 'Küken', 'Ente', 'Schildkröte', 'Schlange', 'Eidechse', 'Krokodil', 'Wal', 'Delfin', 'Hai', 'Fisch', 'Kugelfisch', 'Biene', 'Marienkäfer', 'Grille', 'Ameise'],
