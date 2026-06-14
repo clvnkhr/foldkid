@@ -282,6 +282,7 @@ const bindShortcutKeys = (): void => {
 }
 
 export const resetKeyboardControls = (): void => {
+  clearActiveNotes()
   document.removeEventListener('keydown', handleKeyDown)
   document.removeEventListener('keyup', handleKeyUp)
   document.removeEventListener('keydown', handleShortcutKeyDown)
@@ -794,6 +795,7 @@ const getCtx = (): AudioContext | undefined => {
 }
 
 const resetAudioGraph = (): void => {
+  clearActiveNotes()
   resetContext()
   masterCompressor = undefined
   compressorContext = undefined
@@ -841,6 +843,7 @@ const playNoteAudio = (freq: number, dur: number, inst: Instrument): void => {
 
   const masterGain = ctx.createGain()
 
+  masterGain.gain.value = 0
   masterGain.gain.setValueAtTime(0, now)
   masterGain.gain.linearRampToValueAtTime(inst.gain, now + inst.attack)
   const decEnd = now + inst.attack + inst.decay
@@ -948,9 +951,10 @@ const startNote = (pitch: string, inst: Instrument): void => {
   if (!freq || MutableRef.get(activeNotes).has(pitch)) return
   const ctx = getCtx()
   if (!ctx) return
-  const now = ctx.currentTime + SAFETY_MARGIN
+  const now = ctx.currentTime
   const masterGain = ctx.createGain()
 
+  masterGain.gain.value = 0
   masterGain.gain.setValueAtTime(0, now)
   masterGain.gain.linearRampToValueAtTime(inst.gain, now + inst.attack)
   const decEnd = now + inst.attack + inst.decay
@@ -1005,10 +1009,14 @@ const stopNote = (pitch: string): void => {
   MutableRef.get(activeNotes).delete(pitch)
   unhighlightKey(pitch)
   const ctx = getCtx()
-  const now = (ctx?.currentTime ?? performance.now() / 1000) + SAFETY_MARGIN
+  const now = ctx?.currentTime ?? performance.now() / 1000
 
-  masterGain.gain.cancelScheduledValues(now)
-  masterGain.gain.setValueAtTime(masterGain.gain.value, now)
+  if (typeof masterGain.gain.cancelAndHoldAtTime === 'function') {
+    masterGain.gain.cancelAndHoldAtTime(now)
+  } else {
+    masterGain.gain.cancelScheduledValues(now)
+    masterGain.gain.setValueAtTime(masterGain.gain.value, now)
+  }
   masterGain.gain.linearRampToValueAtTime(0, now + release)
 
   setTimeout(() => {
@@ -1019,6 +1027,19 @@ const stopNote = (pitch: string): void => {
     }
     masterGain.disconnect()
   }, release * 1000 + 50)
+}
+
+const clearActiveNotes = (): void => {
+  for (const { nodes, masterGain } of MutableRef.get(activeNotes).values()) {
+    for (const { osc, gain } of nodes) {
+      try { osc.stop() } catch { /* already stopped */ }
+      try { osc.disconnect() } catch { /* already disconnected */ }
+      try { gain.disconnect() } catch { /* already disconnected */ }
+    }
+    try { masterGain.disconnect() } catch { /* already disconnected */ }
+  }
+  MutableRef.get(activeNotes).clear()
+  unhighlightAllKeys()
 }
 
 const stopAllNotes = (): void => {
@@ -1078,6 +1099,7 @@ export const Message = S.Union([Play, Stop, SetSong, SetInstrument, SongEnded, N
 export type Message = typeof Message.Type
 
 export const init = (): Model => {
+  clearActiveNotes()
   bindKeyboard()
   bindShortcutKeys()
   startWakeMonitor()

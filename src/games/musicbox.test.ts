@@ -9,57 +9,80 @@ const resolveMount = [resolvePianoTop]
 const originalAudioContext = globalThis.AudioContext
 
 const startedFrequencies: number[] = []
+const startedAtTimes: number[] = []
+const cancelAndHoldTimes: number[] = []
+const setValueEvents: Array<{ value: number; time: number }> = []
+const connections: Array<{ from: string; to: string }> = []
+const nodeKinds = new WeakMap<object, string>()
+let compressorCreateCount = 0
 
 const makeAudioParam = (initial = 0): AudioParam => ({
   value: initial,
   automationRate: 'a-rate',
-  cancelAndHoldAtTime: () => makeAudioParam(initial),
+  cancelAndHoldAtTime: (time: number) => {
+    cancelAndHoldTimes.push(time)
+    return makeAudioParam(initial)
+  },
   cancelScheduledValues: () => makeAudioParam(initial),
   exponentialRampToValueAtTime: () => makeAudioParam(initial),
   linearRampToValueAtTime: () => makeAudioParam(initial),
   setTargetAtTime: () => makeAudioParam(initial),
-  setValueAtTime: () => makeAudioParam(initial),
+  setValueAtTime: (value: number, time: number) => {
+    setValueEvents.push({ value, time })
+    return makeAudioParam(value)
+  },
   setValueCurveAtTime: () => makeAudioParam(initial),
 } as unknown as AudioParam)
 
-const makeAudioNode = (): AudioNode => ({
-  connect: () => makeAudioNode(),
-  disconnect: () => {},
-} as unknown as AudioNode)
+const makeAudioNode = (kind = 'node'): AudioNode => {
+  const node = {
+    connect: (target?: AudioNode) => {
+      connections.push({
+        from: kind,
+        to: target ? nodeKinds.get(target) ?? 'unknown' : 'unknown',
+      })
+      return target ?? makeAudioNode()
+    },
+    disconnect: () => {},
+  } as unknown as AudioNode
+  nodeKinds.set(node, kind)
+  return node
+}
 
 class MockAudioContext {
   state: AudioContextState = 'running'
   currentTime = 0
-  destination = makeAudioNode() as AudioDestinationNode
+  destination = makeAudioNode('destination') as AudioDestinationNode
 
   createOscillator(): OscillatorNode {
     const frequency = makeAudioParam(440)
-    return {
-      ...makeAudioNode(),
+    return Object.assign(makeAudioNode('oscillator'), {
       type: 'sine',
       frequency,
       detune: makeAudioParam(0),
-      start: () => { startedFrequencies.push(frequency.value) },
+      start: (when = this.currentTime) => {
+        startedFrequencies.push(frequency.value)
+        startedAtTimes.push(when)
+      },
       stop: () => {},
-    } as unknown as OscillatorNode
+    }) as unknown as OscillatorNode
   }
 
   createGain(): GainNode {
-    return {
-      ...makeAudioNode(),
+    return Object.assign(makeAudioNode('gain'), {
       gain: makeAudioParam(1),
-    } as unknown as GainNode
+    }) as unknown as GainNode
   }
 
   createDynamicsCompressor(): DynamicsCompressorNode {
-    return {
-      ...makeAudioNode(),
+    compressorCreateCount += 1
+    return Object.assign(makeAudioNode('compressor'), {
       threshold: makeAudioParam(-24),
       knee: makeAudioParam(30),
       ratio: makeAudioParam(12),
       attack: makeAudioParam(0.003),
       release: makeAudioParam(0.25),
-    } as unknown as DynamicsCompressorNode
+    }) as unknown as DynamicsCompressorNode
   }
 
   close(): Promise<void> {
@@ -78,6 +101,11 @@ afterEach(() => {
   MusicBox.resetWakeMonitor()
   resetContext()
   startedFrequencies.length = 0
+  startedAtTimes.length = 0
+  cancelAndHoldTimes.length = 0
+  setValueEvents.length = 0
+  connections.length = 0
+  compressorCreateCount = 0
   document.body.innerHTML = ''
   globalThis.AudioContext = originalAudioContext
   vi.restoreAllMocks()
@@ -117,6 +145,43 @@ describe('MusicBox', () => {
     document.dispatchEvent(down)
 
     expect(startedFrequencies[0]!).toBeCloseTo(MusicBox.FREQUENCIES.C5!)
+  })
+
+  it('routes manual piano notes through one master compressor', () => {
+    globalThis.AudioContext = MockAudioContext as unknown as typeof AudioContext
+    const model = MusicBox.init()
+
+    MusicBox.update(model, MusicBox.NoteOn({ pitch: 'C4' }))
+    MusicBox.update(model, MusicBox.NoteOn({ pitch: 'E4' }))
+
+    expect(compressorCreateCount).toBe(1)
+    expect(connections).toContainEqual({ from: 'compressor', to: 'destination' })
+    expect(connections.filter(connection => connection.from === 'gain' && connection.to === 'compressor').length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('rapid QWERTY key presses start every distinct note immediately', () => {
+    globalThis.AudioContext = MockAudioContext as unknown as typeof AudioContext
+    MusicBox.init()
+
+    for (const key of ['a', 's', 'd']) {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key, cancelable: true }))
+    }
+
+    expect(startedFrequencies.some(freq => Math.abs(freq - MusicBox.FREQUENCIES.C4!) < 0.01)).toBe(true)
+    expect(startedFrequencies.some(freq => Math.abs(freq - MusicBox.FREQUENCIES.D4!) < 0.01)).toBe(true)
+    expect(startedFrequencies.some(freq => Math.abs(freq - MusicBox.FREQUENCIES.E4!) < 0.01)).toBe(true)
+    expect(startedAtTimes.every(time => time === 0)).toBe(true)
+  })
+
+  it('releasing a note holds the envelope before fading out', () => {
+    globalThis.AudioContext = MockAudioContext as unknown as typeof AudioContext
+    const model = MusicBox.init()
+
+    MusicBox.update(model, MusicBox.NoteOn({ pitch: 'C4' }))
+    MusicBox.update(model, MusicBox.NoteOff({ pitch: 'C4' }))
+
+    expect(cancelAndHoldTimes).toEqual([0])
+    expect(setValueEvents).not.toContainEqual({ value: 1, time: 0 })
   })
 
   it('resetKeyboardControls removes the document listeners installed by init', () => {
