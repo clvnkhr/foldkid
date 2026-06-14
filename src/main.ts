@@ -41,6 +41,7 @@ const PersistedSettingsSchema = S.Struct({
   findItAnyWins: S.optionalKey(S.Boolean),
   findItVoiceMode: S.optionalKey(S.Boolean),
   findItPairsMode: S.optionalKey(S.Boolean),
+  findItEnabledPacks: S.optionalKey(S.Array(FindIt.EmojiPackKey)),
   bubblesPopLabel: S.optionalKey(S.Boolean),
   bubblesSayColor: S.optionalKey(S.Boolean),
   bubblesSelectedColor: S.optionalKey(S.String),
@@ -82,6 +83,9 @@ const isDisplayMode = (value: string | undefined): value is 'number' | 'word' | 
 const sanitizeDisplayMode = (value: string | undefined, fallback: 'number' | 'word' | 'both'): 'number' | 'word' | 'both' =>
   isDisplayMode(value) ? value : fallback
 
+const sameStringArray = (a: readonly string[], b: readonly string[]): boolean =>
+  a.length === b.length && a.every((value, index) => value === b[index])
+
 const buildSettingsData = (model: Model): PersistedSettings => ({
   version: SETTINGS_VERSION,
   language: model.language,
@@ -93,6 +97,7 @@ const buildSettingsData = (model: Model): PersistedSettings => ({
   findItAnyWins: model.findIt.anyWins,
   findItVoiceMode: model.findIt.voiceMode,
   findItPairsMode: model.findIt.pairsMode,
+  findItEnabledPacks: model.findIt.enabledPacks,
   bubblesPopLabel: model.bubbles.popLabel,
   bubblesSayColor: model.bubbles.sayColor,
   bubblesSelectedColor: model.bubbles.selectedColor,
@@ -179,6 +184,7 @@ export const Message = S.Union([
   FindIt.SetAnyWins,
   FindIt.SetVoiceMode,
   FindIt.SetPairsMode,
+  FindIt.SetEmojiPackEnabled,
   FindIt.ReplayQuestion,
   FindIt.ClickedCollectionEmoji,
   FindIt.SetDragIndex,
@@ -247,7 +253,8 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
   const saved = loadSettings()
   const language = normalizeLanguage(saved.language)
   const pairsMode = saved.findItPairsMode ?? false
-  const findItInit = FindIt.init(pairsMode)
+  const findItEnabledPacks = FindIt.normalizeEmojiPackKeys(saved.findItEnabledPacks)
+  const findItInit = FindIt.init(pairsMode, findItEnabledPacks)
   const cmds: Command.Command<Message>[] = []
   const voiceMode = saved.findItVoiceMode ?? false
   if (voiceMode && !saved.findItAnyWins && !saved.muted) {
@@ -276,7 +283,7 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
         pitch: saved.counterPitch ?? Counter.init.pitch,
         displayMode: sanitizeDisplayMode(saved.counterDisplayMode, Counter.init.displayMode),
       },
-      findIt: { ...findItInit, anyWins: saved.findItAnyWins ?? false, voiceMode, pairsMode },
+      findIt: { ...findItInit, anyWins: saved.findItAnyWins ?? false, voiceMode, pairsMode, enabledPacks: findItEnabledPacks },
       bubbles: {
         ...Bubbles.init(),
         selectedColor: bubblesSelectedColor,
@@ -340,43 +347,61 @@ const cycleDarkMode = (current: DarkMode): DarkMode => {
   return 'auto'
 }
 
-const applyImportData = (model: Model, s: PersistedSettings): Model => ({
-  ...model,
-  settingsOverlay: '',
-  language: s.language ?? model.language,
-  darkMode: sanitizeDarkMode(s.darkMode, model.darkMode),
-  muted: s.muted ?? model.muted,
-  counter: {
-    ...model.counter,
-    rate: s.counterRate ?? model.counter.rate,
-    pitch: s.counterPitch ?? model.counter.pitch,
-    displayMode: sanitizeDisplayMode(s.counterDisplayMode, model.counter.displayMode),
-  },
-  findIt: {
-    ...model.findIt,
-    anyWins: s.findItAnyWins ?? model.findIt.anyWins,
-    voiceMode: s.findItVoiceMode ?? model.findIt.voiceMode,
-    pairsMode: s.findItPairsMode ?? model.findIt.pairsMode,
-  },
-  bubbles: {
-    ...model.bubbles,
-    popLabel: s.bubblesPopLabel ?? model.bubbles.popLabel,
-    sayColor: s.bubblesSayColor ?? model.bubbles.sayColor,
-    selectedColor: s.bubblesSelectedColor ?? model.bubbles.selectedColor,
-    rainbowMode: (s.bubblesSelectedColor ?? model.bubbles.selectedColor) === 'rainbow',
-  },
-  musicBox: {
-    ...model.musicBox,
-    songOrder: Array.isArray(s.musicBoxSongOrder)
-      ? s.musicBoxSongOrder.filter((i: number) => typeof i === 'number' && i >= 0 && i < MusicBox.SONGS.length)
-      : model.musicBox.songOrder,
-    hiddenSongs: Array.isArray(s.musicBoxHiddenSongs)
-      ? s.musicBoxHiddenSongs.map((h: boolean) => h === true)
-      : model.musicBox.hiddenSongs,
-  },
-  showResetConfirm: false,
-  importExportMessage: t('settingsImportSuccess', model.language),
-})
+const applyImportData = (model: Model, s: PersistedSettings): Model => {
+  const findItAnyWins = s.findItAnyWins ?? model.findIt.anyWins
+  const findItVoiceMode = s.findItVoiceMode ?? model.findIt.voiceMode
+  const findItPairsMode = s.findItPairsMode ?? model.findIt.pairsMode
+  const findItEnabledPacks = FindIt.normalizeEmojiPackKeys(s.findItEnabledPacks ?? model.findIt.enabledPacks)
+  const shouldRegenerateFindIt = findItPairsMode !== model.findIt.pairsMode || !sameStringArray(findItEnabledPacks, model.findIt.enabledPacks)
+  const importedFindIt = shouldRegenerateFindIt
+    ? {
+        ...FindIt.init(findItPairsMode, findItEnabledPacks),
+        anyWins: findItAnyWins,
+        voiceMode: findItVoiceMode,
+        pairsMode: findItPairsMode,
+        enabledPacks: findItEnabledPacks,
+      }
+    : {
+        ...model.findIt,
+        anyWins: findItAnyWins,
+        voiceMode: findItVoiceMode,
+        pairsMode: findItPairsMode,
+        enabledPacks: findItEnabledPacks,
+      }
+
+  return {
+    ...model,
+    settingsOverlay: '',
+    language: s.language ?? model.language,
+    darkMode: sanitizeDarkMode(s.darkMode, model.darkMode),
+    muted: s.muted ?? model.muted,
+    counter: {
+      ...model.counter,
+      rate: s.counterRate ?? model.counter.rate,
+      pitch: s.counterPitch ?? model.counter.pitch,
+      displayMode: sanitizeDisplayMode(s.counterDisplayMode, model.counter.displayMode),
+    },
+    findIt: importedFindIt,
+    bubbles: {
+      ...model.bubbles,
+      popLabel: s.bubblesPopLabel ?? model.bubbles.popLabel,
+      sayColor: s.bubblesSayColor ?? model.bubbles.sayColor,
+      selectedColor: s.bubblesSelectedColor ?? model.bubbles.selectedColor,
+      rainbowMode: (s.bubblesSelectedColor ?? model.bubbles.selectedColor) === 'rainbow',
+    },
+    musicBox: {
+      ...model.musicBox,
+      songOrder: Array.isArray(s.musicBoxSongOrder)
+        ? s.musicBoxSongOrder.filter((i: number) => typeof i === 'number' && i >= 0 && i < MusicBox.SONGS.length)
+        : model.musicBox.songOrder,
+      hiddenSongs: Array.isArray(s.musicBoxHiddenSongs)
+        ? s.musicBoxHiddenSongs.map((h: boolean) => h === true)
+        : model.musicBox.hiddenSongs,
+    },
+    showResetConfirm: false,
+    importExportMessage: t('settingsImportSuccess', model.language),
+  }
+}
 
 type ParseImportResult =
   | { readonly _tag: 'Success'; readonly value: PersistedSettings }
@@ -465,6 +490,7 @@ const _update = (
       FindItSetAnyWins: (msg) => updateFindIt(model, msg),
       FindItSetVoiceMode: (msg) => updateFindIt(model, msg),
       FindItSetPairsMode: (msg) => updateFindIt(model, msg),
+      FindItSetEmojiPackEnabled: (msg) => updateFindIt(model, msg),
       FindItReplayQuestion: (msg) => updateFindIt(model, msg),
       FindItClickedCollectionEmoji: (msg) => updateFindIt(model, msg),
       FindItSetDragIndex: (msg) => updateFindIt(model, msg),
@@ -555,7 +581,7 @@ const _update = (
 const SETTINGS_TAGS = new Set([
   'ClickedDarkMode', 'SetLanguage', 'ToggleMute',
   'CounterSetRate', 'CounterSetPitch', 'CounterSetDisplayMode',
-  'FindItSetAnyWins', 'FindItSetVoiceMode', 'FindItSetPairsMode',
+  'FindItSetAnyWins', 'FindItSetVoiceMode', 'FindItSetPairsMode', 'FindItSetEmojiPackEnabled',
   'BubblesSetPopLabel', 'BubblesSetSayColor',
   'MusicBoxToggleSongVisibility', 'MusicBoxSongDroppedOn',
 ])
@@ -800,6 +826,26 @@ export const view = (model: Model): Document => {
                   [h.Class(model.findIt.pairsMode ? 'btn btn-primary' : 'btn btn-secondary'), h.OnClick(FindIt.SetPairsMode({ value: true }))],
                   [t('pairsMode', model.language)],
                 ),
+              ]),
+              h.div([h.Class('setting-row')], [
+                h.label([], [t('findItEmojiPacks', model.language)]),
+                h.div([h.Class('emoji-pack-buttons')], [
+                  ...FindIt.EMOJI_PACKS.map((pack) => {
+                    const enabled = model.findIt.enabledPacks.includes(pack.key)
+                    const isLastEnabled = enabled && model.findIt.enabledPacks.length === 1
+                    return h.button(
+                      [
+                        h.Class(enabled ? 'btn btn-primary emoji-pack-btn' : 'btn btn-secondary emoji-pack-btn'),
+                        h.Disabled(isLastEnabled),
+                        h.OnClick(FindIt.SetEmojiPackEnabled({ key: pack.key, value: !enabled })),
+                      ],
+                      [
+                        h.span([h.Class('emoji-pack-sample')], [pack.sample]),
+                        h.span([], [t(pack.labelKey, model.language)]),
+                      ],
+                    )
+                  }),
+                ]),
               ]),
             ])
             : null,

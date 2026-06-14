@@ -15,7 +15,49 @@ describe('FindIt', () => {
     expect(game.shaking).toBe(-1)
     expect(game.won).toBe(false)
     expect(game.anyWins).toBe(false)
+    expect(game.enabledPacks).toEqual(FindIt.DEFAULT_EMOJI_PACK_KEYS)
     expect(game.grid.some(c => c.emoji === game.target)).toBe(true)
+  })
+
+  it('can generate a numbers-only game', () => {
+    const game = FindIt.init(false, ['numbers'])
+    const numbers = new Set(FindIt.emojiPoolForPacks(['numbers']))
+
+    expect(game.enabledPacks).toEqual(['numbers'])
+    expect(game.grid).toHaveLength(9)
+    expect(game.grid.every(cell => numbers.has(cell.emoji))).toBe(true)
+    expect(numbers.has(game.target)).toBe(true)
+  })
+
+  it('toggles emoji packs and regenerates from enabled packs', () => {
+    const game = FindIt.init(false, ['numbers', 'animals'])
+    const numbers = new Set(FindIt.emojiPoolForPacks(['numbers']))
+
+    Story.story(
+      FindIt.update,
+      Story.with(game),
+      Story.message(FindIt.SetEmojiPackEnabled({ key: 'animals', value: false })),
+      Story.model((model) => {
+        expect(model.enabledPacks).toEqual(['numbers'])
+        expect(model.grid.every(cell => numbers.has(cell.emoji))).toBe(true)
+      }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('does not disable the last emoji pack', () => {
+    const game = FindIt.init(false, ['numbers'])
+
+    Story.story(
+      FindIt.update,
+      Story.with(game),
+      Story.message(FindIt.SetEmojiPackEnabled({ key: 'numbers', value: false })),
+      Story.model((model) => {
+        expect(model.enabledPacks).toEqual(['numbers'])
+        expect(model.grid).toStrictEqual(game.grid)
+      }),
+      Story.Command.expectNone(),
+    )
   })
 
   it('correct cell shows win', () => {

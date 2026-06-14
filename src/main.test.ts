@@ -46,6 +46,7 @@ describe('settings persistence', () => {
     { label: 'FindItSetAnyWins', msg: FindIt.SetAnyWins({ value: true }) },
     { label: 'FindItSetVoiceMode', msg: FindIt.SetVoiceMode({ value: true }) },
     { label: 'FindItSetPairsMode', msg: FindIt.SetPairsMode({ value: true }) },
+    { label: 'FindItSetEmojiPackEnabled', msg: FindIt.SetEmojiPackEnabled({ key: 'numbers', value: false }) },
     { label: 'BubblesSetPopLabel', msg: Bubbles.SetPopLabel({ value: true }) },
     { label: 'BubblesSetSayColor', msg: Bubbles.SetSayColor({ value: true }) },
     { label: 'MusicBoxToggleSongVisibility', msg: MusicBox.ToggleSongVisibility({ index: 1 }) },
@@ -95,7 +96,17 @@ describe('Main', () => {
     expect(model.language).toBe('en')
     expect(model.showSettings).toBe(false)
     expect(model.counter.count).toBe(0)
+    expect(model.findIt.enabledPacks).toEqual(FindIt.DEFAULT_EMOJI_PACK_KEYS)
     expect(model.bubbles).toStrictEqual({ bubbles: [], score: 0, nextId: 0, rainbowMode: false, popLabel: false, sayColor: false, selectedColor: '' })
+  })
+
+  it('init loads persisted Find It emoji packs', () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ findItEnabledPacks: ['numbers'] }))
+    const [model] = Main.init()
+    const numbers = new Set(FindIt.emojiPoolForPacks(['numbers']))
+
+    expect(model.findIt.enabledPacks).toEqual(['numbers'])
+    expect(model.findIt.grid.every(cell => numbers.has(cell.emoji))).toBe(true)
   })
 
   describe('schema boundaries', () => {
@@ -362,24 +373,29 @@ describe('Main', () => {
           language: 'fr',
           muted: true,
           counterRate: 1.7,
+          findItEnabledPacks: ['numbers'],
         },
       })
       const [next, cmds] = Main.update(createModel(), ImportedSettings({ data }))
       const cmd = cmds[0]
+      const numbers = new Set(FindIt.emojiPoolForPacks(['numbers']))
 
       expect(next.language).toBe('fr')
       expect(next.muted).toBe(true)
       expect(next.counter.rate).toBe(1.7)
+      expect(next.findIt.enabledPacks).toEqual(['numbers'])
+      expect(next.findIt.grid.every(cell => numbers.has(cell.emoji))).toBe(true)
       expect(cmd?.name).toBe('PersistSettings')
       expect(localStorage.getItem(STORAGE_KEY)).toBeNull()
 
       if (!cmd) throw new Error('missing PersistSettings command')
       await Effect.runPromise(cmd.effect)
 
-      const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') as { language?: string; muted?: boolean; counterRate?: number }
+      const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') as { language?: string; muted?: boolean; counterRate?: number; findItEnabledPacks?: string[] }
       expect(stored.language).toBe('fr')
       expect(stored.muted).toBe(true)
       expect(stored.counterRate).toBe(1.7)
+      expect(stored.findItEnabledPacks).toEqual(['numbers'])
     })
 
     it('ApplyImport closes the overlay and persists through a command effect', async () => {
@@ -460,6 +476,6 @@ const createModel = (): Main.Model => {
   const init = Main.init()[0]
   return {
     ...init,
-    findIt: { grid: [], target: '🎈', count: 0, shaking: -1, shakeTick: 0, won: false, found: [], anyWins: false, voiceMode: false, pairsMode: false, tooltipEmoji: null, wrongCount: 0, hintId: null, dragIndex: null, gridDragIndex: null },
+    findIt: { grid: [], target: '🎈', count: 0, shaking: -1, shakeTick: 0, won: false, found: [], anyWins: false, voiceMode: false, pairsMode: false, enabledPacks: FindIt.DEFAULT_EMOJI_PACK_KEYS, tooltipEmoji: null, wrongCount: 0, hintId: null, dragIndex: null, gridDragIndex: null },
   }
 }

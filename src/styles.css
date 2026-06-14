@@ -1005,6 +1005,30 @@ body {
   font-size: 0.75rem;
 }
 
+.emoji-pack-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.emoji-pack-btn {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.35rem;
+  width: 100%;
+  min-height: 2rem;
+  padding: 0.3rem 0.45rem;
+  font-size: 0.75rem;
+  text-align: left;
+}
+
+.emoji-pack-sample {
+  flex-shrink: 0;
+  font-size: 0.9rem;
+  letter-spacing: 0;
+}
+
 .settings-actions {
   border-top: 1px solid var(--border-color, rgba(0,0,0,0.1));
   padding-top: 0.75rem;
@@ -1694,4 +1718,3 @@ body {
 .dark .piano-key-glow--active {
   animation: glowFlashDark 0.25s ease-out forwards;
 }
-

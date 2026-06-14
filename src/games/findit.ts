@@ -6,26 +6,56 @@ import { boing } from '../audio'
 import { speak } from '../speech'
 import { t, tf } from '../i18n'
 
+export const EmojiPackKey = S.Union([S.Literal('fun'), S.Literal('numbers'), S.Literal('animals')])
+export type EmojiPackKey = typeof EmojiPackKey.Type
+
+export const EMOJI_PACKS: ReadonlyArray<{ key: EmojiPackKey; labelKey: 'findItPackFun' | 'findItPackNumbers' | 'findItPackAnimals'; sample: string }> = [
+  { key: 'fun', labelKey: 'findItPackFun', sample: '🎈🍕🌈' },
+  { key: 'numbers', labelKey: 'findItPackNumbers', sample: '1️⃣2️⃣3️⃣' },
+  { key: 'animals', labelKey: 'findItPackAnimals', sample: '🐱🦁🐬' },
+]
+
+export const DEFAULT_EMOJI_PACK_KEYS: EmojiPackKey[] = ['fun', 'numbers', 'animals']
+
 const EMOJIS = [
-  ['🎈', 'Balloon'], ['🎉', 'Party Popper'], ['🎊', 'Confetti'], ['🎁', 'Gift'],
-  ['🧸', 'Teddy Bear'], ['🍭', 'Lollipop'], ['🍬', 'Candy'], ['🎂', 'Birthday Cake'],
-  ['🌈', 'Rainbow'], ['🌸', 'Cherry Blossom'], ['⭐', 'Star'], ['🍕', 'Pizza'],
-  ['🍔', 'Burger'], ['🌮', 'Taco'], ['🍩', 'Donut'], ['🧁', 'Cupcake'],
-  ['0️⃣', 'Zero'], ['1️⃣', 'One'], ['2️⃣', 'Two'], ['3️⃣', 'Three'], ['4️⃣', 'Four'],
-  ['5️⃣', 'Five'], ['6️⃣', 'Six'], ['7️⃣', 'Seven'], ['8️⃣', 'Eight'], ['9️⃣', 'Nine'],
-  ['🐱', 'Cat'], ['🐶', 'Dog'], ['🐰', 'Rabbit'], ['🦋', 'Butterfly'], ['🦄', 'Unicorn'],
-  ['🐻', 'Bear'], ['🐼', 'Panda'], ['🐨', 'Koala'], ['🦁', 'Lion'], ['🐯', 'Tiger'],
-  ['🐸', 'Frog'], ['🐵', 'Monkey'], ['🦊', 'Fox'], ['🐴', 'Horse'], ['🦝', 'Raccoon'],
-  ['🐮', 'Cow'], ['🐷', 'Pig'], ['🐙', 'Octopus'], ['🐧', 'Penguin'], ['🐦', 'Bird'],
-  ['🦅', 'Eagle'], ['🦉', 'Owl'], ['🐥', 'Chick'], ['🦆', 'Duck'],
-  ['🐢', 'Turtle'], ['🐍', 'Snake'], ['🦎', 'Lizard'], ['🐊', 'Crocodile'],
-  ['🐳', 'Whale'], ['🐬', 'Dolphin'], ['🦈', 'Shark'], ['🐠', 'Fish'], ['🐡', 'Blowfish'],
-  ['🐝', 'Bee'], ['🐞', 'Ladybug'], ['🦗', 'Cricket'], ['🐜', 'Ant'],
+  ['🎈', 'Balloon', 'fun'], ['🎉', 'Party Popper', 'fun'], ['🎊', 'Confetti', 'fun'], ['🎁', 'Gift', 'fun'],
+  ['🧸', 'Teddy Bear', 'fun'], ['🍭', 'Lollipop', 'fun'], ['🍬', 'Candy', 'fun'], ['🎂', 'Birthday Cake', 'fun'],
+  ['🌈', 'Rainbow', 'fun'], ['🌸', 'Cherry Blossom', 'fun'], ['⭐', 'Star', 'fun'], ['🍕', 'Pizza', 'fun'],
+  ['🍔', 'Burger', 'fun'], ['🌮', 'Taco', 'fun'], ['🍩', 'Donut', 'fun'], ['🧁', 'Cupcake', 'fun'],
+  ['0️⃣', 'Zero', 'numbers'], ['1️⃣', 'One', 'numbers'], ['2️⃣', 'Two', 'numbers'], ['3️⃣', 'Three', 'numbers'], ['4️⃣', 'Four', 'numbers'],
+  ['5️⃣', 'Five', 'numbers'], ['6️⃣', 'Six', 'numbers'], ['7️⃣', 'Seven', 'numbers'], ['8️⃣', 'Eight', 'numbers'], ['9️⃣', 'Nine', 'numbers'],
+  ['🐱', 'Cat', 'animals'], ['🐶', 'Dog', 'animals'], ['🐰', 'Rabbit', 'animals'], ['🦋', 'Butterfly', 'animals'], ['🦄', 'Unicorn', 'animals'],
+  ['🐻', 'Bear', 'animals'], ['🐼', 'Panda', 'animals'], ['🐨', 'Koala', 'animals'], ['🦁', 'Lion', 'animals'], ['🐯', 'Tiger', 'animals'],
+  ['🐸', 'Frog', 'animals'], ['🐵', 'Monkey', 'animals'], ['🦊', 'Fox', 'animals'], ['🐴', 'Horse', 'animals'], ['🦝', 'Raccoon', 'animals'],
+  ['🐮', 'Cow', 'animals'], ['🐷', 'Pig', 'animals'], ['🐙', 'Octopus', 'animals'], ['🐧', 'Penguin', 'animals'], ['🐦', 'Bird', 'animals'],
+  ['🦅', 'Eagle', 'animals'], ['🦉', 'Owl', 'animals'], ['🐥', 'Chick', 'animals'], ['🦆', 'Duck', 'animals'],
+  ['🐢', 'Turtle', 'animals'], ['🐍', 'Snake', 'animals'], ['🦎', 'Lizard', 'animals'], ['🐊', 'Crocodile', 'animals'],
+  ['🐳', 'Whale', 'animals'], ['🐬', 'Dolphin', 'animals'], ['🦈', 'Shark', 'animals'], ['🐠', 'Fish', 'animals'], ['🐡', 'Blowfish', 'animals'],
+  ['🐝', 'Bee', 'animals'], ['🐞', 'Ladybug', 'animals'], ['🦗', 'Cricket', 'animals'], ['🐜', 'Ant', 'animals'],
 ] as const
 
 const EMOJI_POOL: string[] = EMOJIS.map(([emoji]) => emoji)
 
-const EMOJI_NAMES: Record<string, string> = Object.fromEntries(EMOJIS)
+const EMOJI_NAMES: Record<string, string> = Object.fromEntries(EMOJIS.map(([emoji, name]) => [emoji, name]))
+
+const EMOJI_PACK_KEYS = new Set<EmojiPackKey>(DEFAULT_EMOJI_PACK_KEYS)
+
+export const normalizeEmojiPackKeys = (keys: readonly string[] | undefined): EmojiPackKey[] => {
+  const normalized: EmojiPackKey[] = []
+  for (const key of keys ?? DEFAULT_EMOJI_PACK_KEYS) {
+    if (EMOJI_PACK_KEYS.has(key as EmojiPackKey) && !normalized.includes(key as EmojiPackKey)) {
+      normalized.push(key as EmojiPackKey)
+    }
+  }
+  return normalized.length > 0 ? normalized : [...DEFAULT_EMOJI_PACK_KEYS]
+}
+
+export const emojiPoolForPacks = (keys: readonly string[] | undefined): string[] => {
+  const enabled = new Set(normalizeEmojiPackKeys(keys))
+  return EMOJIS
+    .filter(([, , pack]) => enabled.has(pack))
+    .map(([emoji]) => emoji)
+}
 
 const EMOJI_NAMES_BY_LANG: Record<string, string[]> = {
   zh: ['气球', '派对炮', '五彩纸屑', '礼物', '泰迪熊', '棒棒糖', '糖果', '生日蛋糕', '彩虹', '樱花', '星星', '披萨', '汉堡', '玉米饼', '甜甜圈', '杯子蛋糕', '零', '一', '二', '三', '四', '五', '六', '七', '八', '九', '猫', '狗', '兔子', '蝴蝶', '独角兽', '熊', '熊猫', '考拉', '狮子', '老虎', '青蛙', '猴子', '狐狸', '马', '浣熊', '牛', '猪', '章鱼', '企鹅', '鸟', '鹰', '猫头鹰', '小鸡', '鸭子', '乌龟', '蛇', '蜥蜴', '鳄鱼', '鲸鱼', '海豚', '鲨鱼', '鱼', '河豚', '蜜蜂', '瓢虫', '蟋蟀', '蚂蚁'],
@@ -54,7 +84,7 @@ const ICON_REPLAY = '🔊'
 const EmojiCell = S.Struct({ id: S.Number, emoji: S.String })
 type EmojiCell = typeof EmojiCell.Type
 
-export const Model = S.Struct({ grid: S.Array(EmojiCell), target: S.String, count: S.Number, shaking: S.Number, shakeTick: S.Number, won: S.Boolean, found: S.Array(S.String), anyWins: S.Boolean, voiceMode: S.Boolean, pairsMode: S.Boolean, tooltipEmoji: S.Union([S.String, S.Null]), wrongCount: S.Number, hintId: S.Union([S.Number, S.Null]), dragIndex: S.Union([S.Number, S.Null]), gridDragIndex: S.Union([S.Number, S.Null]) })
+export const Model = S.Struct({ grid: S.Array(EmojiCell), target: S.String, count: S.Number, shaking: S.Number, shakeTick: S.Number, won: S.Boolean, found: S.Array(S.String), anyWins: S.Boolean, voiceMode: S.Boolean, pairsMode: S.Boolean, enabledPacks: S.Array(EmojiPackKey), tooltipEmoji: S.Union([S.String, S.Null]), wrongCount: S.Number, hintId: S.Union([S.Number, S.Null]), dragIndex: S.Union([S.Number, S.Null]), gridDragIndex: S.Union([S.Number, S.Null]) })
 export type Model = typeof Model.Type
 
 export const ClickedCell = m('FindItClickedCell', { id: S.Number })
@@ -62,6 +92,7 @@ export const ClickedNext = m('FindItClickedNext')
 export const SetAnyWins = m('FindItSetAnyWins', { value: S.Boolean })
 export const SetVoiceMode = m('FindItSetVoiceMode', { value: S.Boolean })
 export const SetPairsMode = m('FindItSetPairsMode', { value: S.Boolean })
+export const SetEmojiPackEnabled = m('FindItSetEmojiPackEnabled', { key: EmojiPackKey, value: S.Boolean })
 export const ReplayQuestion = m('FindItReplayQuestion')
 export const ClickedCollectionEmoji = m('FindItClickedCollectionEmoji', { emoji: S.String })
 export const ClickedReset = m('FindItClickedReset')
@@ -74,7 +105,7 @@ export const GridDragStarted = m('FindItGridDragStarted', { index: S.Number })
 export const GridDroppedOn = m('FindItGridDroppedOn', { index: S.Number })
 export const GridDragEnded = m('FindItGridDragEnded')
 
-export const Message = S.Union([ClickedCell, ClickedNext, SetAnyWins, SetVoiceMode, SetPairsMode, ReplayQuestion, ClickedCollectionEmoji, ClickedReset, DismissTooltip, SoundPlayed, SetDragIndex, DroppedOn, DragEnded, GridDragStarted, GridDroppedOn, GridDragEnded])
+export const Message = S.Union([ClickedCell, ClickedNext, SetAnyWins, SetVoiceMode, SetPairsMode, SetEmojiPackEnabled, ReplayQuestion, ClickedCollectionEmoji, ClickedReset, DismissTooltip, SoundPlayed, SetDragIndex, DroppedOn, DragEnded, GridDragStarted, GridDroppedOn, GridDragEnded])
 export type Message = typeof Message.Type
 
 const shuffle = <T>(arr: readonly T[]): T[] => {
@@ -86,10 +117,12 @@ const shuffle = <T>(arr: readonly T[]): T[] => {
   return a
 }
 
-const generatePairsGame = (found?: string[], anyWins: boolean = false, voiceMode: boolean = false): Model => {
-  const pool = shuffle(EMOJI_POOL)
+const generatePairsGame = (found?: string[], anyWins: boolean = false, voiceMode: boolean = false, enabledPacks: readonly string[] = DEFAULT_EMOJI_PACK_KEYS): Model => {
+  const activePacks = normalizeEmojiPackKeys(enabledPacks)
+  const sourcePool = emojiPoolForPacks(activePacks)
+  const pool = shuffle(sourcePool)
   const emojiA = pool[0]!
-  const emojiB = pool[1]!
+  const emojiB = pool[1] ?? pool[0]!
   const target = emojiA + emojiB
 
   const cellPairs: string[] = [target]
@@ -97,28 +130,30 @@ const generatePairsGame = (found?: string[], anyWins: boolean = false, voiceMode
     cellPairs.push(emojiB + emojiA)
   }
 
-  while (cellPairs.length < 9) {
-    const a = EMOJI_POOL[Math.floor(Math.random() * EMOJI_POOL.length)]!
-    const b = EMOJI_POOL[Math.floor(Math.random() * EMOJI_POOL.length)]!
-    const p = a + b
-    if (!cellPairs.includes(p)) {
-      cellPairs.push(p)
-    }
+  const candidates = shuffle(sourcePool.flatMap(a => sourcePool.map(b => a + b)))
+  for (const candidate of candidates) {
+    if (cellPairs.length >= 9) break
+    if (!cellPairs.includes(candidate)) cellPairs.push(candidate)
   }
+  while (cellPairs.length < 9) cellPairs.push(target)
 
   const grid = shuffle(cellPairs).map((emoji, i) => ({ id: i, emoji }))
-  return { grid, target, count: 0, shaking: -1, shakeTick: 0, won: false, found: found ?? [], anyWins, voiceMode, pairsMode: true, tooltipEmoji: null, wrongCount: 0, hintId: null, dragIndex: null, gridDragIndex: null }
+  return { grid, target, count: 0, shaking: -1, shakeTick: 0, won: false, found: found ?? [], anyWins, voiceMode, pairsMode: true, enabledPacks: activePacks, tooltipEmoji: null, wrongCount: 0, hintId: null, dragIndex: null, gridDragIndex: null }
 }
 
-const generateGame = (found?: string[], anyWins: boolean = false, voiceMode: boolean = false, pairsMode: boolean = false): Model => {
-  if (pairsMode) return generatePairsGame(found, anyWins, voiceMode)
-  const shuffled = shuffle(EMOJI_POOL).slice(0, 9)
+const generateGame = (found?: string[], anyWins: boolean = false, voiceMode: boolean = false, pairsMode: boolean = false, enabledPacks: readonly string[] = DEFAULT_EMOJI_PACK_KEYS): Model => {
+  const activePacks = normalizeEmojiPackKeys(enabledPacks)
+  if (pairsMode) return generatePairsGame(found, anyWins, voiceMode, activePacks)
+  const sourcePool = emojiPoolForPacks(activePacks)
+  const shuffled = sourcePool.length >= 9
+    ? shuffle(sourcePool).slice(0, 9)
+    : Array.from({ length: 9 }, (_, i) => sourcePool[i % sourcePool.length]!)
   const grid = shuffled.map((emoji, i) => ({ id: i, emoji }))
   const target = grid[Math.floor(Math.random() * grid.length)]!.emoji
-  return { grid, target, count: 0, shaking: -1, shakeTick: 0, won: false, found: found ?? [], anyWins, voiceMode, pairsMode: false, tooltipEmoji: null, wrongCount: 0, hintId: null, dragIndex: null, gridDragIndex: null }
+  return { grid, target, count: 0, shaking: -1, shakeTick: 0, won: false, found: found ?? [], anyWins, voiceMode, pairsMode: false, enabledPacks: activePacks, tooltipEmoji: null, wrongCount: 0, hintId: null, dragIndex: null, gridDragIndex: null }
 }
 
-export const init = (pairsMode: boolean = false): Model => generateGame([], false, false, pairsMode)
+export const init = (pairsMode: boolean = false, enabledPacks: readonly string[] = DEFAULT_EMOJI_PACK_KEYS): Model => generateGame([], false, false, pairsMode, enabledPacks)
 
 export const update = (
   model: Model,
@@ -146,7 +181,7 @@ export const update = (
         ]
       },
       FindItClickedNext: () => {
-        const next = generateGame([...model.found], model.anyWins, model.voiceMode, model.pairsMode)
+        const next = generateGame([...model.found], model.anyWins, model.voiceMode, model.pairsMode, model.enabledPacks)
         const cmds: Command.Command<Message>[] = []
         if (model.voiceMode && !model.anyWins && !muted) {
           cmds.push(speak(tf('whereIs', language, emojiName(next.target, language)), SoundPlayed(), { lang: language }))
@@ -163,9 +198,19 @@ export const update = (
         [],
       ],
       FindItSetPairsMode: (msg) => [
-        generateGame([...model.found], model.anyWins, model.voiceMode, msg.value),
+        { ...generateGame([...model.found], model.anyWins, model.voiceMode, msg.value, model.enabledPacks), count: model.count },
         [],
       ],
+      FindItSetEmojiPackEnabled: (msg) => {
+        const current = normalizeEmojiPackKeys(model.enabledPacks)
+        if (!msg.value && current.length === 1 && current[0] === msg.key) return [model, []]
+        const nextPacks = normalizeEmojiPackKeys(msg.value
+          ? [...current, msg.key]
+          : current.filter(key => key !== msg.key))
+        if (nextPacks.length === current.length && nextPacks.every((key, i) => key === current[i])) return [model, []]
+        const next = generateGame([...model.found], model.anyWins, model.voiceMode, model.pairsMode, nextPacks)
+        return [{ ...next, count: model.count }, []]
+      },
       FindItReplayQuestion: () => [
         model,
         model.voiceMode && !model.anyWins && !muted
@@ -210,7 +255,7 @@ export const update = (
         muted ? [] : [speak(emojiName(msg.emoji, language), SoundPlayed(), { lang: language })],
       ],
       FindItClickedReset: () => {
-        const next = generateGame([], model.anyWins, model.voiceMode, model.pairsMode)
+        const next = generateGame([], model.anyWins, model.voiceMode, model.pairsMode, model.enabledPacks)
         const cmds: Command.Command<Message>[] = []
         if (model.voiceMode && !model.anyWins && !muted) {
           cmds.push(speak(tf('whereIs', language, emojiName(next.target, language)), SoundPlayed(), { lang: language }))
