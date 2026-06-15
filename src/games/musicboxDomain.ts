@@ -3,10 +3,21 @@ export interface Note {
   dur: number
 }
 
+export const DRUM_KINDS = ['kick', 'snare', 'hat', 'clap', 'stomp', 'cheer'] as const
+
+export type DrumKind = typeof DRUM_KINDS[number]
+
+export interface DrumHit {
+  readonly at: number
+  readonly kind: DrumKind
+  readonly gain?: number
+}
+
 export interface Song {
   key: string
   emoji: string
   notes: Note[]
+  drums: DrumHit[]
   lyrics: string[]
 }
 

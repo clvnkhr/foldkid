@@ -1,5 +1,5 @@
 import { MutableRef } from 'effect'
-import type { FrequencyTable, Instrument, Pitch } from './musicboxDomain'
+import type { DrumHit, DrumKind, FrequencyTable, Instrument, Pitch } from './musicboxDomain'
 
 export type { Instrument } from './musicboxDomain'
 
@@ -17,6 +17,7 @@ export interface ScheduledNote {
 export interface MusicBoxAudioRuntime {
   readonly primeFromGesture: () => void
   readonly playScheduledNote: (note: ScheduledNote, instrument: Instrument) => void
+  readonly playDrumHit: (hit: Omit<DrumHit, 'at'>) => void
   readonly startManualNote: (pitch: Pitch, instrument: Instrument) => void
   readonly stopManualNote: (pitch: Pitch) => void
   readonly stopAllManualNotes: () => void
@@ -32,6 +33,15 @@ export interface MusicBoxAudioRuntimeDeps {
 }
 
 const SAFETY_MARGIN = 0.03
+
+const DRUM_GAIN: Record<DrumKind, number> = {
+  kick: 0.22,
+  snare: 0.16,
+  hat: 0.06,
+  clap: 0.18,
+  stomp: 0.28,
+  cheer: 0.18,
+}
 
 export const createMusicBoxAudioRuntime = (deps: MusicBoxAudioRuntimeDeps): MusicBoxAudioRuntime => {
   const activeNotes = MutableRef.make(new Map<string, {
@@ -59,17 +69,124 @@ export const createMusicBoxAudioRuntime = (deps: MusicBoxAudioRuntimeDeps): Musi
     return ctx
   }
 
-  const connectMasterGain = (ctx: AudioContext, masterGain: GainNode, inst: Instrument): void => {
+  const connectToOutput = (ctx: AudioContext, node: AudioNode): void => {
     const dest = masterCompressor ?? ctx.destination
+    node.connect(dest)
+  }
+
+  const connectMasterGain = (ctx: AudioContext, masterGain: GainNode, inst: Instrument): void => {
     if (inst.filterType && inst.filterFreq) {
       const filter = ctx.createBiquadFilter()
       filter.type = inst.filterType
       filter.frequency.value = inst.filterFreq
       filter.Q.value = inst.filterQ ?? 1
       masterGain.connect(filter)
-      filter.connect(dest)
+      connectToOutput(ctx, filter)
     } else {
-      masterGain.connect(dest)
+      connectToOutput(ctx, masterGain)
+    }
+  }
+
+  const makeNoiseSource = (ctx: AudioContext, duration: number): AudioBufferSourceNode => {
+    const length = Math.max(1, Math.floor(ctx.sampleRate * duration))
+    const buffer = ctx.createBuffer(1, length, ctx.sampleRate)
+    const data = buffer.getChannelData(0)
+    for (let i = 0; i < data.length; i++) {
+      data[i] = (Math.random() * 2 - 1) * 0.8
+    }
+    const source = ctx.createBufferSource()
+    source.buffer = buffer
+    return source
+  }
+
+  const playNoise = (
+    ctx: AudioContext,
+    at: number,
+    duration: number,
+    gainValue: number,
+    filterType: BiquadFilterType,
+    filterFreq: number,
+  ): void => {
+    const source = makeNoiseSource(ctx, duration)
+    const filter = ctx.createBiquadFilter()
+    filter.type = filterType
+    filter.frequency.value = filterFreq
+    filter.Q.value = 0.7
+    const gain = ctx.createGain()
+    gain.gain.value = 0
+    gain.gain.setValueAtTime(0, at)
+    gain.gain.linearRampToValueAtTime(gainValue, at + 0.004)
+    gain.gain.exponentialRampToValueAtTime(0.0001, at + duration)
+    source.connect(filter)
+    filter.connect(gain)
+    connectToOutput(ctx, gain)
+    source.start(at)
+    source.stop(at + duration + 0.01)
+    setTimeout(() => {
+      try { source.stop() } catch { /* already stopped */ }
+      source.disconnect()
+      filter.disconnect()
+      gain.disconnect()
+    }, duration * 1000 + 100)
+  }
+
+  const playThump = (
+    ctx: AudioContext,
+    at: number,
+    gainValue: number,
+    startFreq: number,
+    endFreq: number,
+    duration: number,
+  ): void => {
+    const osc = ctx.createOscillator()
+    osc.type = 'sine'
+    osc.frequency.setValueAtTime(startFreq, at)
+    osc.frequency.exponentialRampToValueAtTime(endFreq, at + duration * 0.65)
+    const gain = ctx.createGain()
+    gain.gain.value = 0
+    gain.gain.setValueAtTime(0, at)
+    gain.gain.linearRampToValueAtTime(gainValue, at + 0.006)
+    gain.gain.exponentialRampToValueAtTime(0.0001, at + duration)
+    osc.connect(gain)
+    connectToOutput(ctx, gain)
+    osc.start(at)
+    osc.stop(at + duration + 0.01)
+    setTimeout(() => {
+      try { osc.stop() } catch { /* already stopped */ }
+      osc.disconnect()
+      gain.disconnect()
+    }, duration * 1000 + 100)
+  }
+
+  const playDrumHit = (hit: Omit<DrumHit, 'at'>): void => {
+    const ctx = getMusicBoxContext()
+    if (!ctx) return
+    const now = ctx.currentTime + SAFETY_MARGIN
+    const gain = DRUM_GAIN[hit.kind] * (hit.gain ?? 1)
+
+    switch (hit.kind) {
+      case 'kick':
+        playThump(ctx, now, gain, 130, 48, 0.24)
+        break
+      case 'stomp':
+        playThump(ctx, now, gain, 95, 36, 0.34)
+        playNoise(ctx, now + 0.01, 0.11, gain * 0.35, 'lowpass', 650)
+        break
+      case 'snare':
+        playNoise(ctx, now, 0.13, gain, 'bandpass', 1600)
+        playThump(ctx, now, gain * 0.35, 190, 150, 0.09)
+        break
+      case 'hat':
+        playNoise(ctx, now, 0.055, gain, 'highpass', 4200)
+        break
+      case 'clap':
+        playNoise(ctx, now, 0.075, gain, 'bandpass', 1800)
+        playNoise(ctx, now + 0.055, 0.08, gain * 0.85, 'bandpass', 1700)
+        break
+      case 'cheer':
+        playNoise(ctx, now, 0.16, gain * 0.8, 'bandpass', 2200)
+        playNoise(ctx, now + 0.09, 0.08, gain * 0.55, 'highpass', 3600)
+        break
     }
   }
 
@@ -238,6 +355,7 @@ export const createMusicBoxAudioRuntime = (deps: MusicBoxAudioRuntimeDeps): Musi
   return {
     primeFromGesture: getMusicBoxContext,
     playScheduledNote,
+    playDrumHit,
     startManualNote,
     stopManualNote,
     stopAllManualNotes,

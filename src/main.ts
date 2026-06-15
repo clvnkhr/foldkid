@@ -47,6 +47,7 @@ const PersistedSettingsSchema = S.Struct({
   bubblesSayColor: S.optionalKey(S.Boolean),
   musicBoxSongOrder: S.optionalKey(S.Array(S.Number)),
   musicBoxHiddenSongs: S.optionalKey(S.Array(S.Boolean)),
+  musicBoxDrumVolume: S.optionalKey(S.Number),
   landingOrder: S.optionalKey(S.Array(S.Number)),
 })
 type PersistedSettings = typeof PersistedSettingsSchema.Type
@@ -119,6 +120,7 @@ const buildSettingsData = (model: Model): PersistedSettings => ({
   bubblesSayColor: model.bubbles.sayColor,
   musicBoxSongOrder: model.musicBox.songOrder,
   musicBoxHiddenSongs: model.musicBox.hiddenSongs,
+  musicBoxDrumVolume: model.musicBox.drumVolume,
   landingOrder: model.landingOrder,
 })
 
@@ -242,6 +244,7 @@ export const Message = S.Union([
   MusicBox.TogglePause,
   MusicBox.TransposeUp,
   MusicBox.TransposeDown,
+  MusicBox.SetDrumVolume,
   MusicBox.ToggleSongVisibility,
   MusicBox.SongDragStarted,
   MusicBox.SongDroppedOn,
@@ -405,6 +408,7 @@ const applyImportData = (model: Model, s: PersistedSettings): Model => {
       ...model.musicBox,
       songOrder: normalizeSongOrder(s.musicBoxSongOrder, model.musicBox.songOrder),
       hiddenSongs: normalizeHiddenSongs(s.musicBoxHiddenSongs),
+      drumVolume: s.musicBoxDrumVolume === undefined ? model.musicBox.drumVolume : Math.min(1, Math.max(0, s.musicBoxDrumVolume)),
     },
     landingOrder: isLandingOrder(s.landingOrder)
       ? [...s.landingOrder]
@@ -541,6 +545,7 @@ const _update = (
       MusicBoxTogglePause: (msg) => updateMusicBox(model, msg),
       MusicBoxTransposeUp: (msg) => updateMusicBox(model, msg),
       MusicBoxTransposeDown: (msg) => updateMusicBox(model, msg),
+      MusicBoxSetDrumVolume: (msg) => updateMusicBox(model, msg),
       MusicBoxToggleSongVisibility: (msg) => updateMusicBox(model, msg),
       MusicBoxSongDragStarted: (msg) => updateMusicBox(model, msg),
       MusicBoxSongDroppedOn: (msg) => updateMusicBox(model, msg),
@@ -594,7 +599,7 @@ export const PERSISTED_SETTINGS_MESSAGE_TAGS = [
   'CounterSetDisplayMode',
   'FindItSetAnyWins', 'FindItSetVoiceMode', 'FindItSetPairsMode', 'FindItSetEmojiPackEnabled',
   'BubblesSetPopLabel', 'BubblesSetSayColor',
-  'MusicBoxToggleSongVisibility', 'MusicBoxSongDroppedOn',
+  'MusicBoxSetDrumVolume', 'MusicBoxToggleSongVisibility', 'MusicBoxSongDroppedOn',
 ] as const satisfies ReadonlyArray<Message['_tag']>
 
 const persistedSettingsMessageTags = new Set<Message['_tag']>(PERSISTED_SETTINGS_MESSAGE_TAGS)
@@ -887,6 +892,20 @@ export const view = (model: Model): Document => {
           model.page._tag === 'PageMusicBox'
             ? h.div([h.Class('setting-section')], [
               h.h3([], [t('musicBoxTitle', model.language)]),
+              h.div([h.Class('setting-row')], [
+                h.label([], [t('musicBoxDrumVolume', model.language)]),
+                h.div([h.Class('slider-row')], [
+                  h.input([
+                    h.Type('range'),
+                    h.Min('0'),
+                    h.Max('1'),
+                    h.Step('0.05'),
+                    h.Value(model.musicBox.drumVolume.toString()),
+                    h.OnInput((v) => MusicBox.SetDrumVolume({ value: parseFloat(v) })),
+                  ]),
+                  h.span([], [`${Math.round(model.musicBox.drumVolume * 100)}%`]),
+                ]),
+              ]),
               h.div([h.Class('settings-song-list')], [
                 ...model.musicBox.songOrder
                   .filter(songIdx => songIdx < MusicBox.SONGS.length && MusicBox.SONGS[songIdx] !== undefined)

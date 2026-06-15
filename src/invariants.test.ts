@@ -46,9 +46,17 @@ describe('codebase invariants', () => {
       if (titleKey) expect(t(titleKey)).not.toBe('')
       expect(song.notes.length, `${song.key} notes`).toBeGreaterThan(0)
       expect(song.lyrics.length, `${song.key} lyrics`).toBeGreaterThan(0)
+      expect(song.drums.length, `${song.key} drums`).toBeGreaterThan(0)
+      const duration = song.notes.reduce((sum, note) => sum + note.dur, 0)
       for (const note of song.notes) {
         expect(note.dur, `${song.key} note duration`).toBeGreaterThan(0)
         if (note.pitch) expect(MusicBox.FREQUENCIES[note.pitch], `${song.key} note ${note.pitch}`).toBeDefined()
+      }
+      for (const drum of song.drums) {
+        expect(MusicBox.DRUM_KINDS, `${song.key} drum kind`).toContain(drum.kind)
+        expect(drum.at, `${song.key} drum at`).toBeGreaterThanOrEqual(0)
+        expect(drum.at, `${song.key} drum at`).toBeLessThan(duration)
+        if (drum.gain !== undefined) expect(drum.gain, `${song.key} drum gain`).toBeGreaterThan(0)
       }
     }
   })

@@ -109,6 +109,7 @@ describe('settings persistence', () => {
     { label: 'FindItSetEmojiPackEnabled', msg: FindIt.SetEmojiPackEnabled({ key: 'numbers', value: false }) },
     { label: 'BubblesSetPopLabel', msg: Bubbles.SetPopLabel({ value: true }) },
     { label: 'BubblesSetSayColor', msg: Bubbles.SetSayColor({ value: true }) },
+    { label: 'MusicBoxSetDrumVolume', msg: MusicBox.SetDrumVolume({ value: 0.35 }) },
     { label: 'MusicBoxToggleSongVisibility', msg: MusicBox.ToggleSongVisibility({ index: 1 }) },
     { label: 'MusicBoxSongDroppedOn', msg: MusicBox.SongDroppedOn({ index: 1 }) },
   ]
@@ -642,6 +643,7 @@ describe('Main', () => {
         musicBox: {
           ...createModel().musicBox,
           selectedSong: 0,
+          drumVolume: 0.4,
           songOrder: reorderedSongs,
           hiddenSongs,
         },
@@ -672,6 +674,7 @@ describe('Main', () => {
       expect(imported.bubbles.rainbowMode).toBe(false)
       expect(imported.musicBox.songOrder).toEqual(customized.musicBox.songOrder)
       expect(imported.musicBox.hiddenSongs).toEqual(customized.musicBox.hiddenSongs)
+      expect(imported.musicBox.drumVolume).toBe(customized.musicBox.drumVolume)
       expect(imported.landingOrder).toEqual(customized.landingOrder)
       expect(cmds[0]?.name).toBe('PersistSettings')
     })

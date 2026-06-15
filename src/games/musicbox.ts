@@ -19,8 +19,10 @@ import {
   Pitch,
   shiftStart,
   transposePitch,
+  type DrumHit,
   type Instrument,
   type KeyDef,
+  type Note,
   type Song,
 } from './musicboxDomain'
 
@@ -28,7 +30,7 @@ export {
   QWERTY_BLACKS,
   QWERTY_WHITES,
 } from './musicboxKeyboardRuntime'
-export { FREQUENCIES, buildKeyboard, shiftStart } from './musicboxDomain'
+export { DRUM_KINDS, FREQUENCIES, buildKeyboard, shiftStart } from './musicboxDomain'
 
 export const MIN_WHITE_KEYS = 1
 export const MAX_WHITE_KEYS = 15
@@ -117,8 +119,80 @@ const unhighlightAllLyricLines = (): void => {
 const repeat = <T>(arr: T[], n: number): T[] =>
   Array.from({ length: n }, () => [...arr]).flat()
 
+const songDuration = (notes: readonly Note[]): number =>
+  notes.reduce((sum, note) => sum + note.dur, 0)
+
+const pushDrum = (drums: DrumHit[], total: number, hit: DrumHit): void => {
+  if (hit.at < total) drums.push(hit)
+}
+
+const makeFourFourDrums = (notes: readonly Note[]): DrumHit[] => {
+  const total = songDuration(notes)
+  const drums: DrumHit[] = []
+  for (let at = 0; at < total; at += 4) drums.push({ at, kind: 'kick', gain: 0.55 })
+  for (let at = 2; at < total; at += 4) drums.push({ at, kind: 'snare', gain: 0.45 })
+  for (let at = 1; at < total; at += 2) drums.push({ at, kind: 'hat', gain: 0.35 })
+  return drums
+}
+
+const makeSixEightDrums = (notes: readonly Note[], offset = 0): DrumHit[] => {
+  const total = songDuration(notes)
+  const drums: DrumHit[] = []
+  for (let at = offset; at < total; at += 3) {
+    pushDrum(drums, total, { at, kind: 'kick', gain: 0.5 })
+    pushDrum(drums, total, { at: at + 0.5, kind: 'hat', gain: 0.22 })
+    pushDrum(drums, total, { at: at + 1, kind: 'hat', gain: 0.18 })
+    pushDrum(drums, total, { at: at + 1.5, kind: 'snare', gain: 0.35 })
+    pushDrum(drums, total, { at: at + 2, kind: 'hat', gain: 0.22 })
+    pushDrum(drums, total, { at: at + 2.5, kind: 'hat', gain: 0.18 })
+  }
+  return drums
+}
+
+const makeThreeFourDrums = (notes: readonly Note[]): DrumHit[] => {
+  const total = songDuration(notes)
+  const drums: DrumHit[] = []
+  for (let at = 0; at < total; at += 3) {
+    pushDrum(drums, total, { at, kind: 'kick', gain: 0.48 })
+    pushDrum(drums, total, { at: at + 1, kind: 'hat', gain: 0.24 })
+    pushDrum(drums, total, { at: at + 2, kind: 'snare', gain: 0.34 })
+  }
+  return drums
+}
+
+const makeHappyDrums = (notes: readonly Note[]): DrumHit[] => {
+  const actionDrums: DrumHit[] = []
+  const actionRanges: Array<{ start: number; end: number }> = []
+  let at = 0
+  let restIndex = 0
+  for (const note of notes) {
+    if (!note.pitch) {
+      const verseIndex = Math.floor(restIndex / 6)
+      const kind = verseIndex === 0 ? 'clap' : verseIndex === 1 ? 'stomp' : 'cheer'
+      actionRanges.push({ start: at, end: at + note.dur })
+      actionDrums.push({ at, kind, gain: kind === 'stomp' ? 0.9 : 0.75 })
+      restIndex += 1
+    }
+    at += note.dur
+  }
+  return [
+    ...makeSixEightDrums(notes, 1.5).filter(drum =>
+      !actionRanges.some(({ start, end }) => drum.at >= start - 0.0001 && drum.at < end - 0.0001),
+    ),
+    ...actionDrums,
+  ].sort((a, b) => a.at - b.at)
+}
+
+const withDrums = (
+  song: Omit<Song, 'drums'>,
+  makeDrums: (notes: readonly Note[]) => DrumHit[] = makeFourFourDrums,
+): Song => ({
+  ...song,
+  drums: makeDrums(song.notes),
+})
+
 export const SONGS: Song[] = [
-  {
+  withDrums({
     key: 'twinkle',
     emoji: '⭐',
     lyrics: [
@@ -162,8 +236,8 @@ export const SONGS: Song[] = [
       { pitch: 'D4', dur: 1 }, { pitch: 'D4', dur: 1 },
       { pitch: 'C4', dur: 2 },
     ], 2),
-  },
-  {
+  }),
+  withDrums({
     key: 'mary',
     emoji: '🐑',
     lyrics: [
@@ -209,8 +283,8 @@ export const SONGS: Song[] = [
       { pitch: 'E4', dur: 1 }, { pitch: 'D4', dur: 1 },
       { pitch: 'C4', dur: 4 },
     ], 5),
-  },
-  {
+  }),
+  withDrums({
     key: 'london',
     emoji: '🌉',
     lyrics: [
@@ -245,8 +319,8 @@ export const SONGS: Song[] = [
       { pitch: 'D4', dur: 2 }, { pitch: 'G4', dur: 2 },
       { pitch: 'E4', dur: 1 }, { pitch: 'C4', dur: 3 },
     ], 3),
-  },
-  {
+  }),
+  withDrums({
     key: 'row',
     emoji: '🚣',
     lyrics: [
@@ -294,8 +368,8 @@ export const SONGS: Song[] = [
       { pitch: 'E4', dur: 1 }, { pitch: 'D4', dur: 0.5 },
       { pitch: 'C4', dur: 3 },
     ], 5),
-  },
-  {
+  }, makeSixEightDrums),
+  withDrums({
     key: 'oldMac',
     emoji: '🐷',
     lyrics: [
@@ -371,8 +445,8 @@ export const SONGS: Song[] = [
       { pitch: 'A4', dur: 1 }, { pitch: 'A4', dur: 1 },
       { pitch: 'G4', dur: 4 },
     ], 4),
-  },
-  {
+  }),
+  withDrums({
     key: 'happy',
     emoji: '😊',
     lyrics: [
@@ -422,8 +496,8 @@ export const SONGS: Song[] = [
       { pitch: 'F4', dur: 1.5 },
       { pitch: '', dur: 1.5 }, { pitch: '', dur: 1.5 },
     ], 3),
-  },
-  {
+  }, makeHappyDrums),
+  withDrums({
     key: 'birthday',
     emoji: '🎂',
     lyrics: [
@@ -448,7 +522,7 @@ export const SONGS: Song[] = [
       { pitch: 'A4', dur: 1 }, { pitch: 'F4', dur: 1 },
       { pitch: 'G4', dur: 1 }, { pitch: 'F4', dur: 2 },
     ],
-  },
+  }, makeThreeFourDrums),
 ]
 
 export const INSTRUMENTS: Instrument[] = [
@@ -544,6 +618,7 @@ const stopFlag = MutableRef.make(false)
 const pauseFlag = MutableRef.make(false)
 const playbackTempo = MutableRef.make(1)
 const playbackTranspose = MutableRef.make(0)
+const playbackDrumVolume = MutableRef.make(1)
 const currentLyricLine = MutableRef.make(-1)
 
 const resetAudioGraph = (): void => {
@@ -579,10 +654,21 @@ const playSongCmd = (
       .map((line, i) => line === '' ? -1 : i)
       .filter(i => i >= 0)
     const beatsPerLine = totalDur / nonEmptyIndices.length
+    const drums = [...song.drums].sort((a, b) => a.at - b.at)
+    let drumIndex = 0
+    const playDrum = (drum: DrumHit): void => {
+      const volume = MutableRef.get(playbackDrumVolume)
+      if (volume <= 0) return
+      audioRuntime.playDrumHit({ kind: drum.kind, gain: (drum.gain ?? 1) * volume })
+    }
     let cumDur = 0
     for (let i = 0; i < song.notes.length; i++) {
       if (MutableRef.get(stopFlag)) break
       const note = song.notes[i]!
+      while (drumIndex < drums.length && drums[drumIndex]!.at <= cumDur + 0.0001) {
+        playDrum(drums[drumIndex]!)
+        drumIndex += 1
+      }
       if (note.pitch) {
         const tp = transposePitch(note.pitch, MutableRef.get(playbackTranspose))
         const pitch = Pitch.fromString(tp, MUSICBOX_FREQUENCIES)
@@ -591,8 +677,24 @@ const playSongCmd = (
       }
       const rawIdx = Math.min(Math.floor(cumDur / beatsPerLine), nonEmptyIndices.length - 1)
       highlightLyricLine(nonEmptyIndices[rawIdx]!)
+      const noteEnd = cumDur + note.dur
+      let segmentStart = cumDur
+      while (drumIndex < drums.length && drums[drumIndex]!.at < noteEnd - 0.0001) {
+        const drum = drums[drumIndex]!
+        if (drum.at > segmentStart + 0.0001) {
+          yield* Effect.sleep(((drum.at - segmentStart) * 350) / MutableRef.get(playbackTempo))
+          if (MutableRef.get(stopFlag)) break
+          while (MutableRef.get(pauseFlag) && !MutableRef.get(stopFlag)) {
+            yield* Effect.sleep(100)
+          }
+        }
+        playDrum(drum)
+        segmentStart = drum.at
+        drumIndex += 1
+      }
+      if (MutableRef.get(stopFlag)) break
       cumDur += note.dur
-      yield* Effect.sleep((note.dur * 350) / MutableRef.get(playbackTempo))
+      yield* Effect.sleep(((noteEnd - segmentStart) * 350) / MutableRef.get(playbackTempo))
       unhighlightAllKeys()
       while (MutableRef.get(pauseFlag) && !MutableRef.get(stopFlag)) {
         yield* Effect.sleep(100)
@@ -608,6 +710,13 @@ const playSongCmd = (
 
 export const MIN_OCTAVE = -3
 export const MAX_OCTAVE = 3
+export const MIN_DRUM_VOLUME = 0
+export const MAX_DRUM_VOLUME = 1
+
+const clampDrumVolume = (value: number): number =>
+  Number.isFinite(value)
+    ? Math.min(MAX_DRUM_VOLUME, Math.max(MIN_DRUM_VOLUME, Math.round(value * 100) / 100))
+    : 1
 
 export const Model = S.Struct({
   selectedSong: S.Number,
@@ -621,6 +730,7 @@ export const Model = S.Struct({
   bottomShift: S.Number,
   topShift: S.Number,
   tempo: S.Number,
+  drumVolume: S.Number,
   lyricsExpanded: S.Boolean,
   songOrder: S.Array(S.Number),
   hiddenSongs: S.Array(S.Boolean),
@@ -648,12 +758,13 @@ export const ToggleLyrics = m('MusicBoxToggleLyrics')
 export const TogglePause = m('MusicBoxTogglePause')
 export const TransposeUp = m('MusicBoxTransposeUp')
 export const TransposeDown = m('MusicBoxTransposeDown')
+export const SetDrumVolume = m('MusicBoxSetDrumVolume', { value: S.Number })
 export const ToggleSongVisibility = m('MusicBoxToggleSongVisibility', { index: S.Number })
 export const SongDragStarted = m('MusicBoxSongDragStarted', { index: S.Number })
 export const SongDroppedOn = m('MusicBoxSongDroppedOn', { index: S.Number })
 export const SongDragEnded = m('MusicBoxSongDragEnded')
 
-export const Message = S.Union([Play, Stop, SetSong, SetInstrument, SongEnded, NoteOn, NoteOff, AddKey, RemoveKey, OctaveUp, OctaveDown, ToggleBottomKeyboard, ShiftBottom, ShiftTop, TempoUp, TempoDown, ToggleLyrics, TogglePause, TransposeUp, TransposeDown, ToggleSongVisibility, SongDragStarted, SongDroppedOn, SongDragEnded])
+export const Message = S.Union([Play, Stop, SetSong, SetInstrument, SongEnded, NoteOn, NoteOff, AddKey, RemoveKey, OctaveUp, OctaveDown, ToggleBottomKeyboard, ShiftBottom, ShiftTop, TempoUp, TempoDown, ToggleLyrics, TogglePause, TransposeUp, TransposeDown, SetDrumVolume, ToggleSongVisibility, SongDragStarted, SongDroppedOn, SongDragEnded])
 export type Message = typeof Message.Type
 
 export const init = (): Model => {
@@ -666,8 +777,9 @@ export const init = (): Model => {
   keyboardRuntime.setOctaveOffset(0)
   MutableRef.set(playbackTempo, 1)
   MutableRef.set(playbackTranspose, 0)
+  MutableRef.set(playbackDrumVolume, 1)
   MutableRef.set(currentLyricLine, -1)
-  return { selectedSong: 0, selectedInstrument: 0, isPlaying: false, isPaused: false, songTranspose: 0, whiteKeys: 8, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, lyricsExpanded: false, songOrder: SONGS.map((_, i) => i), hiddenSongs: SONGS.map(() => false), dragIndex: -1 }
+  return { selectedSong: 0, selectedInstrument: 0, isPlaying: false, isPaused: false, songTranspose: 0, whiteKeys: 8, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, drumVolume: 1, lyricsExpanded: false, songOrder: SONGS.map((_, i) => i), hiddenSongs: SONGS.map(() => false), dragIndex: -1 }
 }
 
 export const update = (
@@ -685,6 +797,7 @@ export const update = (
         audioRuntime.primeFromGesture() // Safari: AudioContext must be created within a user gesture
         MutableRef.set(playbackTempo, model.tempo)
         MutableRef.set(playbackTranspose, model.songTranspose)
+        MutableRef.set(playbackDrumVolume, clampDrumVolume(model.drumVolume))
         const song = SONGS[model.selectedSong]
         if (!song) return [model, []]
         return [
@@ -788,6 +901,11 @@ export const update = (
         const next = model.songTranspose - 1
         MutableRef.set(playbackTranspose, next)
         return [{ ...model, songTranspose: next }, []]
+      },
+      MusicBoxSetDrumVolume: (msg) => {
+        const next = clampDrumVolume(msg.value)
+        MutableRef.set(playbackDrumVolume, next)
+        return [{ ...model, drumVolume: next }, []]
       },
       MusicBoxToggleSongVisibility: (msg) => {
         if (msg.index < 0 || msg.index >= SONGS.length) return [model, []]

@@ -12,6 +12,7 @@ const originalAudio = globalThis.Audio
 
 const startedFrequencies: number[] = []
 const startedAtTimes: number[] = []
+const startedNodeKinds: string[] = []
 const cancelAndHoldTimes: number[] = []
 const setValueEvents: Array<{ value: number; time: number }> = []
 const connections: Array<{ from: string; to: string }> = []
@@ -20,23 +21,27 @@ const nodeKinds = new WeakMap<object, string>()
 let contextCreateCount = 0
 let compressorCreateCount = 0
 
-const makeAudioParam = (initial = 0): AudioParam => ({
-  value: initial,
-  automationRate: 'a-rate',
-  cancelAndHoldAtTime: (time: number) => {
-    cancelAndHoldTimes.push(time)
-    return makeAudioParam(initial)
-  },
-  cancelScheduledValues: () => makeAudioParam(initial),
-  exponentialRampToValueAtTime: () => makeAudioParam(initial),
-  linearRampToValueAtTime: () => makeAudioParam(initial),
-  setTargetAtTime: () => makeAudioParam(initial),
-  setValueAtTime: (value: number, time: number) => {
-    setValueEvents.push({ value, time })
-    return makeAudioParam(value)
-  },
-  setValueCurveAtTime: () => makeAudioParam(initial),
-} as unknown as AudioParam)
+const makeAudioParam = (initial = 0): AudioParam => {
+  const param = {
+    value: initial,
+    automationRate: 'a-rate',
+    cancelAndHoldAtTime: (time: number) => {
+      cancelAndHoldTimes.push(time)
+      return param
+    },
+    cancelScheduledValues: () => param,
+    exponentialRampToValueAtTime: () => param,
+    linearRampToValueAtTime: () => param,
+    setTargetAtTime: () => param,
+    setValueAtTime: (value: number, time: number) => {
+      param.value = value
+      setValueEvents.push({ value, time })
+      return param
+    },
+    setValueCurveAtTime: () => param,
+  } as unknown as AudioParam
+  return param
+}
 
 const makeAudioNode = (kind = 'node'): AudioNode => {
   const node = {
@@ -56,6 +61,7 @@ const makeAudioNode = (kind = 'node'): AudioNode => {
 class MockAudioContext {
   state: AudioContextState = 'running'
   currentTime = 0
+  sampleRate = 44100
   destination = makeAudioNode('destination') as AudioDestinationNode
 
   constructor() {
@@ -72,6 +78,7 @@ class MockAudioContext {
       start: (when = this.currentTime) => {
         startedFrequencies.push(frequency.value)
         startedAtTimes.push(when)
+        startedNodeKinds.push('oscillator')
       },
       stop: () => {},
     }) as unknown as OscillatorNode
@@ -81,6 +88,32 @@ class MockAudioContext {
     return Object.assign(makeAudioNode('gain'), {
       gain: makeAudioParam(1),
     }) as unknown as GainNode
+  }
+
+  createBiquadFilter(): BiquadFilterNode {
+    return Object.assign(makeAudioNode('filter'), {
+      type: 'lowpass',
+      frequency: makeAudioParam(440),
+      Q: makeAudioParam(1),
+    }) as unknown as BiquadFilterNode
+  }
+
+  createBuffer(_channels: number, length: number): AudioBuffer {
+    const data = new Float32Array(length)
+    return {
+      getChannelData: () => data,
+    } as unknown as AudioBuffer
+  }
+
+  createBufferSource(): AudioBufferSourceNode {
+    return Object.assign(makeAudioNode('bufferSource'), {
+      buffer: null,
+      start: (when = this.currentTime) => {
+        startedAtTimes.push(when)
+        startedNodeKinds.push('bufferSource')
+      },
+      stop: () => {},
+    }) as unknown as AudioBufferSourceNode
   }
 
   createDynamicsCompressor(): DynamicsCompressorNode {
@@ -114,6 +147,7 @@ afterEach(() => {
   resetContext()
   startedFrequencies.length = 0
   startedAtTimes.length = 0
+  startedNodeKinds.length = 0
   cancelAndHoldTimes.length = 0
   setValueEvents.length = 0
   connections.length = 0
@@ -130,7 +164,7 @@ describe('MusicBox', () => {
   it('init state', () => {
     expect(MusicBox.init()).toStrictEqual({
       selectedSong: 0, selectedInstrument: 0, isPlaying: false, isPaused: false, songTranspose: 0,
-      whiteKeys: 8, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, lyricsExpanded: false,
+      whiteKeys: 8, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, drumVolume: 1, lyricsExpanded: false,
       songOrder: [0, 1, 2, 3, 4, 5, 6], hiddenSongs: [false, false, false, false, false, false, false], dragIndex: -1,
     })
   })
@@ -187,6 +221,39 @@ describe('MusicBox', () => {
     expect(compressorCreateCount).toBe(1)
     expect(connections).toContainEqual({ from: 'compressor', to: 'destination' })
     expect(connections.some(connection => connection.from === 'gain' && connection.to === 'compressor')).toBe(true)
+  })
+
+  it('starts drum voices during song playback', async () => {
+    globalThis.AudioContext = MockAudioContext as unknown as typeof AudioContext
+    const model = { ...MusicBox.init(), selectedSong: MusicBox.SONGS.findIndex(song => song.key === 'row') }
+    const [, commands] = MusicBox.update(model, MusicBox.Play())
+
+    const playCommand = commands[0]
+    expect(playCommand?.name).toBe('PlayMusicBox')
+    const fiber = Effect.runFork(playCommand!.effect)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    await Effect.runPromise(Fiber.interrupt(fiber))
+
+    expect(startedFrequencies).toContain(130)
+    expect(startedNodeKinds).toContain('oscillator')
+  })
+
+  it('does not start drum voices when drum volume is zero', async () => {
+    globalThis.AudioContext = MockAudioContext as unknown as typeof AudioContext
+    const model = {
+      ...MusicBox.init(),
+      selectedSong: MusicBox.SONGS.findIndex(song => song.key === 'row'),
+      drumVolume: 0,
+    }
+    const [, commands] = MusicBox.update(model, MusicBox.Play())
+
+    const playCommand = commands[0]
+    expect(playCommand?.name).toBe('PlayMusicBox')
+    const fiber = Effect.runFork(playCommand!.effect)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    await Effect.runPromise(Fiber.interrupt(fiber))
+
+    expect(startedFrequencies).not.toContain(130)
   })
 
   it('primes Safari audio once from the first trusted gesture', () => {
@@ -673,6 +740,26 @@ describe('MusicBox', () => {
       )
     })
 
+    it('SetDrumVolume clamps to the slider range', () => {
+      Story.story(
+        MusicBox.update,
+        Story.with(MusicBox.init()),
+        Story.message(MusicBox.SetDrumVolume({ value: 0.55 })),
+        Story.model((model) => {
+          expect(model.drumVolume).toBe(0.55)
+        }),
+        Story.message(MusicBox.SetDrumVolume({ value: -1 })),
+        Story.model((model) => {
+          expect(model.drumVolume).toBe(0)
+        }),
+        Story.message(MusicBox.SetDrumVolume({ value: 2 })),
+        Story.model((model) => {
+          expect(model.drumVolume).toBe(1)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
     it('OctaveUp increments octaveOffset', () => {
       Story.story(
         MusicBox.update,
@@ -776,16 +863,57 @@ describe('MusicBox', () => {
         expect(song.key).toBeTruthy()
         expect(song.emoji).toBeTruthy()
         expect(song.notes.length).toBeGreaterThan(0)
-         for (const note of song.notes) {
-           expect(note.dur).toBeGreaterThan(0)
-           if (note.pitch) expect(MusicBox.FREQUENCIES[note.pitch]).toBeDefined()
-         }
+        for (const note of song.notes) {
+          expect(note.dur).toBeGreaterThan(0)
+          if (note.pitch) expect(MusicBox.FREQUENCIES[note.pitch]).toBeDefined()
+        }
       })
     }
 
     it('all songs have unique keys', () => {
       const keys = MusicBox.SONGS.map(s => s.key)
       expect(new Set(keys).size).toBe(keys.length)
+    })
+
+    it('all songs have valid lofi drum tracks inside the song timeline', () => {
+      for (const song of MusicBox.SONGS) {
+        const totalDuration = song.notes.reduce((sum, note) => sum + note.dur, 0)
+        expect(song.drums.length, `${song.key} drums`).toBeGreaterThan(0)
+        for (const drum of song.drums) {
+          expect(MusicBox.DRUM_KINDS).toContain(drum.kind)
+          expect(drum.at, `${song.key} drum at`).toBeGreaterThanOrEqual(0)
+          expect(drum.at, `${song.key} drum at`).toBeLessThan(totalDuration)
+          if (drum.gain !== undefined) expect(drum.gain).toBeGreaterThan(0)
+        }
+      }
+    })
+
+    it('uses meter-matched drum grids for 6/8 and 3/4 songs', () => {
+      const getSong = (key: string) => {
+        const song = MusicBox.SONGS.find(s => s.key === key)
+        expect(song).toBeDefined()
+        return song!
+      }
+      const timesFor = (key: string, kind: string) =>
+        getSong(key).drums.filter(drum => drum.kind === kind).map(drum => drum.at)
+
+      expect(timesFor('row', 'kick').slice(0, 4)).toEqual([0, 3, 6, 9])
+      expect(timesFor('row', 'snare').slice(0, 4)).toEqual([1.5, 4.5, 7.5, 10.5])
+      expect(timesFor('row', 'kick')).not.toContain(4)
+
+      expect(timesFor('birthday', 'kick').slice(0, 4)).toEqual([0, 3, 6, 9])
+      expect(timesFor('birthday', 'snare').slice(0, 4)).toEqual([2, 5, 8, 11])
+      expect(timesFor('birthday', 'kick')).not.toContain(4)
+
+      expect(timesFor('happy', 'kick').slice(0, 3)).toEqual([1.5, 4.5, 7.5])
+      expect(timesFor('happy', 'kick')).not.toContain(0)
+      expect(timesFor('happy', 'clap').slice(0, 2)).toEqual([9, 10.5])
+      expect(timesFor('happy', 'hat')).not.toContain(9.5)
+      expect(timesFor('happy', 'hat')).not.toContain(10)
+      expect(timesFor('happy', 'hat')).not.toContain(11)
+      expect(timesFor('happy', 'hat')).not.toContain(11.5)
+      expect(timesFor('happy', 'kick')).not.toContain(9)
+      expect(timesFor('happy', 'snare')).not.toContain(10.5)
     })
 
     it('happy song follows the sourced 6/8 melody and rhythm for every verse', () => {
@@ -822,6 +950,27 @@ describe('MusicBox', () => {
       for (const verse of verses) {
         expect(verse.map(note => [note.pitch, note.dur])).toEqual(expectedVerse)
       }
+    })
+
+    it('happy song maps action rests to clap, stomp, and cheer drums', () => {
+      const happy = MusicBox.SONGS.find(song => song.key === 'happy')
+      expect(happy).toBeDefined()
+
+      let at = 0
+      const restStarts: number[] = []
+      for (const note of happy!.notes) {
+        if (!note.pitch) restStarts.push(at)
+        at += note.dur
+      }
+      const actionDrums = happy!.drums
+        .filter(drum => drum.kind === 'clap' || drum.kind === 'stomp' || drum.kind === 'cheer')
+        .map(drum => [drum.at, drum.kind])
+
+      expect(actionDrums).toEqual([
+        ...restStarts.slice(0, 6).map(start => [start, 'clap']),
+        ...restStarts.slice(6, 12).map(start => [start, 'stomp']),
+        ...restStarts.slice(12, 18).map(start => [start, 'cheer']),
+      ])
     })
   })
 

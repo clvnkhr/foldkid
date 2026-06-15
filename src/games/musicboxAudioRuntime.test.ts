@@ -57,6 +57,29 @@ describe('musicboxAudioRuntime', () => {
     expect(connections.filter(connection => connection.from === 'compressor' && connection.to === 'destination')).toHaveLength(1)
     expect(connections.filter(connection => connection.from === 'gain' && connection.to === 'compressor')).toHaveLength(2)
   })
+
+  it('routes lofi drum hits through the same compressor', () => {
+    const starts: number[] = []
+    const connections: Array<{ from: string; to: string }> = []
+    const ctx = makeContext(starts, connections)
+    const runtime = createMusicBoxAudioRuntime({
+      getContext: () => ctx,
+      resetContext: vi.fn(),
+      frequencies: MUSICBOX_FREQUENCIES,
+      hooks: {
+        highlightKey: vi.fn(),
+        unhighlightKey: vi.fn(),
+        unhighlightAllKeys: vi.fn(),
+      },
+    })
+
+    runtime.playDrumHit({ kind: 'kick' })
+    runtime.playDrumHit({ kind: 'clap' })
+
+    expect(connections.filter(connection => connection.from === 'compressor' && connection.to === 'destination')).toHaveLength(1)
+    expect(connections.filter(connection => connection.from === 'gain' && connection.to === 'compressor').length).toBeGreaterThanOrEqual(3)
+    expect(connections.some(connection => connection.from === 'filter' && connection.to === 'gain')).toBe(true)
+  })
 })
 
 const makeAudioParam = (initial = 0): AudioParam => ({
@@ -91,9 +114,9 @@ const makeContext = (
     return node
   }
 
-  // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- test mock implements the Web Audio surface used by this runtime
   return {
     currentTime: 0,
+    sampleRate: 44100,
     destination: makeNode('destination') as AudioDestinationNode,
     createDynamicsCompressor: () => Object.assign(makeNode('compressor'), {
       threshold: makeAudioParam(-24),
@@ -105,6 +128,22 @@ const makeContext = (
     createGain: () => Object.assign(makeNode('gain'), {
       gain: makeAudioParam(1),
     }) as GainNode,
+    createBiquadFilter: () => Object.assign(makeNode('filter'), {
+      type: 'lowpass',
+      frequency: makeAudioParam(440),
+      Q: makeAudioParam(1),
+    }) as BiquadFilterNode,
+    createBuffer: (_channels: number, length: number) => {
+      const data = new Float32Array(length)
+      return { getChannelData: () => data } as unknown as AudioBuffer
+    },
+    createBufferSource: () => Object.assign(makeNode('bufferSource'), {
+      buffer: null,
+      start: (when = 0) => {
+        starts.push(when)
+      },
+      stop: () => {},
+    }) as AudioBufferSourceNode,
     createOscillator: () => Object.assign(makeNode('oscillator'), {
       type: 'sine',
       frequency: makeAudioParam(440),
@@ -114,5 +153,5 @@ const makeContext = (
       },
       stop: () => {},
     }) as OscillatorNode,
-  } as AudioContext
+  } as unknown as AudioContext
 }
