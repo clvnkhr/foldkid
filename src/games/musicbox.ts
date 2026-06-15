@@ -2,8 +2,32 @@ import { Effect, Match as M, MutableRef, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
-import { getContext, resetContext } from '../audio'
 import { t, type StringKey } from '../i18n'
+import {
+  clearActiveNotes,
+  getMusicBoxContext,
+  playScheduledNote,
+  resetAudioGraph as resetMusicBoxAudioGraph,
+  startManualNote,
+  stopAllNotes,
+  stopManualNote,
+  type Instrument,
+} from './musicboxAudioRuntime'
+import {
+  bindKeyboard as bindMusicBoxKeyboard,
+  bindShortcutKeys,
+  setKeyboardOctaveOffset,
+} from './musicboxKeyboardRuntime'
+import {
+  resetWakeMonitor as resetMusicBoxWakeMonitor,
+  startWakeMonitor as startMusicBoxWakeMonitor,
+} from './musicboxWakeMonitor'
+
+export {
+  QWERTY_BLACKS,
+  QWERTY_WHITES,
+  resetKeyboardControls,
+} from './musicboxKeyboardRuntime'
 
 interface Note {
   pitch: string
@@ -15,28 +39,6 @@ interface Song {
   emoji: string
   notes: Note[]
   lyrics: string[]
-}
-
-interface HarmonicDef {
-  ratio: number
-  gain: number
-}
-
-interface Instrument {
-  key: string
-  type: OscillatorType
-  gain: number
-  attack: number
-  decay: number
-  sustain: number
-  release: number
-  harmonics: HarmonicDef[]
-  filterType?: BiquadFilterType
-  filterFreq?: number
-  filterQ?: number
-  detune?: number
-  tremoloFreq?: number
-  tremoloDepth?: number
 }
 
 interface KeyDef {
@@ -148,152 +150,7 @@ export const PianoKeys = {
   BOTTOM: buildKeyboard('C3', 12),
 }
 
-const activeNotes = MutableRef.make(new Map<string, {
-  nodes: Array<{ osc: OscillatorNode; gain: GainNode }>
-  masterGain: GainNode
-  release: number
-}>())
 const selectedInstrumentIndex = MutableRef.make(0)
-const keyboardBound = MutableRef.make(false)
-const shortcutKeysBound = MutableRef.make(false)
-const currentOctaveOffset = MutableRef.make(0)
-
-
-interface QWERTYKey {
-  qwerty: string
-  pitch: string
-}
-
-export const QWERTY_WHITES: QWERTYKey[] = [
-  { qwerty: 'A', pitch: 'C4' },
-  { qwerty: 'S', pitch: 'D4' },
-  { qwerty: 'D', pitch: 'E4' },
-  { qwerty: 'F', pitch: 'F4' },
-  { qwerty: 'G', pitch: 'G4' },
-  { qwerty: 'H', pitch: 'A4' },
-  { qwerty: 'J', pitch: 'B4' },
-  { qwerty: 'K', pitch: 'C5' },
-  { qwerty: 'L', pitch: 'D5' },
-  { qwerty: ';', pitch: 'E5' },
-  { qwerty: "'", pitch: 'F5' },
-  { qwerty: '\\', pitch: 'G5' },
-]
-
-export const QWERTY_BLACKS: QWERTYKey[] = [
-  { qwerty: 'W', pitch: 'C#4' },
-  { qwerty: 'E', pitch: 'D#4' },
-  { qwerty: 'T', pitch: 'F#4' },
-  { qwerty: 'Y', pitch: 'G#4' },
-  { qwerty: 'U', pitch: 'A#4' },
-  { qwerty: 'O', pitch: 'C#5' },
-  { qwerty: 'P', pitch: 'D#5' },
-  { qwerty: '[', pitch: 'F#5' },
-]
-
-const QWERTY_MAP: Record<string, string> = {}
-for (const k of QWERTY_WHITES) QWERTY_MAP[k.qwerty.toLowerCase()] = k.pitch
-for (const k of QWERTY_BLACKS) QWERTY_MAP[k.qwerty.toLowerCase()] = k.pitch
-
-const applyOctaveOffset = (pitch: string, offset: number): string => {
-  if (offset === 0) return pitch
-  const m = pitch.match(/^([A-G]#?)(\d+)$/)
-  return m ? `${m[1]}${parseInt(m[2] ?? '0') + offset}` : pitch
-}
-
-const handleKeyDown = (e: KeyboardEvent): void => {
-  const pitch = QWERTY_MAP[e.key.toLowerCase()]
-  if (pitch) {
-    e.preventDefault()
-    const instr = INSTRUMENTS[MutableRef.get(selectedInstrumentIndex)]
-    if (!instr) return
-    startNote(applyOctaveOffset(pitch, MutableRef.get(currentOctaveOffset)), instr)
-  }
-}
-
-const handleKeyUp = (e: KeyboardEvent): void => {
-  const pitch = QWERTY_MAP[e.key.toLowerCase()]
-  if (pitch) {
-    e.preventDefault()
-    stopNote(applyOctaveOffset(pitch, MutableRef.get(currentOctaveOffset)))
-  }
-}
-
-const SILENT_WAV = 'data:audio/wav;base64,UklGRiYAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQIAAAAAAA=='
-let firstTouchHandler: (() => void) | undefined
-
-const bindKeyboard = (): void => {
-  if (MutableRef.get(keyboardBound)) return
-  MutableRef.set(keyboardBound, true)
-  document.addEventListener('keydown', handleKeyDown)
-  document.addEventListener('keyup', handleKeyUp)
-  // iOS Safari: AudioContext must be created/resumed within a qualifying user
-  // gesture. pointerdown with pointerType "touch" does NOT qualify (Apple Dev
-  // Forums, WebKit blog). pointerup and click DO qualify for touch events.
-  // foldkit dispatches messages asynchronously through a queue, so we eagerly
-  // init the AudioContext on the first qualifying gesture in CAPTURE phase.
-  const firstTouch = () => {
-    // iOS 26+ mute switch silences Web Audio oscillators while HTML <audio>
-    // still works. Upgrade the audio session to "playback" to bypass this.
-    try {
-      const nav = navigator as { audioSession?: { type: string } }
-      if (nav.audioSession) nav.audioSession.type = 'playback'
-    } catch { /* ignore */ }
-    // Playing a silent WAV during a gesture upgrades the audio session from
-    // "ambient" to "playback" on older iOS versions (Babylon.js #18366).
-    try { new Audio(SILENT_WAV).play().catch(() => { }) } catch { /* ignore */ }
-    getCtx()
-    document.removeEventListener('pointerup', firstTouch, { capture: true })
-    document.removeEventListener('keydown', firstTouch)
-    firstTouchHandler = undefined
-  }
-  firstTouchHandler = firstTouch
-  document.addEventListener('pointerup', firstTouch, { capture: true })
-  document.addEventListener('keydown', firstTouch)
-}
-
-const handleShortcutKeyDown = (e: KeyboardEvent): void => {
-  if (e.repeat) return
-  if (!(e.target instanceof HTMLElement)) return
-  const target = e.target
-  if (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA') return
-  const key = e.key.toLowerCase()
-  if (key === 'z') {
-    e.preventDefault()
-    document.getElementById('octave-down')?.click()
-  } else if (key === 'x') {
-    e.preventDefault()
-    document.getElementById('octave-up')?.click()
-  } else if (key === ' ') {
-    e.preventDefault()
-    const playBtn = document.getElementById('musicbox-play')
-    const pauseBtn = document.getElementById('musicbox-pause')
-    if (playBtn instanceof HTMLButtonElement && !playBtn.disabled) {
-      playBtn.click()
-    } else if (pauseBtn instanceof HTMLButtonElement && !pauseBtn.disabled) {
-      pauseBtn.click()
-    }
-  }
-}
-
-const bindShortcutKeys = (): void => {
-  if (MutableRef.get(shortcutKeysBound)) return
-  MutableRef.set(shortcutKeysBound, true)
-  document.addEventListener('keydown', handleShortcutKeyDown)
-}
-
-export const resetKeyboardControls = (): void => {
-  clearActiveNotes()
-  document.removeEventListener('keydown', handleKeyDown)
-  document.removeEventListener('keyup', handleKeyUp)
-  document.removeEventListener('keydown', handleShortcutKeyDown)
-  if (firstTouchHandler) {
-    document.removeEventListener('pointerup', firstTouchHandler, { capture: true })
-    document.removeEventListener('keydown', firstTouchHandler)
-    firstTouchHandler = undefined
-  }
-  MutableRef.set(keyboardBound, false)
-  MutableRef.set(shortcutKeysBound, false)
-}
 
 const highlightKey = (pitch: string): void => {
   document.querySelectorAll('.piano-key-glow').forEach(el => {
@@ -768,140 +625,22 @@ export const INST_TKEYS: Record<string, StringKey> = {
   guitar: 'musicBoxGuitar',
 }
 
-let masterCompressor: DynamicsCompressorNode | undefined
-let compressorContext: AudioContext | undefined
-type IntervalId = number | ReturnType<typeof globalThis.setInterval>
-let wakeMonitor: { onPageShow: (e: PageTransitionEvent) => void; intervalId: IntervalId } | undefined
 const stopFlag = MutableRef.make(false)
 const pauseFlag = MutableRef.make(false)
 const playbackTempo = MutableRef.make(1)
 const playbackTranspose = MutableRef.make(0)
 const currentLyricLine = MutableRef.make(-1)
 
-const getCtx = (): AudioContext | undefined => {
-  const ctx = getContext()
-  if (!ctx) return undefined
-  if (!masterCompressor || compressorContext !== ctx) {
-    masterCompressor = ctx.createDynamicsCompressor()
-    masterCompressor.threshold.value = -18
-    masterCompressor.knee.value = 12
-    masterCompressor.ratio.value = 12
-    masterCompressor.attack.value = 0.003
-    masterCompressor.release.value = 0.1
-    masterCompressor.connect(ctx.destination)
-    compressorContext = ctx
-  }
-  return ctx
-}
-
 const resetAudioGraph = (): void => {
-  clearActiveNotes()
-  resetContext()
-  masterCompressor = undefined
-  compressorContext = undefined
+  resetMusicBoxAudioGraph({ unhighlightAllKeys })
 }
 
 export const startWakeMonitor = (): void => {
-  if (typeof window === 'undefined' || wakeMonitor) return
-
-  // Recreate AudioContext after sleep/wake. Safari's context can become a zombie
-  // or get interrupted, so the next user gesture should create a fresh graph.
-  const recreateCtx = resetAudioGraph
-  // pageshow with persisted=true fires on bfcache restore (includes wake)
-  const onPageShow = (e: PageTransitionEvent): void => {
-    if (e.persisted) recreateCtx()
-  }
-
-  // Time-jump polling: catches ALL sleep/wake scenarios including Power Nap
-  // and external display wake where visibilitychange may not fire.
-  let lastWakeCheck = Date.now()
-  const intervalId = window.setInterval(() => {
-    const now = Date.now()
-    if (now - lastWakeCheck > 15_000) recreateCtx()
-    lastWakeCheck = now
-  }, 5_000)
-
-  window.addEventListener('pageshow', onPageShow)
-  wakeMonitor = { onPageShow, intervalId }
+  startMusicBoxWakeMonitor(resetAudioGraph)
 }
 
 export const resetWakeMonitor = (): void => {
-  if (typeof window === 'undefined' || !wakeMonitor) return
-  window.removeEventListener('pageshow', wakeMonitor.onPageShow)
-  window.clearInterval(wakeMonitor.intervalId)
-  wakeMonitor = undefined
-}
-
-const SAFETY_MARGIN = 0.03
-
-const playNoteAudio = (freq: number, dur: number, inst: Instrument): void => {
-  const ctx = getCtx()
-  if (!ctx) return
-  const now = ctx.currentTime + SAFETY_MARGIN
-  const totalTime = Math.max(dur * 0.45, inst.attack + inst.release + 0.02)
-  const relStart = now + totalTime - inst.release
-
-  const masterGain = ctx.createGain()
-
-  masterGain.gain.value = 0
-  masterGain.gain.setValueAtTime(0, now)
-  masterGain.gain.linearRampToValueAtTime(inst.gain, now + inst.attack)
-  const decEnd = now + inst.attack + inst.decay
-  masterGain.gain.linearRampToValueAtTime(inst.gain * inst.sustain, decEnd)
-  if (relStart > decEnd) {
-    masterGain.gain.setValueAtTime(inst.gain * inst.sustain, relStart)
-  }
-  const end = now + totalTime
-  masterGain.gain.linearRampToValueAtTime(0, end)
-
-  const dest = masterCompressor ?? ctx.destination
-  if (inst.filterType && inst.filterFreq) {
-    const filter = ctx.createBiquadFilter()
-    filter.type = inst.filterType
-    filter.frequency.value = inst.filterFreq
-    filter.Q.value = inst.filterQ ?? 1
-    masterGain.connect(filter)
-    filter.connect(dest)
-  } else {
-    masterGain.connect(dest)
-  }
-
-  const nodes: Array<{ osc: OscillatorNode; gain: GainNode }> = []
-  for (const h of inst.harmonics) {
-    const osc = ctx.createOscillator()
-    osc.type = inst.type
-    osc.frequency.value = freq * h.ratio
-    if (inst.detune) osc.detune.value = inst.detune
-    const hGain = ctx.createGain()
-    hGain.gain.value = h.gain
-    osc.connect(hGain)
-    hGain.connect(masterGain)
-    osc.start(now)
-    osc.stop(end + 0.01)
-    nodes.push({ osc, gain: hGain })
-  }
-
-  if (inst.tremoloFreq && inst.tremoloDepth) {
-    const lfo = ctx.createOscillator()
-    lfo.type = 'sine'
-    lfo.frequency.value = inst.tremoloFreq
-    const lfoGain = ctx.createGain()
-    lfoGain.gain.value = inst.tremoloDepth
-    lfo.connect(lfoGain)
-    lfoGain.connect(masterGain.gain)
-    lfo.start()
-    lfo.stop(end + 0.01)
-    nodes.push({ osc: lfo, gain: lfoGain })
-  }
-
-  setTimeout(() => {
-    for (const { osc, gain } of nodes) {
-      try { osc.stop() } catch { /* already stopped */ }
-      osc.disconnect()
-      gain.disconnect()
-    }
-    masterGain.disconnect()
-  }, totalTime * 1000 + 100)
+  resetMusicBoxWakeMonitor()
 }
 
 const playSongCmd = (
@@ -926,7 +665,7 @@ const playSongCmd = (
       if (note.pitch) {
         const tp = transposePitch(note.pitch, MutableRef.get(playbackTranspose))
         const freq = FREQUENCIES[tp]
-        if (freq) playNoteAudio(freq, note.dur, instr)
+        if (freq) playScheduledNote(freq, note.dur, instr)
         highlightKey(tp)
       }
       const rawIdx = Math.min(Math.floor(cumDur / beatsPerLine), nonEmptyIndices.length - 1)
@@ -945,108 +684,6 @@ const playSongCmd = (
     return msg
   }),
 })
-
-const startNote = (pitch: string, inst: Instrument): void => {
-  const freq = FREQUENCIES[pitch]
-  if (!freq || MutableRef.get(activeNotes).has(pitch)) return
-  const ctx = getCtx()
-  if (!ctx) return
-  const now = ctx.currentTime
-  const masterGain = ctx.createGain()
-
-  masterGain.gain.value = 0
-  masterGain.gain.setValueAtTime(0, now)
-  masterGain.gain.linearRampToValueAtTime(inst.gain, now + inst.attack)
-  const decEnd = now + inst.attack + inst.decay
-  masterGain.gain.linearRampToValueAtTime(inst.gain * inst.sustain, decEnd)
-
-  const dest = masterCompressor ?? ctx.destination
-  if (inst.filterType && inst.filterFreq) {
-    const filter = ctx.createBiquadFilter()
-    filter.type = inst.filterType
-    filter.frequency.value = inst.filterFreq
-    filter.Q.value = inst.filterQ ?? 1
-    masterGain.connect(filter)
-    filter.connect(dest)
-  } else {
-    masterGain.connect(dest)
-  }
-
-  const nodes: Array<{ osc: OscillatorNode; gain: GainNode }> = []
-  for (const h of inst.harmonics) {
-    const osc = ctx.createOscillator()
-    osc.type = inst.type
-    osc.frequency.value = freq * h.ratio
-    if (inst.detune) osc.detune.value = inst.detune
-    const hGain = ctx.createGain()
-    hGain.gain.value = h.gain
-    osc.connect(hGain)
-    hGain.connect(masterGain)
-    osc.start(now)
-    nodes.push({ osc, gain: hGain })
-  }
-
-  if (inst.tremoloFreq && inst.tremoloDepth) {
-    const lfo = ctx.createOscillator()
-    lfo.type = 'sine'
-    lfo.frequency.value = inst.tremoloFreq
-    const lfoGain = ctx.createGain()
-    lfoGain.gain.value = inst.tremoloDepth
-    lfo.connect(lfoGain)
-    lfoGain.connect(masterGain.gain)
-    lfo.start()
-    nodes.push({ osc: lfo, gain: lfoGain })
-  }
-
-  MutableRef.get(activeNotes).set(pitch, { nodes, masterGain, release: inst.release })
-  highlightKey(pitch)
-}
-
-const stopNote = (pitch: string): void => {
-  const entry = MutableRef.get(activeNotes).get(pitch)
-  if (!entry) return
-  const { nodes, masterGain, release } = entry
-  MutableRef.get(activeNotes).delete(pitch)
-  unhighlightKey(pitch)
-  const ctx = getCtx()
-  const now = ctx?.currentTime ?? performance.now() / 1000
-
-  if (typeof masterGain.gain.cancelAndHoldAtTime === 'function') {
-    masterGain.gain.cancelAndHoldAtTime(now)
-  } else {
-    masterGain.gain.cancelScheduledValues(now)
-    masterGain.gain.setValueAtTime(masterGain.gain.value, now)
-  }
-  masterGain.gain.linearRampToValueAtTime(0, now + release)
-
-  setTimeout(() => {
-    for (const { osc, gain } of nodes) {
-      try { osc.stop() } catch { /* already stopped */ }
-      osc.disconnect()
-      gain.disconnect()
-    }
-    masterGain.disconnect()
-  }, release * 1000 + 50)
-}
-
-const clearActiveNotes = (): void => {
-  for (const { nodes, masterGain } of MutableRef.get(activeNotes).values()) {
-    for (const { osc, gain } of nodes) {
-      try { osc.stop() } catch { /* already stopped */ }
-      try { osc.disconnect() } catch { /* already disconnected */ }
-      try { gain.disconnect() } catch { /* already disconnected */ }
-    }
-    try { masterGain.disconnect() } catch { /* already disconnected */ }
-  }
-  MutableRef.get(activeNotes).clear()
-  unhighlightAllKeys()
-}
-
-const stopAllNotes = (): void => {
-  for (const pitch of MutableRef.get(activeNotes).keys()) {
-    stopNote(pitch)
-  }
-}
 
 export const MIN_OCTAVE = -3
 export const MAX_OCTAVE = 3
@@ -1099,14 +736,24 @@ export const Message = S.Union([Play, Stop, SetSong, SetInstrument, SongEnded, N
 export type Message = typeof Message.Type
 
 export const init = (): Model => {
-  clearActiveNotes()
-  bindKeyboard()
+  clearActiveNotes({ unhighlightAllKeys })
+  bindMusicBoxKeyboard({
+    getInstrument: () => INSTRUMENTS[MutableRef.get(selectedInstrumentIndex)],
+    startNote: (pitch, instrument) => startManualNote(pitch, instrument, FREQUENCIES, { highlightKey }),
+    stopNote: (pitch) => stopManualNote(pitch, { unhighlightKey }),
+    primeAudio: () => {
+      getMusicBoxContext()
+    },
+    clearActiveNotes: () => {
+      clearActiveNotes({ unhighlightAllKeys })
+    },
+  })
   bindShortcutKeys()
   startWakeMonitor()
   MutableRef.set(stopFlag, false)
   MutableRef.set(pauseFlag, false)
   MutableRef.set(selectedInstrumentIndex, 0)
-  MutableRef.set(currentOctaveOffset, 0)
+  setKeyboardOctaveOffset(0)
   MutableRef.set(playbackTempo, 1)
   MutableRef.set(playbackTranspose, 0)
   MutableRef.set(currentLyricLine, -1)
@@ -1125,7 +772,7 @@ export const update = (
           MutableRef.set(pauseFlag, false)
           return [{ ...model, isPaused: false }, []]
         }
-        getCtx() // Safari: AudioContext must be created within a user gesture
+        getMusicBoxContext() // Safari: AudioContext must be created within a user gesture
         MutableRef.set(playbackTempo, model.tempo)
         MutableRef.set(playbackTranspose, model.songTranspose)
         const song = SONGS[model.selectedSong]
@@ -1138,7 +785,7 @@ export const update = (
       MusicBoxStop: () => {
         MutableRef.set(stopFlag, true)
         MutableRef.set(pauseFlag, false)
-        stopAllNotes()
+        stopAllNotes({ unhighlightKey })
         unhighlightAllKeys()
         unhighlightAllLyricLines()
         return [{ ...model, isPlaying: false, isPaused: false }, []]
@@ -1147,7 +794,7 @@ export const update = (
         if (model.isPlaying) {
           MutableRef.set(stopFlag, true)
           MutableRef.set(pauseFlag, false)
-          stopAllNotes()
+          stopAllNotes({ unhighlightKey })
           unhighlightAllKeys()
         }
         unhighlightAllLyricLines()
@@ -1162,12 +809,12 @@ export const update = (
         return [{ ...model, isPlaying: false, isPaused: false }, []]
       },
       MusicBoxNoteOn: (msg) => {
-        getCtx() // Safari: ensure AudioContext from user gesture
-        startNote(msg.pitch, INSTRUMENTS[model.selectedInstrument]!)
+        getMusicBoxContext() // Safari: ensure AudioContext from user gesture
+        startManualNote(msg.pitch, INSTRUMENTS[model.selectedInstrument]!, FREQUENCIES, { highlightKey })
         return [model, []]
       },
       MusicBoxNoteOff: (msg) => {
-        stopNote(msg.pitch)
+        stopManualNote(msg.pitch, { unhighlightKey })
         return [model, []]
       },
       MusicBoxAddKey: () => {
@@ -1266,7 +913,7 @@ export const update = (
   )
 
 export const view = (model: Model, language: string = 'en') => {
-  MutableRef.set(currentOctaveOffset, model.octaveOffset)
+  setKeyboardOctaveOffset(model.octaveOffset)
   const h = html<Message>()
   const topKb = buildKeyboard(shiftStart('C4', model.topShift), model.whiteKeys, model.octaveOffset)
   const topWhite = topKb.keys.filter(k => k.type === 'white')

@@ -20,6 +20,16 @@ Phase 2 has been implemented as regression-test work only:
 - wake recovery is tested through `pageshow` with `persisted=true`, proving the next note gets a fresh context and compressor
 - production audio behavior in `src/audio.ts` and `src/games/musicbox.ts` was not changed
 
+## Phase 3 Implementation Status
+
+Phase 3 has been implemented as a mechanical extraction:
+
+- MusicBox synth graph behavior now lives in `src/games/musicboxAudioRuntime.ts`
+- MusicBox DOM keyboard/shortcut/first-touch behavior now lives in `src/games/musicboxKeyboardRuntime.ts`
+- MusicBox sleep/wake recovery now lives in `src/games/musicboxWakeMonitor.ts`
+- `src/games/musicbox.ts` still owns model/update/view logic and calls the runtimes at the same user-gesture/update points
+- event types, capture options, first-touch ordering, compressor settings, envelope behavior, and wake-reset timing were preserved
+
 ## Executive Summary
 
 FoldKid currently has two audio paths:
@@ -299,7 +309,7 @@ Avoid asserting too much implementation detail unless the test is explicitly nam
 
 ### Phase 3: Extract Without Behavior Change
 
-Medium risk, but manageable if mechanical.
+Implemented as a mechanical extraction.
 
 Possible extraction:
 
