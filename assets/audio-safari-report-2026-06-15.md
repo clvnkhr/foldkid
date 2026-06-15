@@ -30,6 +30,18 @@ Phase 3 has been implemented as a mechanical extraction:
 - `src/games/musicbox.ts` still owns model/update/view logic and calls the runtimes at the same user-gesture/update points
 - event types, capture options, first-touch ordering, compressor settings, envelope behavior, and wake-reset timing were preserved
 
+## Phase 4 Implementation Status
+
+Phase 4 has been implemented as typed runtime-boundary work:
+
+- MusicBox domain types and pitch/frequency helpers now live in `src/games/musicboxDomain.ts`
+- audio, keyboard, and wake monitor runtimes are created through typed factory APIs
+- compressor and active-note state are private to the audio runtime instance
+- keyboard listener and first-touch state are private to the keyboard runtime instance
+- wake monitor listener/interval state is private to the wake monitor instance
+- production Safari-sensitive behavior was intentionally preserved
+- new direct runtime/domain regression tests were added
+
 ## Executive Summary
 
 FoldKid currently has two audio paths:
@@ -332,7 +344,7 @@ This phase is about containment, not redesign.
 
 ### Phase 4: Improve Audio Runtime API
 
-Medium risk.
+Implemented as typed runtime-boundary work.
 
 Once extraction is complete, define a tiny runtime API:
 

@@ -17,6 +17,27 @@ The end goal is not a grand audio engine. The end goal is a boring, explicit API
 
 This phase should not directly fix the known behavior where QWERTY piano keys continue working outside the MusicBox page. That should remain a separate product decision with its own tests.
 
+## Implementation Status
+
+Implemented on June 15, 2026:
+
+- `musicboxDomain.ts` now owns MusicBox domain types, branded pitch/frequency helpers, the frequency table, transposition, and keyboard construction
+- `musicboxAudioRuntime.ts` now exposes `createMusicBoxAudioRuntime(...)` with private compressor and active-note state
+- `musicboxKeyboardRuntime.ts` now exposes `createMusicBoxKeyboardRuntime(...)` with private listener/first-touch state
+- `musicboxWakeMonitor.ts` now exposes `createMusicBoxWakeMonitor(...)` with private pageshow/interval state
+- `musicbox.ts` assembles one runtime instance for each boundary and keeps model/update/view orchestration
+- direct regression tests now cover the domain, audio runtime, and wake monitor boundaries
+
+Still intentionally unchanged:
+
+- first-touch event types and capture options
+- first-touch ordering
+- compressor settings
+- note envelope behavior
+- silent WAV playback
+- `navigator.audioSession` handling
+- global QWERTY behavior outside the MusicBox page
+
 ## Current Shape
 
 Phase 3 split the MusicBox runtime into:
