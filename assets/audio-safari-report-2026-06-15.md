@@ -11,6 +11,15 @@ Phase 1 has been implemented as diagnostic-only work:
 - the broader codebase audit links back to this audio report
 - production audio behavior in `src/audio.ts` and `src/games/musicbox.ts` was not changed
 
+## Phase 2 Implementation Status
+
+Phase 2 has been implemented as regression-test work only:
+
+- song playback is now tested to route note gains through the MusicBox master compressor
+- Safari first-touch priming is tested as a one-shot path that attempts `audioSession`, silent WAV playback, and context/compressor creation in that order
+- wake recovery is tested through `pageshow` with `persisted=true`, proving the next note gets a fresh context and compressor
+- production audio behavior in `src/audio.ts` and `src/games/musicbox.ts` was not changed
+
 ## Executive Summary
 
 FoldKid currently has two audio paths:
@@ -270,7 +279,7 @@ Do not change production audio behavior in this phase.
 
 ### Phase 2: Regression Tests Around Current Invariants
 
-Low to medium risk.
+Implemented as test-only work.
 
 Add tests that lock down current intended behavior:
 

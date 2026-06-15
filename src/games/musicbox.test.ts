@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Scene, Story } from 'foldkit/test'
+import { Effect, Fiber } from 'effect'
 import { resetContext } from '../audio'
 import * as MusicBox from './musicbox'
 
@@ -7,13 +8,16 @@ const resolvePianoTop = [{ name: 'piano-top' as const }, MusicBox.NoteOn({ pitch
 const resolvePianoBot = [{ name: 'piano-bot' as const }, MusicBox.NoteOn({ pitch: 'C3' })] as const
 const resolveMount = [resolvePianoTop]
 const originalAudioContext = globalThis.AudioContext
+const originalAudio = globalThis.Audio
 
 const startedFrequencies: number[] = []
 const startedAtTimes: number[] = []
 const cancelAndHoldTimes: number[] = []
 const setValueEvents: Array<{ value: number; time: number }> = []
 const connections: Array<{ from: string; to: string }> = []
+const audioEvents: string[] = []
 const nodeKinds = new WeakMap<object, string>()
+let contextCreateCount = 0
 let compressorCreateCount = 0
 
 const makeAudioParam = (initial = 0): AudioParam => ({
@@ -54,6 +58,11 @@ class MockAudioContext {
   currentTime = 0
   destination = makeAudioNode('destination') as AudioDestinationNode
 
+  constructor() {
+    contextCreateCount += 1
+    audioEvents.push('context')
+  }
+
   createOscillator(): OscillatorNode {
     const frequency = makeAudioParam(440)
     return Object.assign(makeAudioNode('oscillator'), {
@@ -76,6 +85,7 @@ class MockAudioContext {
 
   createDynamicsCompressor(): DynamicsCompressorNode {
     compressorCreateCount += 1
+    audioEvents.push('compressor')
     return Object.assign(makeAudioNode('compressor'), {
       threshold: makeAudioParam(-24),
       knee: makeAudioParam(30),
@@ -87,11 +97,13 @@ class MockAudioContext {
 
   close(): Promise<void> {
     this.state = 'closed'
+    audioEvents.push('close')
     return Promise.resolve()
   }
 
   resume(): Promise<void> {
     this.state = 'running'
+    audioEvents.push('resume')
     return Promise.resolve()
   }
 }
@@ -105,9 +117,12 @@ afterEach(() => {
   cancelAndHoldTimes.length = 0
   setValueEvents.length = 0
   connections.length = 0
+  audioEvents.length = 0
+  contextCreateCount = 0
   compressorCreateCount = 0
   document.body.innerHTML = ''
   globalThis.AudioContext = originalAudioContext
+  globalThis.Audio = originalAudio
   vi.restoreAllMocks()
 })
 
@@ -157,6 +172,84 @@ describe('MusicBox', () => {
     expect(compressorCreateCount).toBe(1)
     expect(connections).toContainEqual({ from: 'compressor', to: 'destination' })
     expect(connections.filter(connection => connection.from === 'gain' && connection.to === 'compressor').length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('routes song playback notes through the same master compressor path', async () => {
+    globalThis.AudioContext = MockAudioContext as unknown as typeof AudioContext
+    const [, commands] = MusicBox.update(MusicBox.init(), MusicBox.Play())
+
+    const playCommand = commands[0]
+    expect(playCommand?.name).toBe('PlayMusicBox')
+    const fiber = Effect.runFork(playCommand!.effect)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    await Effect.runPromise(Fiber.interrupt(fiber))
+
+    expect(compressorCreateCount).toBe(1)
+    expect(connections).toContainEqual({ from: 'compressor', to: 'destination' })
+    expect(connections.some(connection => connection.from === 'gain' && connection.to === 'compressor')).toBe(true)
+  })
+
+  it('primes Safari audio once from the first trusted gesture', () => {
+    globalThis.AudioContext = MockAudioContext as unknown as typeof AudioContext
+    const originalAudioSession = Object.getOwnPropertyDescriptor(navigator, 'audioSession')
+    const session = {
+      currentType: 'ambient',
+      get type() {
+        return this.currentType
+      },
+      set type(value: string) {
+        audioEvents.push(`audioSession:${value}`)
+        this.currentType = value
+      },
+    }
+    Object.defineProperty(navigator, 'audioSession', {
+      configurable: true,
+      value: session,
+    })
+    globalThis.Audio = class {
+      play(): Promise<void> {
+        audioEvents.push('silentWav')
+        return Promise.resolve()
+      }
+    } as unknown as typeof Audio
+
+    try {
+      MusicBox.init()
+
+      document.dispatchEvent(new Event('pointerup'))
+      document.dispatchEvent(new Event('pointerup'))
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'x' }))
+
+      expect(audioEvents).toEqual(['audioSession:playback', 'silentWav', 'context', 'compressor'])
+      expect(session.type).toBe('playback')
+      expect(contextCreateCount).toBe(1)
+      expect(compressorCreateCount).toBe(1)
+    } finally {
+      if (originalAudioSession) {
+        Object.defineProperty(navigator, 'audioSession', originalAudioSession)
+      } else {
+        delete (navigator as { audioSession?: unknown }).audioSession
+      }
+    }
+  })
+
+  it('recreates the audio graph after a persisted pageshow wake event', () => {
+    globalThis.AudioContext = MockAudioContext as unknown as typeof AudioContext
+    const model = MusicBox.init()
+
+    MusicBox.update(model, MusicBox.NoteOn({ pitch: 'C4' }))
+    expect(contextCreateCount).toBe(1)
+    expect(compressorCreateCount).toBe(1)
+
+    const pageShow = new Event('pageshow') as PageTransitionEvent
+    Object.defineProperty(pageShow, 'persisted', { value: true })
+    window.dispatchEvent(pageShow)
+    MusicBox.update(model, MusicBox.NoteOn({ pitch: 'E4' }))
+
+    expect(contextCreateCount).toBe(2)
+    expect(compressorCreateCount).toBe(2)
+    expect(audioEvents).toContain('close')
+    expect(startedFrequencies.some(freq => Math.abs(freq - MusicBox.FREQUENCIES.E4!) < 0.01)).toBe(true)
   })
 
   it('rapid QWERTY key presses start every distinct note immediately', () => {
