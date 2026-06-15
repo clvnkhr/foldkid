@@ -787,6 +787,42 @@ describe('MusicBox', () => {
       const keys = MusicBox.SONGS.map(s => s.key)
       expect(new Set(keys).size).toBe(keys.length)
     })
+
+    it('happy song follows the sourced 6/8 melody and rhythm for every verse', () => {
+      const happy = MusicBox.SONGS.find(song => song.key === 'happy')
+      expect(happy).toBeDefined()
+      const expectedVerse = [
+        ['C4', 1], ['C4', 0.5],
+        ['F4', 1], ['F4', 0.5], ['F4', 1], ['F4', 0.5],
+        ['F4', 1], ['F4', 0.5], ['E4', 1], ['F4', 0.5],
+        ['G4', 1.5],
+        ['', 1.5], ['', 1.5],
+        ['C4', 1], ['C4', 0.5],
+        ['G4', 1], ['G4', 0.5], ['G4', 1], ['G4', 0.5],
+        ['G4', 1], ['G4', 0.5], ['F4', 1], ['G4', 0.5],
+        ['A4', 1.5],
+        ['', 1.5], ['', 1.5],
+        ['A4', 1], ['A4', 0.5],
+        ['A#4', 1], ['A#4', 0.5], ['A#4', 1], ['A#4', 0.5],
+        ['D4', 1], ['D4', 0.5], ['A#4', 1], ['A#4', 0.5],
+        ['A4', 1], ['A4', 0.5], ['A4', 1], ['G4', 0.5],
+        ['F4', 1], ['F4', 0.5], ['A4', 1], ['A4', 0.5],
+        ['G4', 1], ['G4', 0.5], ['G4', 1], ['F4', 0.5],
+        ['E4', 1], ['E4', 0.5], ['D4', 1], ['E4', 0.5],
+        ['F4', 1.5],
+        ['', 1.5], ['', 1.5],
+      ]
+
+      const verses = [
+        happy!.notes.slice(0, expectedVerse.length),
+        happy!.notes.slice(expectedVerse.length, expectedVerse.length * 2),
+        happy!.notes.slice(expectedVerse.length * 2, expectedVerse.length * 3),
+      ]
+      expect(happy!.notes).toHaveLength(expectedVerse.length * 3)
+      for (const verse of verses) {
+        expect(verse.map(note => [note.pitch, note.dur])).toEqual(expectedVerse)
+      }
+    })
   })
 
   it('every keyboard pitch has a frequency entry', () => {
