@@ -8,7 +8,8 @@
     "dev:mobile": "npm run mobile",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
-    "build": "npm run typecheck && npm run lint && vite build",
+    "check:scripts": "node --check scripts/mobile-dev.mjs",
+    "build": "npm run typecheck && npm run lint && npm run check:scripts && vite build",
     "preview": "vite preview",
     "test": "vitest run"
   },

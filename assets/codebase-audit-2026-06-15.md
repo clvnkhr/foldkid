@@ -2,6 +2,23 @@
 
 Generated: June 15, 2026
 
+## Follow-Up Implementation Status
+
+After this audit, the low-risk items were addressed:
+
+- Bubbles selected color was removed from persisted settings because it is transient UI state.
+- settings persistence moved from the old raw `SETTINGS_TAGS` set to an exported typed tag list plus `shouldPersistSettings`.
+- regression tests now cover persisted and non-persisted message classifications.
+- Counter display mode persistence now uses the Counter domain schema.
+- settings overlay is now a literal schema instead of any string.
+- MusicBox persisted song order and hidden-song arrays now normalize to valid full-song arrays.
+- `scripts/mobile-dev.mjs` now has a `check:scripts` npm script and is part of `npm run build`.
+- `_pitch_check.test.ts` was renamed to `musicbox-pitch.test.ts`.
+
+Remaining items are mostly the higher-risk MusicBox/audio architecture work, visual/mobile smoke coverage, and broader file-splitting cleanup.
+
+See also: `assets/audio-safari-report-2026-06-15.md` for the audio-specific Safari safety plan.
+
 ## Executive Summary
 
 The codebase is in a better place than the earlier Effect/Foldkit audit. The app now has stronger schema boundaries, many more regression tests, a useful invariant test suite, CSS split by domain, and a local mobile test script. Foldkit is being used well as the core model/message/update/view architecture, and Effect is being used pragmatically for command effects, streams, schema decoding, and browser callback wrappers.

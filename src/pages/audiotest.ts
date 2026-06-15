@@ -4,6 +4,69 @@ import { html } from 'foldkit/html'
 import { ClickedLanding } from '../message'
 
 type AudioTestMessage = ReturnType<typeof ClickedLanding>
+export const AUDIO_DIAGNOSTIC_VERSION = 'v3 - 2026-06-15 phase 1'
+
+type AudioSessionLike = { type: string }
+type WebkitAudioWindow = Window & { webkitAudioContext?: typeof AudioContext }
+type StrategyFn = () => void
+
+const audioSession = (): AudioSessionLike | undefined => {
+  try {
+    return (navigator as { audioSession?: AudioSessionLike }).audioSession
+  } catch {
+    return undefined
+  }
+}
+
+const logAudioSession = (label: string): void => {
+  const session = audioSession()
+  console.log(`${label}.audioSession.exists:`, !!session)
+  if (session) console.log(`${label}.audioSession.type:`, session.type)
+}
+
+const createAudioContext = (label: string, AC: typeof AudioContext = AudioContext): AudioContext | undefined => {
+  try {
+    const ctx = new AC()
+    console.log(`${label}.ctx.created: true`)
+    console.log(`${label}.ctx.state:`, ctx.state)
+    console.log(`${label}.ctx.sampleRate:`, ctx.sampleRate)
+    console.log(`${label}.ctx.baseLatency:`, ctx.baseLatency)
+    return ctx
+  } catch (e) {
+    console.log(`${label}.ctx.created: false`)
+    console.log(`${label}.ctx.error:`, e)
+    return undefined
+  }
+}
+
+const resumeContext = (ctx: AudioContext, label: string): void => {
+  console.log(`${label}.resume.called: true`)
+  ctx.resume()
+    .then(() => {
+      console.log(`${label}.resume.resolved: true`)
+      console.log(`${label}.ctx.state.afterResume:`, ctx.state)
+    })
+    .catch(e => {
+      console.log(`${label}.resume.rejected:`, e)
+      console.log(`${label}.ctx.state.afterResumeRejection:`, ctx.state)
+    })
+}
+
+const runStrategy = (strategy: string, event: Event, fn: StrategyFn): void => {
+  console.group(`Audio strategy ${strategy}`)
+  console.log('diagnostic.version:', AUDIO_DIAGNOSTIC_VERSION)
+  console.log('event.type:', event.type)
+  console.log('event.isTrusted:', event.isTrusted)
+  console.log('userActivation.isActive:', navigator.userActivation?.isActive)
+  console.log('userActivation.hasBeenActive:', navigator.userActivation?.hasBeenActive)
+  logAudioSession('before')
+  try {
+    fn()
+  } finally {
+    logAudioSession('after')
+    console.groupEnd()
+  }
+}
 
 // Minimal silent WAV (1 sample, 16-bit mono, 44.1kHz) — used to upgrade
 // iOS Safari's audio session from "ambient" to "playback" so Web Audio
@@ -27,15 +90,25 @@ const playTone = (ctx: AudioContext, freq: number, dur: number): void => {
 const playSilentWav = (): void => {
   try {
     const a = new Audio(SILENT_WAV)
-    a.play().catch(() => {})
-  } catch { /* ignore */ }
+    console.log('silentWav.created: true')
+    a.play()
+      .then(() => console.log('silentWav.play.resolved: true'))
+      .catch(e => console.log('silentWav.play.rejected:', e))
+  } catch (e) {
+    console.log('silentWav.created: false')
+    console.log('silentWav.error:', e)
+  }
 }
 
 const setAudioSessionPlayback = (): void => {
   try {
-    const nav = navigator as { audioSession?: { type: string } }
-    if (nav.audioSession) nav.audioSession.type = 'playback'
-  } catch { /* ignore */ }
+    const session = audioSession()
+    console.log('setAudioSessionPlayback.before:', session?.type ?? 'missing')
+    if (session) session.type = 'playback'
+    console.log('setAudioSessionPlayback.after:', session?.type ?? 'missing')
+  } catch (e) {
+    console.log('setAudioSessionPlayback.error:', e)
+  }
 }
 
 // ============================================================
@@ -43,22 +116,18 @@ const setAudioSessionPlayback = (): void => {
 // ============================================================
 const logDiagnostics = (): void => {
   console.log('=== AudioContext Diagnostic ===')
+  console.log('Diagnostic version:', AUDIO_DIAGNOSTIC_VERSION)
   console.log('User agent:', navigator.userAgent)
   console.log('Has AudioContext:', typeof AudioContext !== 'undefined')
-  try {
-    const ctx = new AudioContext()
-    console.log('Fresh ctx state:', ctx.state)
-    console.log('Fresh ctx sampleRate:', ctx.sampleRate)
-    console.log('Fresh ctx baseLatency:', ctx.baseLatency)
-    ctx.close()
-  } catch (e) {
-    console.log('new AudioContext() threw:', e)
-  }
-  try {
-    const nav = navigator as { audioSession?: { type: string } }
-    console.log('Has audioSession:', !!nav.audioSession)
-    if (nav.audioSession) console.log('audioSession.type:', nav.audioSession.type)
-  } catch { /* ignore */ }
+  console.log('Has userActivation:', !!navigator.userActivation)
+  console.log('userActivation.isActive:', navigator.userActivation?.isActive)
+  console.log('userActivation.hasBeenActive:', navigator.userActivation?.hasBeenActive)
+  const ctx = createAudioContext('diagnose')
+  ctx?.resume()
+    .then(() => console.log('diagnose.resume.resolved: true'))
+    .catch(e => console.log('diagnose.resume.rejected:', e))
+    .finally(() => { ctx.close().catch(() => {}) })
+  logAudioSession('diagnose')
   try {
     const a = new Audio(SILENT_WAV)
     console.log('new Audio(SILENT_WAV) OK')
@@ -76,19 +145,22 @@ const logDiagnostics = (): void => {
 
 // J: click event instead of pointerdown
 const strategyJ = (): void => {
-  const ctx = new AudioContext()
+  const ctx = createAudioContext('J')
+  if (!ctx) return
   playTone(ctx, 440, 0.3)
 }
 
 // K: touchend event instead of pointerdown  
 const strategyK = (): void => {
-  const ctx = new AudioContext()
+  const ctx = createAudioContext('K')
+  if (!ctx) return
   playTone(ctx, 440, 0.3)
 }
 
 // L: use pointerup (qualifies for touch)
 const strategyL = (): void => {
-  const ctx = new AudioContext()
+  const ctx = createAudioContext('L')
+  if (!ctx) return
   playTone(ctx, 440, 0.3)
 }
 
@@ -96,21 +168,24 @@ const strategyL = (): void => {
 const strategyM = (): void => {
   setAudioSessionPlayback()
   playSilentWav()
-  const ctx = new AudioContext()
+  const ctx = createAudioContext('M')
+  if (!ctx) return
   playTone(ctx, 440, 0.3)
 }
 
 // N: audioSession only, then Web Audio
 const strategyN = (): void => {
   setAudioSessionPlayback()
-  const ctx = new AudioContext()
+  const ctx = createAudioContext('N')
+  if (!ctx) return
   playTone(ctx, 440, 0.3)
 }
 
 // O: Silent WAV only, then Web Audio
 const strategyO = (): void => {
   playSilentWav()
-  const ctx = new AudioContext()
+  const ctx = createAudioContext('O')
+  if (!ctx) return
   playTone(ctx, 440, 0.3)
 }
 
@@ -120,16 +195,18 @@ const strategyP = (): void => {
     const a = new Audio()
     a.src = SILENT_WAV
     a.loop = true
-    a.play().catch(() => {})
+    a.play().then(() => console.log('P.htmlAudio.resolved: true')).catch(e => console.log('P.htmlAudio.rejected:', e))
     // Play beep via Web Audio as well
-    const ctx = new AudioContext()
+    const ctx = createAudioContext('P')
+    if (!ctx) return
     playTone(ctx, 440, 0.3)
-  } catch { /* ignore */ }
+  } catch (e) { console.log('P.error:', e) }
 }
 
 // Q: Create ctx first, then play silent WAV, then beep
 const strategyQ = (): void => {
-  const ctx = new AudioContext()
+  const ctx = createAudioContext('Q')
+  if (!ctx) return
   playSilentWav()
   playTone(ctx, 440, 0.3)
 }
@@ -138,13 +215,15 @@ const strategyQ = (): void => {
 const strategyR = (): void => {
   setAudioSessionPlayback()
   playSilentWav()
-  const ctx = new AudioContext()
+  const ctx = createAudioContext('R')
+  if (!ctx) return
   playTone(ctx, 440, 0.3)
 }
 
 // S: Use OscillatorNode with start(0) instead of currentTime
 const strategyS = (): void => {
-  const ctx = new AudioContext()
+  const ctx = createAudioContext('S')
+  if (!ctx) return
   const t = 0
   const osc = ctx.createOscillator()
   const gain = ctx.createGain()
@@ -160,14 +239,16 @@ const strategyS = (): void => {
 
 // T: Create ctx, resume (if needed), wait 50ms via setTimeout, then beep
 const strategyT = (): void => {
-  const ctx = new AudioContext()
-  if (ctx.state === 'suspended') ctx.resume().catch(() => {})
+  const ctx = createAudioContext('T')
+  if (!ctx) return
+  if (ctx.state === 'suspended') resumeContext(ctx, 'T')
   setTimeout(() => playTone(ctx, 440, 0.3), 50)
 }
 
 // U: Silent buffer trick — create 1-sample buffer and play before tone
 const strategyU = (): void => {
-  const ctx = new AudioContext()
+  const ctx = createAudioContext('U')
+  if (!ctx) return
   // Prime with a silent buffer
   const buf = ctx.createBuffer(1, 1, ctx.sampleRate)
   const src = ctx.createBufferSource()
@@ -181,29 +262,33 @@ const strategyU = (): void => {
 
 // V: Create context, call resume(), then DON'T check state, just play
 const strategyV = (): void => {
-  const ctx = new AudioContext()
-  ctx.resume().catch(() => {})
+  const ctx = createAudioContext('V')
+  if (!ctx) return
+  resumeContext(ctx, 'V')
   playTone(ctx, 440, 0.3)
 }
 
 // W: Multiple event types — bind to click AND pointerup on same button
 const strategyW = (): void => {
-  const ctx = new AudioContext()
+  const ctx = createAudioContext('W')
+  if (!ctx) return
   playTone(ctx, 440, 0.3)
 }
 
 // X: Create context, DON'T call resume(), just play (might fail but worth trying)
 const strategyX = (): void => {
-  const ctx = new AudioContext()
+  const ctx = createAudioContext('X')
+  if (!ctx) return
   // NOT calling resume() — just try to play directly
   playTone(ctx, 440, 0.3)
 }
 
 // Y: Try webkitAudioContext (legacy Safari)
 const strategyY = (): void => {
-  const AC = (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext) as typeof AudioContext
+  const AC = (window.AudioContext || (window as WebkitAudioWindow).webkitAudioContext) as typeof AudioContext | undefined
   if (!AC) return
-  const ctx = new AC()
+  const ctx = createAudioContext('Y', AC)
+  if (!ctx) return
   playTone(ctx, 440, 0.3)
 }
 
@@ -246,29 +331,29 @@ const strategyZ = (): void => {
     const url = URL.createObjectURL(blob)
     const a = new Audio(url)
     a.onended = () => URL.revokeObjectURL(url)
-    a.play().catch(() => {})
-  } catch { /* ignore */ }
+    a.play().then(() => console.log('Z.htmlAudio.resolved: true')).catch(e => console.log('Z.htmlAudio.rejected:', e))
+  } catch (e) { console.log('Z.error:', e) }
 }
 
 // ============================================================
 // Mount helpers
 // ============================================================
-const mountTap = (name: string, eventType: string, fn: () => void) => ({
+const mountTap = (name: string, eventType: string, strategy: string, fn: StrategyFn) => ({
   name,
   f: (element: Element) => {
     element.addEventListener(eventType, (e) => {
       e.preventDefault()
-      fn()
+      runStrategy(strategy, e, fn)
     }, { capture: true, passive: false })
     return Stream.never
   },
 })
 
 // For strategies that need multiple event types or the click event
-const mountDual = (name: string, fn: () => void) => ({
+const mountDual = (name: string, strategy: string, fn: StrategyFn) => ({
   name,
   f: (element: Element) => {
-    const handler = (e: Event) => { e.preventDefault(); fn() }
+    const handler = (e: Event) => { e.preventDefault(); runStrategy(strategy, e, fn) }
     element.addEventListener('pointerdown', handler, { capture: true, passive: false })
     element.addEventListener('click', handler, { capture: true, passive: false })
     return Stream.never
@@ -298,48 +383,49 @@ export const view = (_language: string) => {
 
   return h.div([h.Class('test-container')], [
     h.a([h.Href('/'), h.Class('back-link')], ['← Back']),
-    h.h1([], ['AudioContext Diagnostic — v2']),
+    h.h1([], ['AudioContext Diagnostic']),
+    h.p([h.Class('test-version')], [AUDIO_DIAGNOSTIC_VERSION]),
     h.p([], [
       'First tap "Diagnose" to check console logs. Then tap each button. If you hear a 440Hz beep, that strategy works.',
-      h.button([h.Class('test-btn'), h.Style({ marginLeft: '0.5rem' }), h.OnMount(mountTap('diag', 'pointerdown', logDiagnostics))], ['Diagnose']),
+      h.button([h.Class('test-btn'), h.Style({ marginLeft: '0.5rem' }), h.OnMount(mountTap('diag', 'pointerdown', 'diagnose', logDiagnostics))], ['Diagnose']),
     ]),
     h.p([h.Class('test-note')], ['Check the Safari/iOS mute switch! Web Audio may be silent when mute is on. ']),
     h.h2([h.Style({ fontSize: '1rem', marginTop: '1rem' })], ['Group 1 — Different event types']),
     h.div([h.Class('test-grid')], [
-      viewRow(h, 'Beep ▶', 'click event (ALWAYS qualifies)', 'J', mountTap('tap-j', 'click', strategyJ)),
-      viewRow(h, 'Beep ▶', 'touchend (qualifies for touch)', 'K', mountTap('tap-k', 'touchend', strategyK)),
-      viewRow(h, 'Beep ▶', 'pointerup (qualifies for touch)', 'L', mountTap('tap-l', 'pointerup', strategyL)),
-      viewRow(h, 'Beep ▶', 'pointerdown+click (dual)', 'W', mountDual('tap-w', strategyW)),
+      viewRow(h, 'Beep ▶', 'click event (ALWAYS qualifies)', 'J', mountTap('tap-j', 'click', 'J', strategyJ)),
+      viewRow(h, 'Beep ▶', 'touchend (qualifies for touch)', 'K', mountTap('tap-k', 'touchend', 'K', strategyK)),
+      viewRow(h, 'Beep ▶', 'pointerup (qualifies for touch)', 'L', mountTap('tap-l', 'pointerup', 'L', strategyL)),
+      viewRow(h, 'Beep ▶', 'pointerdown+click (dual)', 'W', mountDual('tap-w', 'W', strategyW)),
     ]),
     h.h2([h.Style({ fontSize: '1rem', marginTop: '1rem' })], ['Group 2 — audioSession + silent WAV workarounds']),
     h.p([h.Class('test-note')], ['These fix iOS 26+ mute switch silencing Web Audio oscillators.']),
     h.div([h.Class('test-grid')], [
-      viewRow(h, 'Beep ▶', 'audioSession=playback + Web Audio', 'N', mountTap('tap-n', 'pointerdown', strategyN)),
-      viewRow(h, 'Beep ▶', 'Silent WAV + Web Audio', 'O', mountTap('tap-o', 'pointerdown', strategyO)),
-      viewRow(h, 'Beep ▶', 'Silent WAV first, then Web Audio', 'Q', mountTap('tap-q', 'pointerdown', strategyQ)),
-      viewRow(h, 'Beep ▶', 'audioSession + silent WAV + ctx', 'M', mountTap('tap-m', 'pointerdown', strategyM)),
-      viewRow(h, 'Beep ▶', 'FULL: audioSession+WAV+click', 'R', mountTap('tap-r', 'click', strategyR)),
+      viewRow(h, 'Beep ▶', 'audioSession=playback + Web Audio', 'N', mountTap('tap-n', 'pointerdown', 'N', strategyN)),
+      viewRow(h, 'Beep ▶', 'Silent WAV + Web Audio', 'O', mountTap('tap-o', 'pointerdown', 'O', strategyO)),
+      viewRow(h, 'Beep ▶', 'Silent WAV first, then Web Audio', 'Q', mountTap('tap-q', 'pointerdown', 'Q', strategyQ)),
+      viewRow(h, 'Beep ▶', 'audioSession + silent WAV + ctx', 'M', mountTap('tap-m', 'pointerdown', 'M', strategyM)),
+      viewRow(h, 'Beep ▶', 'FULL: audioSession+WAV+click', 'R', mountTap('tap-r', 'click', 'R', strategyR)),
     ]),
     h.h2([h.Style({ fontSize: '1rem', marginTop: '1rem' })], ['Group 3 — Different Web Audio patterns']),
     h.div([h.Class('test-grid')], [
-      viewRow(h, 'Beep ▶', 'osc.start(0) not currentTime', 'S', mountTap('tap-s', 'pointerdown', strategyS)),
-      viewRow(h, 'Beep ▶', 'resume() + setTimeout 50ms', 'T', mountTap('tap-t', 'pointerdown', strategyT)),
-      viewRow(h, 'Beep ▶', 'Silent buffer + tone', 'U', mountTap('tap-u', 'pointerdown', strategyU)),
-      viewRow(h, 'Beep ▶', 'resume() then play immediately', 'V', mountTap('tap-v', 'pointerdown', strategyV)),
-      viewRow(h, 'Beep ▶', 'NO resume() — play on suspended', 'X', mountTap('tap-x', 'pointerdown', strategyX)),
+      viewRow(h, 'Beep ▶', 'osc.start(0) not currentTime', 'S', mountTap('tap-s', 'pointerdown', 'S', strategyS)),
+      viewRow(h, 'Beep ▶', 'resume() + setTimeout 50ms', 'T', mountTap('tap-t', 'pointerdown', 'T', strategyT)),
+      viewRow(h, 'Beep ▶', 'Silent buffer + tone', 'U', mountTap('tap-u', 'pointerdown', 'U', strategyU)),
+      viewRow(h, 'Beep ▶', 'resume() then play immediately', 'V', mountTap('tap-v', 'pointerdown', 'V', strategyV)),
+      viewRow(h, 'Beep ▶', 'NO resume() — play on suspended', 'X', mountTap('tap-x', 'pointerdown', 'X', strategyX)),
     ]),
     h.h2([h.Style({ fontSize: '1rem', marginTop: '1rem' })], ['Group 4 — Fallbacks & legacy']),
     h.div([h.Class('test-grid')], [
-      viewRow(h, 'Beep ▶', 'webkitAudioContext', 'Y', mountTap('tap-y', 'pointerdown', strategyY)),
-      viewRow(h, 'Beep ▶', 'HTMLAudioElement (WAV gen)', 'Z', mountTap('tap-z', 'pointerdown', strategyZ)),
-      viewRow(h, 'Beep ▶', 'Silent WAV loop + Web Audio', 'P', mountTap('tap-p', 'pointerdown', strategyP)),
+      viewRow(h, 'Beep ▶', 'webkitAudioContext', 'Y', mountTap('tap-y', 'pointerdown', 'Y', strategyY)),
+      viewRow(h, 'Beep ▶', 'HTMLAudioElement (WAV gen)', 'Z', mountTap('tap-z', 'pointerdown', 'Z', strategyZ)),
+      viewRow(h, 'Beep ▶', 'Silent WAV loop + Web Audio', 'P', mountTap('tap-p', 'pointerdown', 'P', strategyP)),
     ]),
     h.h2([h.Style({ fontSize: '1rem', marginTop: '1rem' })], ['Group 5 — Best guess combos']),
     h.div([h.Class('test-grid')], [
-      viewRow(h, 'Beep ▶', 'audioSession + click event', 'J2', mountTap('tap-j2', 'click', () => { setAudioSessionPlayback(); strategyJ() })),
-      viewRow(h, 'Beep ▶', 'Silent WAV + click event', 'J3', mountTap('tap-j3', 'click', () => { playSilentWav(); strategyJ() })),
-      viewRow(h, 'Beep ▶', 'audioSession + touchend', 'K2', mountTap('tap-k2', 'touchend', () => { setAudioSessionPlayback(); strategyK() })),
-      viewRow(h, 'Beep ▶', 'Silent WAV + touchend', 'K3', mountTap('tap-k3', 'touchend', () => { playSilentWav(); strategyK() })),
+      viewRow(h, 'Beep ▶', 'audioSession + click event', 'J2', mountTap('tap-j2', 'click', 'J2', () => { setAudioSessionPlayback(); strategyJ() })),
+      viewRow(h, 'Beep ▶', 'Silent WAV + click event', 'J3', mountTap('tap-j3', 'click', 'J3', () => { playSilentWav(); strategyJ() })),
+      viewRow(h, 'Beep ▶', 'audioSession + touchend', 'K2', mountTap('tap-k2', 'touchend', 'K2', () => { setAudioSessionPlayback(); strategyK() })),
+      viewRow(h, 'Beep ▶', 'Silent WAV + touchend', 'K3', mountTap('tap-k3', 'touchend', 'K3', () => { playSilentWav(); strategyK() })),
     ]),
     h.p([h.Class('test-note'), h.Style({ marginTop: '1.5rem', fontSize: '0.75rem' })], [
       'Tip: If ALL Web Audio strategies fail but HTMLAudio (Z) works, the mute switch is silencing oscillators.',

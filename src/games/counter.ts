@@ -45,7 +45,7 @@ export const numberToWord = (n: number, language: string = 'en'): string => {
   }
 }
 
-const DisplayMode = S.Union([S.Literal('number'), S.Literal('word'), S.Literal('both')])
+export const DisplayMode = S.Union([S.Literal('number'), S.Literal('word'), S.Literal('both')])
 const PressedButton = S.Union([S.Literal('inc'), S.Literal('dec')])
 type PressedButton = typeof PressedButton.Type
 

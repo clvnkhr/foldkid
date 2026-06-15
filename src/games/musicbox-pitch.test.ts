@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import * as MusicBox from './musicbox'
 
-describe('pitch check', () => {
+describe('MusicBox pitch invariants', () => {
   it('all bottom keyboard pitches have frequencies', () => {
     const kb = MusicBox.buildKeyboard('C3', 8, 0)
     for (const k of kb.keys) {

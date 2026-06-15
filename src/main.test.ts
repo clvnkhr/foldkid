@@ -9,6 +9,7 @@ import * as MusicBox from './games/musicbox'
 import { ApplyImport, ClickedLanding, ClickedCounter, ClickedFindIt, ClickedBubbles, ClickedDarkMode, ConfirmResetSettings, ExportSettings, ImportedSettings, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsPersisted, ToggleMute } from './message'
 
 const resolveSettings = [{ name: 'PersistSettings' }, SettingsPersisted()] as const
+const resolveBubblesChime = [{ name: 'PlayChime' }, Bubbles.SoundPlayed()] as const
 const STORAGE_KEY = 'foldkid-settings'
 const segmentEmoji = (emoji: string): string[] =>
   [...new Intl.Segmenter().segment(emoji)].map(segment => segment.segment)
@@ -112,7 +113,7 @@ describe('settings persistence', () => {
     { label: 'MusicBoxSongDroppedOn', msg: MusicBox.SongDroppedOn({ index: 1 }) },
   ]
 
-  const nonSettingsMessages: Array<{ label: string; msg: Main.Message; resolves?: readonly [readonly [{ readonly name: string }, Main.Message], ...readonly (readonly [{ readonly name: string }, Main.Message])[]] }> = [
+  const nonSettingsMessages: Array<{ label: string; msg: Main.Message; resolves?: readonly [{ readonly name: string }, Main.Message] }> = [
     { label: 'ClickedLanding', msg: ClickedLanding() },
     { label: 'ClickedCounter', msg: ClickedCounter() },
     { label: 'ClickedFindIt', msg: ClickedFindIt() },
@@ -120,11 +121,18 @@ describe('settings persistence', () => {
     { label: 'CounterPointerDown', msg: Counter.PointerDown({ timeStamp: 0, button: 'inc' }) },
     { label: 'FindItClickedCell', msg: FindIt.ClickedCell({ id: 0 }) },
     { label: 'BubblesClickedPop', msg: Bubbles.ClickedPop({ id: 0 }) },
+    { label: 'BubblesClickedColor', msg: Bubbles.ClickedColor({ color: 'rainbow', duration: 500 }), resolves: resolveBubblesChime },
+    { label: 'BubblesSetRainbowMode', msg: Bubbles.SetRainbowMode({ value: true }) },
     { label: 'MusicBoxNoteOn', msg: MusicBox.NoteOn({ pitch: 'C4' }) },
   ]
 
+  it('keeps the persisted message tag list aligned with persistence tests', () => {
+    expect(Main.PERSISTED_SETTINGS_MESSAGE_TAGS).toEqual(settingsMessages.map(({ msg }) => msg._tag))
+  })
+
   for (const { label, msg } of settingsMessages) {
     it(`persists settings on ${label}`, () => {
+      expect(Main.shouldPersistSettings(msg)).toBe(true)
       Story.story(
         Main.update,
         Story.with(createModel()),
@@ -135,14 +143,25 @@ describe('settings persistence', () => {
     })
   }
 
-  for (const { label, msg } of nonSettingsMessages) {
+  for (const { label, msg, resolves } of nonSettingsMessages) {
     it(`does not persist settings on ${label}`, () => {
-      Story.story(
-        Main.update,
-        Story.with(createModel()),
-        Story.message(msg),
-        Story.Command.expectNone(),
-      )
+      expect(Main.shouldPersistSettings(msg)).toBe(false)
+      if (resolves) {
+        Story.story(
+          Main.update,
+          Story.with(createModel()),
+          Story.message(msg),
+          Story.Command.resolveAll(resolves),
+          Story.Command.expectNone(),
+        )
+      } else {
+        Story.story(
+          Main.update,
+          Story.with(createModel()),
+          Story.message(msg),
+          Story.Command.expectNone(),
+        )
+      }
     })
   }
 })
@@ -168,6 +187,19 @@ describe('Main', () => {
 
     expect(model.findIt.enabledPacks).toEqual(['numbers'])
     expect(model.findIt.grid.every(cell => numbers.has(cell.emoji))).toBe(true)
+  })
+
+  it('init ignores legacy Bubbles selected color because it is transient UI state', () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      bubblesSelectedColor: 'rainbow',
+      bubblesPopLabel: true,
+    }))
+
+    const [model] = Main.init()
+
+    expect(model.bubbles.selectedColor).toBe('')
+    expect(model.bubbles.rainbowMode).toBe(false)
+    expect(model.bubbles.popLabel).toBe(true)
   })
 
   it('uses global speech settings for Counter speech commands', async () => {
@@ -338,6 +370,7 @@ describe('Main', () => {
 
   describe('settings import', () => {
     it('filters out-of-bounds song indices', () => {
+      const defaultOrder = MusicBox.SONGS.map((_, index) => index)
       Story.story(
         Main.update,
         Story.with(createModel()),
@@ -352,9 +385,36 @@ describe('Main', () => {
           }),
         })),
         Story.model((model) => {
-          expect(model.musicBox.songOrder).toEqual([0, 1])
+          expect(model.musicBox.songOrder.slice(0, 2)).toEqual([0, 1])
+          expect(model.musicBox.songOrder).toHaveLength(MusicBox.SONGS.length)
+          expect(new Set(model.musicBox.songOrder).size).toBe(MusicBox.SONGS.length)
+          expect(model.musicBox.songOrder.slice(2)).toEqual(defaultOrder.slice(2))
+          expect(model.musicBox.hiddenSongs).toHaveLength(MusicBox.SONGS.length)
+          expect(model.musicBox.hiddenSongs[1]).toBe(true)
         }),
         Story.Command.resolveAll(resolveSettings),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('rejects invalid persisted counter display modes at the schema boundary', () => {
+      Story.story(
+        Main.update,
+        Story.with(createModel()),
+        Story.message(ImportedSettings({
+          data: JSON.stringify({
+            version: 1,
+            settings: {
+              language: 'fr',
+              counterDisplayMode: 'huge',
+            },
+          }),
+        })),
+        Story.model((model) => {
+          expect(model.language).toBe('en')
+          expect(model.counter.displayMode).toBe('number')
+          expect(model.importExportMessage).toBeTruthy()
+        }),
         Story.Command.expectNone(),
       )
     })
@@ -497,6 +557,33 @@ describe('Main', () => {
       expect(stored.findItEnabledPacks).toEqual(['numbers'])
     })
 
+    it('does not export or persist transient Bubbles selected color', async () => {
+      const customized = {
+        ...createModel(),
+        bubbles: {
+          ...createModel().bubbles,
+          selectedColor: 'rainbow',
+          rainbowMode: true,
+          popLabel: true,
+        },
+      }
+      const [exported] = Main.update(customized, ExportSettings())
+      const exportedData = JSON.parse(exported.exportData) as { settings: Record<string, unknown> }
+
+      expect(exportedData.settings.bubblesPopLabel).toBe(true)
+      expect(exportedData.settings).not.toHaveProperty('bubblesSelectedColor')
+
+      const [_, cmds] = Main.update(customized, Bubbles.SetPopLabel({ value: false }))
+      const cmd = cmds[0]
+      expect(cmd?.name).toBe('PersistSettings')
+      if (!cmd) throw new Error('missing PersistSettings command')
+
+      await Effect.runPromise(cmd.effect)
+      const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') as Record<string, unknown>
+      expect(stored.bubblesPopLabel).toBe(false)
+      expect(stored).not.toHaveProperty('bubblesSelectedColor')
+    })
+
     it('ApplyImport closes the overlay and persists through a command effect', async () => {
       const data = JSON.stringify({
         version: 1,
@@ -581,8 +668,8 @@ describe('Main', () => {
       expect(imported.findIt.grid.every(cell => segmentEmoji(cell.emoji).every(emoji => numbers.has(emoji)))).toBe(true)
       expect(imported.bubbles.popLabel).toBe(customized.bubbles.popLabel)
       expect(imported.bubbles.sayColor).toBe(customized.bubbles.sayColor)
-      expect(imported.bubbles.selectedColor).toBe(customized.bubbles.selectedColor)
-      expect(imported.bubbles.rainbowMode).toBe(true)
+      expect(imported.bubbles.selectedColor).toBe('')
+      expect(imported.bubbles.rainbowMode).toBe(false)
       expect(imported.musicBox.songOrder).toEqual(customized.musicBox.songOrder)
       expect(imported.musicBox.hiddenSongs).toEqual(customized.musicBox.hiddenSongs)
       expect(imported.landingOrder).toEqual(customized.landingOrder)

@@ -28,8 +28,8 @@ const DEFAULT_LANDING_ORDER = Array.from({ length: LANDING_GAME_COUNT }, (_, i) 
 
 const DarkModeValues = ['auto', 'light', 'dark'] as const
 type DarkMode = typeof DarkModeValues[number]
-const DisplayModeValues = ['number', 'word', 'both'] as const
 const DarkModeType = S.Union([S.Literal('auto'), S.Literal('light'), S.Literal('dark')])
+const SettingsOverlay = S.Union([S.Literal(''), S.Literal('export'), S.Literal('import')])
 
 const PersistedSettingsSchema = S.Struct({
   version: S.optionalKey(S.Number),
@@ -38,14 +38,13 @@ const PersistedSettingsSchema = S.Struct({
   muted: S.optionalKey(S.Boolean),
   speechRate: S.optionalKey(S.Number),
   speechPitch: S.optionalKey(S.Number),
-  counterDisplayMode: S.optionalKey(S.String),
+  counterDisplayMode: S.optionalKey(Counter.DisplayMode),
   findItAnyWins: S.optionalKey(S.Boolean),
   findItVoiceMode: S.optionalKey(S.Boolean),
   findItPairsMode: S.optionalKey(S.Boolean),
   findItEnabledPacks: S.optionalKey(S.Array(FindIt.EmojiPackKey)),
   bubblesPopLabel: S.optionalKey(S.Boolean),
   bubblesSayColor: S.optionalKey(S.Boolean),
-  bubblesSelectedColor: S.optionalKey(S.String),
   musicBoxSongOrder: S.optionalKey(S.Array(S.Number)),
   musicBoxHiddenSongs: S.optionalKey(S.Array(S.Boolean)),
   landingOrder: S.optionalKey(S.Array(S.Number)),
@@ -78,12 +77,6 @@ const isDarkMode = (value: string | undefined): value is DarkMode =>
 const sanitizeDarkMode = (value: string | undefined, fallback: DarkMode): DarkMode =>
   isDarkMode(value) ? value : fallback
 
-const isDisplayMode = (value: string | undefined): value is 'number' | 'word' | 'both' =>
-  value !== undefined && (DisplayModeValues as readonly string[]).includes(value)
-
-const sanitizeDisplayMode = (value: string | undefined, fallback: 'number' | 'word' | 'both'): 'number' | 'word' | 'both' =>
-  isDisplayMode(value) ? value : fallback
-
 const sameStringArray = (a: readonly string[], b: readonly string[]): boolean =>
   a.length === b.length && a.every((value, index) => value === b[index])
 
@@ -92,6 +85,23 @@ const isLandingOrder = (value: readonly number[] | undefined): value is number[]
   value.length === LANDING_GAME_COUNT &&
   new Set(value).size === LANDING_GAME_COUNT &&
   value.every(index => Number.isInteger(index) && index >= 0 && index < LANDING_GAME_COUNT)
+
+const normalizeSongOrder = (value: readonly number[] | undefined, fallback: readonly number[]): number[] => {
+  if (!Array.isArray(value)) return [...fallback]
+  const seen = new Set<number>()
+  const valid = value.filter((index): index is number => {
+    if (!Number.isInteger(index) || index < 0 || index >= MusicBox.SONGS.length || seen.has(index)) return false
+    seen.add(index)
+    return true
+  })
+  const missing = MusicBox.SONGS
+    .map((_, index) => index)
+    .filter(index => !seen.has(index))
+  return [...valid, ...missing]
+}
+
+const normalizeHiddenSongs = (value: readonly boolean[] | undefined): boolean[] =>
+  MusicBox.SONGS.map((_, index) => value?.[index] === true)
 
 const buildSettingsData = (model: Model): PersistedSettings => ({
   version: SETTINGS_VERSION,
@@ -107,7 +117,6 @@ const buildSettingsData = (model: Model): PersistedSettings => ({
   findItEnabledPacks: model.findIt.enabledPacks,
   bubblesPopLabel: model.bubbles.popLabel,
   bubblesSayColor: model.bubbles.sayColor,
-  bubblesSelectedColor: model.bubbles.selectedColor,
   musicBoxSongOrder: model.musicBox.songOrder,
   musicBoxHiddenSongs: model.musicBox.hiddenSongs,
   landingOrder: model.landingOrder,
@@ -157,7 +166,7 @@ export const Model = S.Struct({
   showResetConfirm: S.Boolean,
   importExportMessage: S.String,
   exportData: S.String,
-  settingsOverlay: S.String,
+  settingsOverlay: SettingsOverlay,
   landingOrder: S.Array(S.Number),
   landingDragIndex: S.Number,
 })
@@ -271,7 +280,7 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
   if (voiceMode && !saved.findItAnyWins && !saved.muted) {
     cmds.push(speak(tf('whereIs', language, FindIt.emojiName(findItInit.target, language)), FindIt.SoundPlayed(), { rate: speechRate, pitch: speechPitch, lang: language }))
   }
-  const bubblesSelectedColor = saved.bubblesSelectedColor ?? ''
+  const musicBoxInit = MusicBox.init()
   return [
     {
       page: PageLanding(),
@@ -282,23 +291,17 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
       speechRate,
       speechPitch,
       musicBox: {
-        ...MusicBox.init(),
-        songOrder: Array.isArray(saved.musicBoxSongOrder)
-          ? saved.musicBoxSongOrder.filter((i: number) => typeof i === 'number' && i >= 0 && i < MusicBox.SONGS.length)
-          : MusicBox.init().songOrder,
-        hiddenSongs: Array.isArray(saved.musicBoxHiddenSongs)
-          ? saved.musicBoxHiddenSongs.map((h: boolean) => h === true)
-          : MusicBox.init().hiddenSongs,
+        ...musicBoxInit,
+        songOrder: normalizeSongOrder(saved.musicBoxSongOrder, musicBoxInit.songOrder),
+        hiddenSongs: normalizeHiddenSongs(saved.musicBoxHiddenSongs),
       },
       counter: {
         ...Counter.init,
-        displayMode: sanitizeDisplayMode(saved.counterDisplayMode, Counter.init.displayMode),
+        displayMode: saved.counterDisplayMode ?? Counter.init.displayMode,
       },
       findIt: { ...findItInit, anyWins: saved.findItAnyWins ?? false, voiceMode, pairsMode, enabledPacks: findItEnabledPacks },
       bubbles: {
         ...Bubbles.init(),
-        selectedColor: bubblesSelectedColor,
-        rainbowMode: bubblesSelectedColor === 'rainbow',
         popLabel: saved.bubblesPopLabel ?? false,
         sayColor: saved.bubblesSayColor ?? false,
       },
@@ -390,24 +393,18 @@ const applyImportData = (model: Model, s: PersistedSettings): Model => {
     speechPitch: s.speechPitch ?? model.speechPitch,
     counter: {
       ...model.counter,
-      displayMode: sanitizeDisplayMode(s.counterDisplayMode, model.counter.displayMode),
+      displayMode: s.counterDisplayMode ?? model.counter.displayMode,
     },
     findIt: importedFindIt,
     bubbles: {
       ...model.bubbles,
       popLabel: s.bubblesPopLabel ?? model.bubbles.popLabel,
       sayColor: s.bubblesSayColor ?? model.bubbles.sayColor,
-      selectedColor: s.bubblesSelectedColor ?? model.bubbles.selectedColor,
-      rainbowMode: (s.bubblesSelectedColor ?? model.bubbles.selectedColor) === 'rainbow',
     },
     musicBox: {
       ...model.musicBox,
-      songOrder: Array.isArray(s.musicBoxSongOrder)
-        ? s.musicBoxSongOrder.filter((i: number) => typeof i === 'number' && i >= 0 && i < MusicBox.SONGS.length)
-        : model.musicBox.songOrder,
-      hiddenSongs: Array.isArray(s.musicBoxHiddenSongs)
-        ? s.musicBoxHiddenSongs.map((h: boolean) => h === true)
-        : model.musicBox.hiddenSongs,
+      songOrder: normalizeSongOrder(s.musicBoxSongOrder, model.musicBox.songOrder),
+      hiddenSongs: normalizeHiddenSongs(s.musicBoxHiddenSongs),
     },
     landingOrder: isLandingOrder(s.landingOrder)
       ? [...s.landingOrder]
@@ -444,7 +441,7 @@ const importSettingsResult = (
   data: string,
   closeOverlay: boolean,
 ): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
-  const close = closeOverlay ? { settingsOverlay: '' } : {}
+  const close: Partial<Pick<Model, 'settingsOverlay'>> = closeOverlay ? { settingsOverlay: '' } : {}
   const parsed = parseImportData(data)
   switch (parsed._tag) {
     case 'VersionMismatch':
@@ -592,20 +589,25 @@ const _update = (
     }),
   )
 
-const SETTINGS_TAGS = new Set([
+export const PERSISTED_SETTINGS_MESSAGE_TAGS = [
   'ClickedDarkMode', 'SetLanguage', 'ToggleMute', 'SetSpeechRate', 'SetSpeechPitch',
   'CounterSetDisplayMode',
   'FindItSetAnyWins', 'FindItSetVoiceMode', 'FindItSetPairsMode', 'FindItSetEmojiPackEnabled',
   'BubblesSetPopLabel', 'BubblesSetSayColor',
   'MusicBoxToggleSongVisibility', 'MusicBoxSongDroppedOn',
-])
+] as const satisfies ReadonlyArray<Message['_tag']>
+
+const persistedSettingsMessageTags = new Set<Message['_tag']>(PERSISTED_SETTINGS_MESSAGE_TAGS)
+
+export const shouldPersistSettings = (message: Message): boolean =>
+  persistedSettingsMessageTags.has(message._tag)
 
 export const update = (
   model: Model,
   message: Message,
 ): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
   const result = _update(model, message)
-  if (SETTINGS_TAGS.has(message._tag)) {
+  if (shouldPersistSettings(message)) {
     return [result[0], [...result[1], persistSettings(result[0])]]
   }
   return result

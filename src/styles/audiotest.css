@@ -15,6 +15,11 @@
   margin-bottom: 1rem;
 }
 
+.test-version {
+  margin-top: -0.1rem;
+  font-family: ui-monospace, monospace;
+}
+
 .test-grid {
   display: flex;
   flex-direction: column;
