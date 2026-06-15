@@ -6,12 +6,69 @@ import * as Counter from './games/counter'
 import * as FindIt from './games/findit'
 import * as Bubbles from './games/bubbles'
 import * as MusicBox from './games/musicbox'
-import { ApplyImport, ClickedLanding, ClickedCounter, ClickedFindIt, ClickedBubbles, ClickedDarkMode, ConfirmResetSettings, ExportSettings, ImportedSettings, SetExportData, SetLanguage, SettingsPersisted, ToggleMute } from './message'
+import { ApplyImport, ClickedLanding, ClickedCounter, ClickedFindIt, ClickedBubbles, ClickedDarkMode, ConfirmResetSettings, ExportSettings, ImportedSettings, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsPersisted, ToggleMute } from './message'
 
 const resolveSettings = [{ name: 'PersistSettings' }, SettingsPersisted()] as const
 const STORAGE_KEY = 'foldkid-settings'
 const segmentEmoji = (emoji: string): string[] =>
   [...new Intl.Segmenter().segment(emoji)].map(segment => segment.segment)
+
+interface SpokenUtterance {
+  readonly text: string
+  readonly rate: number
+  readonly pitch: number
+  readonly lang: string
+}
+
+const withSpeechMock = async (run: (spoken: SpokenUtterance[]) => Promise<void>): Promise<void> => {
+  const originalSpeechSynthesis = globalThis.speechSynthesis
+  const originalUtterance = globalThis.SpeechSynthesisUtterance
+  const spoken: SpokenUtterance[] = []
+
+  globalThis.speechSynthesis = {
+    getVoices: () => [],
+    cancel: () => {},
+    speak: (utterance: SpeechSynthesisUtterance) => {
+      spoken.push({
+        text: utterance.text,
+        rate: utterance.rate,
+        pitch: utterance.pitch,
+        lang: utterance.lang,
+      })
+      setTimeout(() => utterance.onend?.(new Event('end') as SpeechSynthesisEvent), 0)
+    },
+    pending: false,
+    speaking: false,
+    paused: false,
+    onvoiceschanged: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    pause: () => {},
+    resume: () => {},
+  } as unknown as SpeechSynthesis
+  globalThis.SpeechSynthesisUtterance = class MockUtterance {
+    text: string
+    rate = 1
+    pitch = 1
+    lang = 'en'
+    voice: SpeechSynthesisVoice | null = null
+    onstart: (() => void) | null = null
+    onend: (() => void) | null = null
+    onerror: ((e: SpeechSynthesisErrorEvent) => void) | null = null
+    onpause: (() => void) | null = null
+    onresume: (() => void) | null = null
+    onmark: ((e: SpeechSynthesisEvent) => void) | null = null
+    onboundary: ((e: SpeechSynthesisEvent) => void) | null = null
+    constructor(text: string) { this.text = text }
+  } as unknown as typeof SpeechSynthesisUtterance
+
+  try {
+    await run(spoken)
+  } finally {
+    globalThis.speechSynthesis = originalSpeechSynthesis
+    globalThis.SpeechSynthesisUtterance = originalUtterance
+  }
+}
 
 const makeStorage = (): Storage => {
   const store = new Map<string, string>()
@@ -42,8 +99,8 @@ describe('settings persistence', () => {
     { label: 'ClickedDarkMode', msg: ClickedDarkMode() },
     { label: 'SetLanguage', msg: SetLanguage({ value: 'fr' }) },
     { label: 'ToggleMute', msg: ToggleMute() },
-    { label: 'CounterSetRate', msg: Counter.SetRate({ value: 1.2 }) },
-    { label: 'CounterSetPitch', msg: Counter.SetPitch({ value: 0.9 }) },
+    { label: 'SetSpeechRate', msg: SetSpeechRate({ value: 1.2 }) },
+    { label: 'SetSpeechPitch', msg: SetSpeechPitch({ value: 0.9 }) },
     { label: 'CounterSetDisplayMode', msg: Counter.SetDisplayMode({ value: 'both' }) },
     { label: 'FindItSetAnyWins', msg: FindIt.SetAnyWins({ value: true }) },
     { label: 'FindItSetVoiceMode', msg: FindIt.SetVoiceMode({ value: true }) },
@@ -97,6 +154,8 @@ describe('Main', () => {
     expect(model.darkMode).toBe('auto')
     expect(model.language).toBe('en')
     expect(model.showSettings).toBe(false)
+    expect(model.speechRate).toBe(0.85)
+    expect(model.speechPitch).toBe(1.1)
     expect(model.counter.count).toBe(0)
     expect(model.findIt.enabledPacks).toEqual(FindIt.DEFAULT_EMOJI_PACK_KEYS)
     expect(model.bubbles).toStrictEqual({ bubbles: [], score: 0, nextId: 0, rainbowMode: false, popLabel: false, sayColor: false, selectedColor: '' })
@@ -109,6 +168,41 @@ describe('Main', () => {
 
     expect(model.findIt.enabledPacks).toEqual(['numbers'])
     expect(model.findIt.grid.every(cell => numbers.has(cell.emoji))).toBe(true)
+  })
+
+  it('uses global speech settings for Counter speech commands', async () => {
+    await withSpeechMock(async (spoken) => {
+      const [_, cmds] = Main.update(
+        { ...createModel(), speechRate: 1.7, speechPitch: 0.6 },
+        Counter.PressedIncrement({ duration: 0 }),
+      )
+      const speakCmd = cmds.find(cmd => cmd.name === 'Speak')
+      if (!speakCmd) throw new Error('missing Speak command')
+
+      await Effect.runPromise(speakCmd.effect)
+
+      expect(spoken).toEqual([{ text: 'one', rate: 1.7, pitch: 0.6, lang: 'en' }])
+    })
+  })
+
+  it('uses global speech settings for Find It speech commands', async () => {
+    await withSpeechMock(async (spoken) => {
+      const findIt = {
+        ...FindIt.init(false, ['fun']),
+        grid: [{ id: 0, emoji: '🎈' }],
+        target: '🎈',
+      }
+      const [_, cmds] = Main.update(
+        { ...createModel(), speechRate: 1.4, speechPitch: 1.8, findIt },
+        FindIt.ClickedCell({ id: 0 }),
+      )
+      const speakCmd = cmds.find(cmd => cmd.name === 'Speak')
+      if (!speakCmd) throw new Error('missing Speak command')
+
+      await Effect.runPromise(speakCmd.effect)
+
+      expect(spoken).toEqual([{ text: 'Balloon', rate: 1.4, pitch: 1.8, lang: 'en' }])
+    })
   })
 
   describe('schema boundaries', () => {
@@ -368,13 +462,14 @@ describe('Main', () => {
       expect(stored.language).toBe('ja')
     })
 
-    it('persists successfully imported settings through a command effect', async () => {
+    it('persists successfully imported global speech settings through a command effect', async () => {
       const data = JSON.stringify({
         version: 1,
         settings: {
           language: 'fr',
           muted: true,
-          counterRate: 1.7,
+          speechRate: 1.7,
+          speechPitch: 0.6,
           findItEnabledPacks: ['numbers'],
         },
       })
@@ -384,7 +479,8 @@ describe('Main', () => {
 
       expect(next.language).toBe('fr')
       expect(next.muted).toBe(true)
-      expect(next.counter.rate).toBe(1.7)
+      expect(next.speechRate).toBe(1.7)
+      expect(next.speechPitch).toBe(0.6)
       expect(next.findIt.enabledPacks).toEqual(['numbers'])
       expect(next.findIt.grid.every(cell => numbers.has(cell.emoji))).toBe(true)
       expect(cmd?.name).toBe('PersistSettings')
@@ -393,10 +489,11 @@ describe('Main', () => {
       if (!cmd) throw new Error('missing PersistSettings command')
       await Effect.runPromise(cmd.effect)
 
-      const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') as { language?: string; muted?: boolean; counterRate?: number; findItEnabledPacks?: string[] }
+      const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') as { language?: string; muted?: boolean; speechRate?: number; speechPitch?: number; findItEnabledPacks?: string[] }
       expect(stored.language).toBe('fr')
       expect(stored.muted).toBe(true)
-      expect(stored.counterRate).toBe(1.7)
+      expect(stored.speechRate).toBe(1.7)
+      expect(stored.speechPitch).toBe(0.6)
       expect(stored.findItEnabledPacks).toEqual(['numbers'])
     })
 
@@ -435,10 +532,10 @@ describe('Main', () => {
         language: 'ja' as const,
         darkMode: 'dark' as const,
         muted: true,
+        speechRate: 1.6,
+        speechPitch: 0.7,
         counter: {
           ...createModel().counter,
-          rate: 1.6,
-          pitch: 0.7,
           displayMode: 'both' as const,
         },
         findIt: {
@@ -474,8 +571,8 @@ describe('Main', () => {
       expect(imported.language).toBe(customized.language)
       expect(imported.darkMode).toBe(customized.darkMode)
       expect(imported.muted).toBe(customized.muted)
-      expect(imported.counter.rate).toBe(customized.counter.rate)
-      expect(imported.counter.pitch).toBe(customized.counter.pitch)
+      expect(imported.speechRate).toBe(customized.speechRate)
+      expect(imported.speechPitch).toBe(customized.speechPitch)
       expect(imported.counter.displayMode).toBe(customized.counter.displayMode)
       expect(imported.findIt.anyWins).toBe(customized.findIt.anyWins)
       expect(imported.findIt.voiceMode).toBe(customized.findIt.voiceMode)

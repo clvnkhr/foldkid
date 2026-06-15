@@ -3,7 +3,7 @@ import { Command } from 'foldkit'
 import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
 import { click, swoosh } from '../audio'
-import { speak } from '../speech'
+import { speak, type SpeechOptions } from '../speech'
 import { t } from '../i18n'
 import { toCardinal } from 'n2words/en-US'
 import { toCardinal as toCardinalDe } from 'n2words/de-DE'
@@ -55,8 +55,6 @@ export const Model = S.Struct({
   holding: S.Boolean,
   pointerDownTime: S.Number,
   pressedButton: S.Union([PressedButton, S.Null]),
-  rate: S.Number,
-  pitch: S.Number,
   displayMode: DisplayMode,
 })
 export type Model = typeof Model.Type
@@ -65,15 +63,13 @@ export const PointerDown = m('CounterPointerDown', { timeStamp: S.Number, button
 export const PressedIncrement = m('CounterPressedIncrement', { duration: S.Number, button: S.optionalKey(PressedButton) })
 export const PressedDecrement = m('CounterPressedDecrement', { duration: S.Number, button: S.optionalKey(PressedButton) })
 export const ClickedReset = m('CounterClickedReset')
-export const SetRate = m('CounterSetRate', { value: S.Number })
-export const SetPitch = m('CounterSetPitch', { value: S.Number })
 export const SetDisplayMode = m('CounterSetDisplayMode', { value: DisplayMode })
 export const SoundPlayed = m('CounterSoundPlayed')
 
-export const Message = S.Union([PointerDown, PressedIncrement, PressedDecrement, ClickedReset, SetRate, SetPitch, SetDisplayMode, SoundPlayed])
+export const Message = S.Union([PointerDown, PressedIncrement, PressedDecrement, ClickedReset, SetDisplayMode, SoundPlayed])
 export type Message = typeof Message.Type
 
-export const init: Model = { count: 0, fontSize: 3, holding: false, pointerDownTime: 0, pressedButton: null, rate: 0.85, pitch: 1.1, displayMode: 'number' }
+export const init: Model = { count: 0, fontSize: 3, holding: false, pointerDownTime: 0, pressedButton: null, displayMode: 'number' }
 
 const calcFontSize = (duration: number): number => {
   const safeDuration = Number.isFinite(duration) ? Math.max(0, duration) : 0
@@ -103,6 +99,7 @@ export const update = (
   message: Message,
   language: string = 'en',
   muted: boolean = false,
+  speech: SpeechOptions = {},
 ): readonly [Model, ReadonlyArray<Command.Command<Message>>] =>
   M.value(message).pipe(
     M.withReturnType<
@@ -117,25 +114,17 @@ export const update = (
         shouldCompletePress(model, msg.button)
           ? { ...model, count: model.count + 1, fontSize: calcFontSize(msg.duration), holding: false, pressedButton: null }
           : model,
-        shouldCompletePress(model, msg.button) && !muted ? [click(SoundPlayed()), speak(numberToWord(model.count + 1, language), SoundPlayed(), { rate: model.rate, pitch: model.pitch, lang: language })] : [],
+        shouldCompletePress(model, msg.button) && !muted ? [click(SoundPlayed()), speak(numberToWord(model.count + 1, language), SoundPlayed(), { ...speech, lang: language })] : [],
       ],
       CounterPressedDecrement: (msg) => [
         shouldCompletePress(model, msg.button)
           ? { ...model, count: model.count - 1, fontSize: calcFontSize(msg.duration), holding: false, pressedButton: null }
           : model,
-        shouldCompletePress(model, msg.button) && !muted ? [click(SoundPlayed()), speak(numberToWord(model.count - 1, language), SoundPlayed(), { rate: model.rate, pitch: model.pitch, lang: language })] : [],
+        shouldCompletePress(model, msg.button) && !muted ? [click(SoundPlayed()), speak(numberToWord(model.count - 1, language), SoundPlayed(), { ...speech, lang: language })] : [],
       ],
       CounterClickedReset: () => [
         { ...model, count: 0 },
-        muted ? [] : [swoosh(SoundPlayed()), speak(numberToWord(0, language), SoundPlayed(), { rate: model.rate, pitch: model.pitch, lang: language })],
-      ],
-      CounterSetRate: (msg) => [
-        { ...model, rate: msg.value },
-        [],
-      ],
-      CounterSetPitch: (msg) => [
-        { ...model, pitch: msg.value },
-        [],
+        muted ? [] : [swoosh(SoundPlayed()), speak(numberToWord(0, language), SoundPlayed(), { ...speech, lang: language })],
       ],
       CounterSetDisplayMode: (msg) => [
         { ...model, displayMode: msg.value },

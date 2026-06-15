@@ -11,7 +11,7 @@ const resolveBalls = [{ name: 'counterBalls' }, Counter.SoundPlayed()] as const
 describe('Counter', () => {
   it('init state', () => {
     expect(Counter.init).toStrictEqual({
-      count: 0, fontSize: 3, holding: false, rate: 0.85, pitch: 1.1, displayMode: 'number',
+      count: 0, fontSize: 3, holding: false, displayMode: 'number',
       pointerDownTime: 0, pressedButton: null,
     })
   })

@@ -3,7 +3,7 @@ import { Command } from 'foldkit'
 import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
 import { boing } from '../audio'
-import { speak } from '../speech'
+import { speak, type SpeechOptions } from '../speech'
 import { t, tf } from '../i18n'
 
 export const EmojiPackKey = S.Union([S.Literal('fun'), S.Literal('numbers'), S.Literal('animals')])
@@ -161,6 +161,7 @@ export const update = (
   message: Message,
   muted: boolean = false,
   language: string = 'en',
+  speech: SpeechOptions = {},
 ): readonly [Model, ReadonlyArray<Command.Command<Message>>] =>
   M.value(message).pipe(
     M.withReturnType<readonly [Model, ReadonlyArray<Command.Command<Message>>]>(),
@@ -171,7 +172,7 @@ export const update = (
         if (cell && (cell.emoji === model.target || model.anyWins)) {
           return [
             { ...model, won: true, found: [...model.found, cell!.emoji], tooltipEmoji: null, wrongCount: 0, hintId: null },
-            muted ? [] : [boing(SoundPlayed()), speak(emojiName(cell!.emoji, language), SoundPlayed(), { lang: language })],
+            muted ? [] : [boing(SoundPlayed()), speak(emojiName(cell!.emoji, language), SoundPlayed(), { ...speech, lang: language })],
           ]
         }
         const wrongCount = model.wrongCount + 1
@@ -185,7 +186,7 @@ export const update = (
         const next = generateGame([...model.found], model.anyWins, model.voiceMode, model.pairsMode, model.enabledPacks)
         const cmds: Command.Command<Message>[] = []
         if (model.voiceMode && !model.anyWins && !muted) {
-          cmds.push(speak(tf('whereIs', language, emojiName(next.target, language)), SoundPlayed(), { lang: language }))
+          cmds.push(speak(tf('whereIs', language, emojiName(next.target, language)), SoundPlayed(), { ...speech, lang: language }))
         }
         return [{ ...next, count: model.count + 1 }, cmds]
       },
@@ -215,7 +216,7 @@ export const update = (
       FindItReplayQuestion: () => [
         model,
         model.voiceMode && !model.anyWins && !muted
-          ? [speak(tf('whereIs', language, emojiName(model.target, language)), SoundPlayed(), { lang: language })]
+          ? [speak(tf('whereIs', language, emojiName(model.target, language)), SoundPlayed(), { ...speech, lang: language })]
           : [],
       ],
       FindItSetDragIndex: (msg) => [
@@ -253,13 +254,13 @@ export const update = (
       ],
       FindItClickedCollectionEmoji: (msg) => [
         { ...model, tooltipEmoji: msg.emoji },
-        muted ? [] : [speak(emojiName(msg.emoji, language), SoundPlayed(), { lang: language })],
+        muted ? [] : [speak(emojiName(msg.emoji, language), SoundPlayed(), { ...speech, lang: language })],
       ],
       FindItClickedReset: () => {
         const next = generateGame([], model.anyWins, model.voiceMode, model.pairsMode, model.enabledPacks)
         const cmds: Command.Command<Message>[] = []
         if (model.voiceMode && !model.anyWins && !muted) {
-          cmds.push(speak(tf('whereIs', language, emojiName(next.target, language)), SoundPlayed(), { lang: language }))
+          cmds.push(speak(tf('whereIs', language, emojiName(next.target, language)), SoundPlayed(), { ...speech, lang: language }))
         }
         return [next, cmds]
       },

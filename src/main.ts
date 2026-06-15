@@ -2,7 +2,7 @@ import { Effect, Match as M, Option, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { Document, html } from 'foldkit/html'
 
-import { ApplyImport, CancelResetSettings, ClickedAudioTest, ClickedBubbles, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedLanding, ClickedMusicBox, ClickedSettings, ConfirmResetSettings, CopyExportData, DismissMessage, ExportSettings, ImportSettings, ImportedSettings, LandingDragEnded, LandingDragStarted, LandingDroppedOn, ResetSettings, SetExportData, SetLanguage, SettingsDragEnded, SettingsDragMoved, SettingsDragStarted, SettingsImportFailed, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
+import { ApplyImport, CancelResetSettings, ClickedAudioTest, ClickedBubbles, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedLanding, ClickedMusicBox, ClickedSettings, ConfirmResetSettings, CopyExportData, DismissMessage, ExportSettings, ImportSettings, ImportedSettings, LandingDragEnded, LandingDragStarted, LandingDroppedOn, ResetSettings, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsDragEnded, SettingsDragMoved, SettingsDragStarted, SettingsImportFailed, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
 
 import { Page, PageAudioTest, PageBubbles, PageCounter, PageFindIt, PageLanding, PageMusicBox } from './route'
 
@@ -13,7 +13,7 @@ import * as Bubbles from './games/bubbles'
 import { LANDING_GAME_COUNT, view as landingView } from './pages/landing'
 import { view as audioTestView } from './pages/audiotest'
 import { Language, normalizeLanguage, t, tf } from './i18n'
-import { speak } from './speech'
+import { DEFAULT_SPEECH_PITCH, DEFAULT_SPEECH_RATE, speak } from './speech'
 
 const ICON_UNMUTED = '🔊'
 const ICON_MUTED = '🔇'
@@ -36,8 +36,8 @@ const PersistedSettingsSchema = S.Struct({
   language: S.optionalKey(Language),
   darkMode: S.optionalKey(DarkModeType),
   muted: S.optionalKey(S.Boolean),
-  counterRate: S.optionalKey(S.Number),
-  counterPitch: S.optionalKey(S.Number),
+  speechRate: S.optionalKey(S.Number),
+  speechPitch: S.optionalKey(S.Number),
   counterDisplayMode: S.optionalKey(S.String),
   findItAnyWins: S.optionalKey(S.Boolean),
   findItVoiceMode: S.optionalKey(S.Boolean),
@@ -98,8 +98,8 @@ const buildSettingsData = (model: Model): PersistedSettings => ({
   language: model.language,
   darkMode: model.darkMode,
   muted: model.muted,
-  counterRate: model.counter.rate,
-  counterPitch: model.counter.pitch,
+  speechRate: model.speechRate,
+  speechPitch: model.speechPitch,
   counterDisplayMode: model.counter.displayMode,
   findItAnyWins: model.findIt.anyWins,
   findItVoiceMode: model.findIt.voiceMode,
@@ -145,6 +145,8 @@ export const Model = S.Struct({
   language: Language,
   showSettings: S.Boolean,
   muted: S.Boolean,
+  speechRate: S.Number,
+  speechPitch: S.Number,
   musicBox: MusicBox.Model,
   counter: Counter.Model,
   findIt: FindIt.Model,
@@ -171,6 +173,8 @@ export const Message = S.Union([
   SetLanguage,
   SystemDarkModeChanged,
   ToggleMute,
+  SetSpeechRate,
+  SetSpeechPitch,
   ClickedCounter,
   ClickedFindIt,
   ClickedBubbles,
@@ -183,8 +187,6 @@ export const Message = S.Union([
   Counter.PressedIncrement,
   Counter.PressedDecrement,
   Counter.ClickedReset,
-  Counter.SetRate,
-  Counter.SetPitch,
   Counter.SetDisplayMode,
   FindIt.ClickedCell,
   FindIt.ClickedNext,
@@ -259,13 +261,15 @@ export type Message = typeof Message.Type
 export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
   const saved = loadSettings()
   const language = normalizeLanguage(saved.language)
+  const speechRate = saved.speechRate ?? DEFAULT_SPEECH_RATE
+  const speechPitch = saved.speechPitch ?? DEFAULT_SPEECH_PITCH
   const pairsMode = saved.findItPairsMode ?? false
   const findItEnabledPacks = FindIt.normalizeEmojiPackKeys(saved.findItEnabledPacks)
   const findItInit = FindIt.init(pairsMode, findItEnabledPacks)
   const cmds: Command.Command<Message>[] = []
   const voiceMode = saved.findItVoiceMode ?? false
   if (voiceMode && !saved.findItAnyWins && !saved.muted) {
-    cmds.push(speak(tf('whereIs', language, FindIt.emojiName(findItInit.target, language)), FindIt.SoundPlayed(), { lang: language }))
+    cmds.push(speak(tf('whereIs', language, FindIt.emojiName(findItInit.target, language)), FindIt.SoundPlayed(), { rate: speechRate, pitch: speechPitch, lang: language }))
   }
   const bubblesSelectedColor = saved.bubblesSelectedColor ?? ''
   return [
@@ -275,6 +279,8 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
       language,
       showSettings: false,
       muted: saved.muted ?? false,
+      speechRate,
+      speechPitch,
       musicBox: {
         ...MusicBox.init(),
         songOrder: Array.isArray(saved.musicBoxSongOrder)
@@ -286,8 +292,6 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
       },
       counter: {
         ...Counter.init,
-        rate: saved.counterRate ?? Counter.init.rate,
-        pitch: saved.counterPitch ?? Counter.init.pitch,
         displayMode: sanitizeDisplayMode(saved.counterDisplayMode, Counter.init.displayMode),
       },
       findIt: { ...findItInit, anyWins: saved.findItAnyWins ?? false, voiceMode, pairsMode, enabledPacks: findItEnabledPacks },
@@ -320,7 +324,7 @@ const updateCounter = (
   model: Model,
   message: Counter.Message,
 ): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
-  const [next, cmds] = Counter.update(model.counter, message, model.language, model.muted)
+  const [next, cmds] = Counter.update(model.counter, message, model.language, model.muted, { rate: model.speechRate, pitch: model.speechPitch })
   return [{ ...model, counter: next }, cmds]
 }
 
@@ -328,7 +332,7 @@ const updateFindIt = (
   model: Model,
   message: FindIt.Message,
 ): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
-  const [next, cmds] = FindIt.update(model.findIt, message, model.muted, model.language)
+  const [next, cmds] = FindIt.update(model.findIt, message, model.muted, model.language, { rate: model.speechRate, pitch: model.speechPitch })
   return [{ ...model, findIt: next }, cmds]
 }
 
@@ -382,10 +386,10 @@ const applyImportData = (model: Model, s: PersistedSettings): Model => {
     language: s.language ?? model.language,
     darkMode: sanitizeDarkMode(s.darkMode, model.darkMode),
     muted: s.muted ?? model.muted,
+    speechRate: s.speechRate ?? model.speechRate,
+    speechPitch: s.speechPitch ?? model.speechPitch,
     counter: {
       ...model.counter,
-      rate: s.counterRate ?? model.counter.rate,
-      pitch: s.counterPitch ?? model.counter.pitch,
       displayMode: sanitizeDisplayMode(s.counterDisplayMode, model.counter.displayMode),
     },
     findIt: importedFindIt,
@@ -472,6 +476,8 @@ const _update = (
       ClickedSettings: () => [{ ...model, showSettings: !model.showSettings }, []],
       SetLanguage: (msg) => [{ ...model, language: msg.value }, []],
       ToggleMute: () => [{ ...model, muted: !model.muted }, []],
+      SetSpeechRate: (msg) => [{ ...model, speechRate: msg.value }, []],
+      SetSpeechPitch: (msg) => [{ ...model, speechPitch: msg.value }, []],
       ClickedCounter: () => [{ ...model, page: PageCounter() }, []],
       ClickedFindIt: () => [{ ...model, page: PageFindIt() }, []],
       ClickedBubbles: () => [{ ...model, page: PageBubbles() }, []],
@@ -492,8 +498,6 @@ const _update = (
       CounterPressedIncrement: (msg) => updateCounter(model, msg),
       CounterPressedDecrement: (msg) => updateCounter(model, msg),
       CounterClickedReset: (msg) => updateCounter(model, msg),
-      CounterSetRate: (msg) => updateCounter(model, msg),
-      CounterSetPitch: (msg) => updateCounter(model, msg),
       CounterSetDisplayMode: (msg) => updateCounter(model, msg),
       FindItClickedCell: (msg) => updateFindIt(model, msg),
       FindItClickedNext: (msg) => updateFindIt(model, msg),
@@ -589,8 +593,8 @@ const _update = (
   )
 
 const SETTINGS_TAGS = new Set([
-  'ClickedDarkMode', 'SetLanguage', 'ToggleMute',
-  'CounterSetRate', 'CounterSetPitch', 'CounterSetDisplayMode',
+  'ClickedDarkMode', 'SetLanguage', 'ToggleMute', 'SetSpeechRate', 'SetSpeechPitch',
+  'CounterSetDisplayMode',
   'FindItSetAnyWins', 'FindItSetVoiceMode', 'FindItSetPairsMode', 'FindItSetEmojiPackEnabled',
   'BubblesSetPopLabel', 'BubblesSetSayColor',
   'MusicBoxToggleSongVisibility', 'MusicBoxSongDroppedOn',
@@ -748,38 +752,38 @@ export const view = (model: Model): Document => {
                 [model.muted ? ICON_MUTED : ICON_UNMUTED],
               ),
             ]),
+            h.div([h.Class('setting-row')], [
+              h.label([], [t('speechRate', model.language)]),
+              h.div([h.Class('slider-row')], [
+                h.input([
+                  h.Type('range'),
+                  h.Min('0.2'),
+                  h.Max('3'),
+                  h.Step('0.1'),
+                  h.Value(model.speechRate.toString()),
+                  h.OnInput((v) => SetSpeechRate({ value: parseFloat(v) })),
+                ]),
+                h.span([], [model.speechRate.toFixed(1)]),
+              ]),
+            ]),
+            h.div([h.Class('setting-row')], [
+              h.label([], [t('speechPitch', model.language)]),
+              h.div([h.Class('slider-row')], [
+                h.input([
+                  h.Type('range'),
+                  h.Min('0.2'),
+                  h.Max('4'),
+                  h.Step('0.1'),
+                  h.Value(model.speechPitch.toString()),
+                  h.OnInput((v) => SetSpeechPitch({ value: parseFloat(v) })),
+                ]),
+                h.span([], [model.speechPitch.toFixed(1)]),
+              ]),
+            ]),
           ]),
           model.page._tag === 'PageCounter'
             ? h.div([h.Class('setting-section')], [
-              h.h3([], [t('counterSpeech', model.language)]),
-              h.div([h.Class('setting-row')], [
-                h.label([], [t('rate', model.language)]),
-                h.div([h.Class('slider-row')], [
-                  h.input([
-                    h.Type('range'),
-                    h.Min('0.2'),
-                    h.Max('3'),
-                    h.Step('0.1'),
-                    h.Value(model.counter.rate.toString()),
-                    h.OnInput((v) => Counter.SetRate({ value: parseFloat(v) })),
-                  ]),
-                  h.span([], [model.counter.rate.toFixed(1)]),
-                ]),
-              ]),
-              h.div([h.Class('setting-row')], [
-                h.label([], [t('pitch', model.language)]),
-                h.div([h.Class('slider-row')], [
-                  h.input([
-                    h.Type('range'),
-                    h.Min('0.2'),
-                    h.Max('4'),
-                    h.Step('0.1'),
-                    h.Value(model.counter.pitch.toString()),
-                    h.OnInput((v) => Counter.SetPitch({ value: parseFloat(v) })),
-                  ]),
-                  h.span([], [model.counter.pitch.toFixed(1)]),
-                ]),
-              ]),
+              h.h3([], [t('counterTitle', model.language)]),
               h.div([h.Class('setting-row')], [
                 h.label([], [t('display', model.language)]),
                 h.div([h.Class('lang-buttons')], [

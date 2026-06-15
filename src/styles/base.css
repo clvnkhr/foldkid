@@ -1,0 +1,257 @@
+/* ── Reset & Base ────────────────────────────────────── */
+
+* {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+*, *::before, *::after {
+  touch-action: manipulation;
+}
+
+body {
+  font-family: 'Comic Neue', cursive, sans-serif;
+  min-height: 100vh;
+}
+
+.app.lang-fa {
+  font-family: 'Rubik', 'Comic Neue', cursive, sans-serif;
+}
+
+.app.lang-fa .btn {
+  font-size: 0.95rem;
+}
+
+.app {
+  min-height: 100vh;
+  background: var(--bg-gradient);
+}
+
+/* ── Theme Variables ─────────────────────────────────── */
+
+:root {
+  --bg-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --card-bg: rgba(255, 255, 255, 0.95);
+  --text-primary: #1a1a2e;
+  --text-secondary: #4a5568;
+  --text-muted: #999;
+  --btn-secondary-bg: #e2e8f0;
+  --btn-secondary-text: #4a5568;
+  --settings-bg: #fff;
+  --settings-text: #4a5568;
+  --settings-heading: #1a1a2e;
+  --settings-close: #999;
+  --settings-close-hover: #1a1a2e;
+  --cell-bg: rgba(102, 126, 234, 0.08);
+  --cell-hover-bg: rgba(102, 126, 234, 0.18);
+  --nav-bar-bg: transparent;
+  --game-name-color: #1a1a2e;
+  --shadow-color: rgba(0, 0, 0, 0.15);
+  --shadow-color-strong: rgba(0, 0, 0, 0.3);
+  --bubble-bg: rgba(255, 255, 255, 0.8);
+  --number-color: #667eea;
+}
+
+.dark {
+  --bg-gradient: linear-gradient(135deg, #0f0c29 0%, #1a1a2e 50%, #16213e 100%);
+  --card-bg: rgba(30, 30, 50, 0.95);
+  --text-primary: #e2e8f0;
+  --text-secondary: #a0aec0;
+  --text-muted: #718096;
+  --btn-secondary-bg: #4a5568;
+  --btn-secondary-text: #e2e8f0;
+  --settings-bg: #1a1a2e;
+  --settings-text: #a0aec0;
+  --settings-heading: #e2e8f0;
+  --settings-close: #718096;
+  --settings-close-hover: #e2e8f0;
+  --cell-bg: rgba(102, 126, 234, 0.15);
+  --cell-hover-bg: rgba(102, 126, 234, 0.25);
+  --nav-bar-bg: rgba(0, 0, 0, 0.3);
+  --game-name-color: #e2e8f0;
+  --shadow-color: rgba(0, 0, 0, 0.4);
+  --shadow-color-strong: rgba(0, 0, 0, 0.5);
+  --bubble-bg: rgba(30, 30, 50, 0.8);
+  --number-color: #667eea;
+}
+
+/* ── Shared Components ───────────────────────────────── */
+
+.page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+
+.card {
+  background: var(--card-bg);
+  border-radius: 1.5rem;
+  padding: 3rem;
+  box-shadow: 0 20px 60px var(--shadow-color-strong);
+  text-align: center;
+  max-width: 500px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  z-index: 1;
+}
+
+.title {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin-bottom: 0.5rem;
+}
+
+.buttons {
+  display: flex;
+  justify-content: center;
+  margin: 0.4rem 0;
+}
+
+/* ── Navigation Bar ──────────────────────────────────── */
+
+.nav-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 1rem 2rem;
+  z-index: 10;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.nav-bar--landing {
+  justify-content: flex-end;
+}
+
+.nav-right {
+  margin-left: auto;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.back-btn {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  border: none;
+  padding: 0.5rem 1.25rem;
+  border-radius: 2rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  backdrop-filter: blur(8px);
+  transition: background 0.15s;
+}
+
+.back-btn:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+/* ── Buttons ─────────────────────────────────────────── */
+
+.btn {
+  padding: 0.75rem 2rem;
+  border: none;
+  border-radius: 0.75rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+  font-family: inherit;
+}
+
+.btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.btn:active {
+  transform: translateY(0);
+}
+
+.btn-tiny {
+  padding: 0.2rem 0.5rem;
+  font-size: 0.8rem;
+  border: 1px solid var(--border-color, rgba(0,0,0,0.15));
+  border-radius: 0.3rem;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-family: inherit;
+  line-height: 1.4;
+}
+.btn-tiny:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.btn-key-dec {
+  margin-left: 0.75rem;
+}
+
+.btn-primary {
+  background: #667eea;
+  color: white;
+}
+
+.btn-primary:active {
+  animation: btnHold 0.6s ease-in-out infinite;
+}
+
+.btn-secondary {
+  background: var(--btn-secondary-bg);
+  color: var(--btn-secondary-text);
+}
+
+.btn-danger {
+  background: #dc3545;
+  color: #fff;
+}
+
+.btn-danger:hover {
+  background: #c82333;
+}
+
+.btn-danger:active {
+  background: #bd2130;
+}
+
+.counter-actions {
+  flex-wrap: nowrap;
+  position: relative;
+  z-index: 10;
+}
+
+.counter-actions .btn {
+  padding: 0.75rem 0.5rem;
+  overflow: hidden;
+  font-size: clamp(0.75rem, 4vw, 1.1rem);
+}
+
+.counter-actions .btn-primary {
+  flex: 3 1 auto;
+  padding: 0.75rem 1.5rem;
+}
+
+.counter-actions .btn-secondary {
+  flex: 1 1 auto;
+}
+
+@keyframes btnHold {
+  0%, 100% { transform: scale(1) rotate(0deg); }
+  25% { transform: scale(1.06) rotate(-2deg); }
+  50% { transform: scale(1) rotate(0deg); }
+  75% { transform: scale(1.06) rotate(2deg); }
+}

@@ -4,6 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "mobile": "node scripts/mobile-dev.mjs",
+    "dev:mobile": "npm run mobile",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
     "build": "npm run typecheck && npm run lint && vite build",
