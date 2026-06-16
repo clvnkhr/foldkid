@@ -1,0 +1,38 @@
+import { repeat, withDrums } from './helpers'
+
+export const song = withDrums({
+  key: 'london',
+  emoji: '🌉',
+  lyrics: [
+    'London Bridge is falling down,',
+    'Falling down, falling down,',
+    'London Bridge is falling down,',
+    'My fair lady.',
+    '',
+    'Build it up with iron bars,',
+    'Iron bars, iron bars,',
+    'Build it up with iron bars,',
+    'My fair lady.',
+    '',
+    'Iron bars will bend and break,',
+    'Bend and break, bend and break,',
+    'Iron bars will bend and break,',
+    'My fair lady.',
+  ],
+  notes: repeat([
+    { pitch: 'G4', dur: 1.5 }, { pitch: 'A4', dur: 0.5 },
+    { pitch: 'G4', dur: 1 }, { pitch: 'F4', dur: 1 },
+    { pitch: 'E4', dur: 1 }, { pitch: 'F4', dur: 1 },
+    { pitch: 'G4', dur: 2 },
+    { pitch: 'D4', dur: 1 }, { pitch: 'E4', dur: 1 },
+    { pitch: 'F4', dur: 2 },
+    { pitch: 'E4', dur: 1 }, { pitch: 'F4', dur: 1 },
+    { pitch: 'G4', dur: 2 },
+    { pitch: 'G4', dur: 1.5 }, { pitch: 'A4', dur: 0.5 },
+    { pitch: 'G4', dur: 1 }, { pitch: 'F4', dur: 1 },
+    { pitch: 'E4', dur: 1 }, { pitch: 'F4', dur: 1 },
+    { pitch: 'G4', dur: 2 },
+    { pitch: 'D4', dur: 2 }, { pitch: 'G4', dur: 2 },
+    { pitch: 'E4', dur: 1 }, { pitch: 'C4', dur: 3 },
+  ], 3),
+})

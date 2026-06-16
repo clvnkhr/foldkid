@@ -205,8 +205,7 @@
   .musicbox-controls > .musicbox-dropdown:nth-child(3) .tempo-label,
   .musicbox-controls > .musicbox-dropdown:nth-child(4) .tempo-label,
   .piano-controls > .octave-indicator,
-  .piano-controls > .piano-range-label,
-  .piano-controls > .piano-toggle-label .piano-toggle-text {
+  .piano-controls > .piano-range-label {
     display: none;
   }
 }
@@ -235,14 +234,11 @@
   letter-spacing: 0.02em;
 }
 
-.piano-toggle-label {
-  font-size: 0.85rem;
-  color: var(--text-muted);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
+.bottom-panel-select {
+  flex: 0 0 auto;
   margin-left: 1rem;
+  min-width: 4.4rem;
+  width: 4.4rem;
 }
 
 /* Piano keyboard */
@@ -338,6 +334,79 @@
 
 .piano-container + .piano-container {
   margin-top: 0.5rem;
+}
+
+.drum-pad-panel {
+  width: 100%;
+  height: 150px;
+  margin: 0;
+  padding: 5px 4px 0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.drum-pad-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 0.4rem;
+  height: 100%;
+}
+
+.drum-pad-button {
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--border-color, rgba(0,0,0,0.15));
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.08), rgba(0,0,0,0.08)),
+    var(--card-bg);
+  color: var(--text-primary);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.2rem;
+  touch-action: manipulation;
+}
+
+.drum-pad-button:active {
+  transform: translateY(1px);
+  border-color: #4a90d9;
+}
+
+.drum-pad-button--active {
+  background:
+    linear-gradient(180deg, rgba(74,144,217,0.28), rgba(74,144,217,0.12)),
+    var(--card-bg);
+  border-color: #4a90d9;
+  box-shadow: 0 0 0 2px rgba(74,144,217,0.22);
+}
+
+.drum-pad-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.drum-pad-kind {
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.drum-pad-hint {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+}
+
+@media (max-width: 480px) {
+  .drum-pad-kind {
+    font-size: 0.85rem;
+  }
+
+  .drum-pad-hint {
+    font-size: 0.62rem;
+  }
 }
 
 .lyrics-box {

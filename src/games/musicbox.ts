@@ -20,22 +20,35 @@ import {
   shiftStart,
   transposePitch,
   type DrumHit,
+  type DrumKind,
   type Instrument,
   type KeyDef,
-  type Note,
   type Song,
 } from './musicboxDomain'
+import { SONGS, SONG_TKEYS } from './musicboxSongs'
 
 export {
   QWERTY_BLACKS,
   QWERTY_WHITES,
 } from './musicboxKeyboardRuntime'
 export { DRUM_KINDS, FREQUENCIES, buildKeyboard, shiftStart } from './musicboxDomain'
+export { SONGS, SONG_TKEYS } from './musicboxSongs'
 
 export const MIN_WHITE_KEYS = 1
 export const MAX_WHITE_KEYS = 15
 export const MIN_TRANSPOSE = -12
 export const MAX_TRANSPOSE = 12
+export const BOTTOM_PANEL_MODES = ['simple', 'drums', 'keyboard'] as const
+export type BottomPanelMode = typeof BOTTOM_PANEL_MODES[number]
+const BottomPanelModeSchema = S.Union([S.Literal('simple'), S.Literal('drums'), S.Literal('keyboard')])
+const DrumKindSchema = S.Union([
+  S.Literal('kick'),
+  S.Literal('snare'),
+  S.Literal('hat'),
+  S.Literal('clap'),
+  S.Literal('stomp'),
+  S.Literal('cheer'),
+])
 
 export const PianoKeys = {
   TOP: buildKeyboard('C4', 12),
@@ -43,6 +56,7 @@ export const PianoKeys = {
 }
 
 const selectedInstrumentIndex = MutableRef.make(0)
+const DRUM_PAD_HIGHLIGHT_MS = 140
 
 const highlightKey = (pitch: string): void => {
   document.querySelectorAll('.piano-key-glow').forEach(el => {
@@ -74,6 +88,18 @@ const unhighlightAllKeys = (): void => {
   })
 }
 
+const highlightDrum = (kind: DrumKind): void => {
+  document.querySelectorAll(`[data-drum-kind="${kind}"]`).forEach(el => {
+    if (!(el instanceof HTMLElement)) return
+    el.classList.remove('drum-pad-button--active')
+    void el.offsetHeight
+    el.classList.add('drum-pad-button--active')
+    window.setTimeout(() => {
+      el.classList.remove('drum-pad-button--active')
+    }, DRUM_PAD_HIGHLIGHT_MS)
+  })
+}
+
 const audioRuntime = createMusicBoxAudioRuntime({
   getContext,
   resetContext,
@@ -82,6 +108,7 @@ const audioRuntime = createMusicBoxAudioRuntime({
     highlightKey,
     unhighlightKey,
     unhighlightAllKeys,
+    highlightDrum,
   },
 })
 
@@ -115,415 +142,6 @@ const unhighlightAllLyricLines = (): void => {
   })
   MutableRef.set(currentLyricLine, -1)
 }
-
-const repeat = <T>(arr: T[], n: number): T[] =>
-  Array.from({ length: n }, () => [...arr]).flat()
-
-const songDuration = (notes: readonly Note[]): number =>
-  notes.reduce((sum, note) => sum + note.dur, 0)
-
-const pushDrum = (drums: DrumHit[], total: number, hit: DrumHit): void => {
-  if (hit.at < total) drums.push(hit)
-}
-
-const makeFourFourDrums = (notes: readonly Note[]): DrumHit[] => {
-  const total = songDuration(notes)
-  const drums: DrumHit[] = []
-  for (let at = 0; at < total; at += 4) drums.push({ at, kind: 'kick', gain: 0.55 })
-  for (let at = 2; at < total; at += 4) drums.push({ at, kind: 'snare', gain: 0.45 })
-  for (let at = 1; at < total; at += 2) drums.push({ at, kind: 'hat', gain: 0.35 })
-  return drums
-}
-
-const makeSixEightDrums = (notes: readonly Note[], offset = 0): DrumHit[] => {
-  const total = songDuration(notes)
-  const drums: DrumHit[] = []
-  for (let at = offset; at < total; at += 3) {
-    pushDrum(drums, total, { at, kind: 'kick', gain: 0.5 })
-    pushDrum(drums, total, { at: at + 0.5, kind: 'hat', gain: 0.22 })
-    pushDrum(drums, total, { at: at + 1, kind: 'hat', gain: 0.18 })
-    pushDrum(drums, total, { at: at + 1.5, kind: 'snare', gain: 0.35 })
-    pushDrum(drums, total, { at: at + 2, kind: 'hat', gain: 0.22 })
-    pushDrum(drums, total, { at: at + 2.5, kind: 'hat', gain: 0.18 })
-  }
-  return drums
-}
-
-const makeThreeFourDrums = (notes: readonly Note[]): DrumHit[] => {
-  const total = songDuration(notes)
-  const drums: DrumHit[] = []
-  for (let at = 0; at < total; at += 3) {
-    pushDrum(drums, total, { at, kind: 'kick', gain: 0.48 })
-    pushDrum(drums, total, { at: at + 1, kind: 'hat', gain: 0.24 })
-    pushDrum(drums, total, { at: at + 2, kind: 'snare', gain: 0.34 })
-  }
-  return drums
-}
-
-const makeHappyDrums = (notes: readonly Note[]): DrumHit[] => {
-  const actionDrums: DrumHit[] = []
-  const actionRanges: Array<{ start: number; end: number }> = []
-  let at = 0
-  let restIndex = 0
-  for (const note of notes) {
-    if (!note.pitch) {
-      const verseIndex = Math.floor(restIndex / 6)
-      const kind = verseIndex === 0 ? 'clap' : verseIndex === 1 ? 'stomp' : 'cheer'
-      actionRanges.push({ start: at, end: at + note.dur })
-      actionDrums.push({ at, kind, gain: kind === 'stomp' ? 0.9 : 0.75 })
-      restIndex += 1
-    }
-    at += note.dur
-  }
-  return [
-    ...makeSixEightDrums(notes, 1.5).filter(drum =>
-      !actionRanges.some(({ start, end }) => drum.at >= start - 0.0001 && drum.at < end - 0.0001),
-    ),
-    ...actionDrums,
-  ].sort((a, b) => a.at - b.at)
-}
-
-const withDrums = (
-  song: Omit<Song, 'drums'>,
-  makeDrums: (notes: readonly Note[]) => DrumHit[] = makeFourFourDrums,
-): Song => ({
-  ...song,
-  drums: makeDrums(song.notes),
-})
-
-export const SONGS: Song[] = [
-  withDrums({
-    key: 'twinkle',
-    emoji: '⭐',
-    lyrics: [
-      'Twinkle, twinkle, little star,',
-      'How I wonder what you are!',
-      'Up above the world so high,',
-      'Like a diamond in the sky.',
-      'Twinkle, twinkle, little star,',
-      'How I wonder what you are!',
-      '',
-      'When the blazing sun is gone,',
-      'When he nothing shines upon,',
-      'Then you show your little light,',
-      'Twinkle, twinkle, all the night.',
-      'Twinkle, twinkle, little star,',
-      'How I wonder what you are!',
-    ],
-    notes: repeat([
-      { pitch: 'C4', dur: 1 }, { pitch: 'C4', dur: 1 },
-      { pitch: 'G4', dur: 1 }, { pitch: 'G4', dur: 1 },
-      { pitch: 'A4', dur: 1 }, { pitch: 'A4', dur: 1 },
-      { pitch: 'G4', dur: 2 },
-      { pitch: 'F4', dur: 1 }, { pitch: 'F4', dur: 1 },
-      { pitch: 'E4', dur: 1 }, { pitch: 'E4', dur: 1 },
-      { pitch: 'D4', dur: 1 }, { pitch: 'D4', dur: 1 },
-      { pitch: 'C4', dur: 2 },
-      { pitch: 'G4', dur: 1 }, { pitch: 'G4', dur: 1 },
-      { pitch: 'F4', dur: 1 }, { pitch: 'F4', dur: 1 },
-      { pitch: 'E4', dur: 1 }, { pitch: 'E4', dur: 1 },
-      { pitch: 'D4', dur: 2 },
-      { pitch: 'G4', dur: 1 }, { pitch: 'G4', dur: 1 },
-      { pitch: 'F4', dur: 1 }, { pitch: 'F4', dur: 1 },
-      { pitch: 'E4', dur: 1 }, { pitch: 'E4', dur: 1 },
-      { pitch: 'D4', dur: 2 },
-      { pitch: 'C4', dur: 1 }, { pitch: 'C4', dur: 1 },
-      { pitch: 'G4', dur: 1 }, { pitch: 'G4', dur: 1 },
-      { pitch: 'A4', dur: 1 }, { pitch: 'A4', dur: 1 },
-      { pitch: 'G4', dur: 2 },
-      { pitch: 'F4', dur: 1 }, { pitch: 'F4', dur: 1 },
-      { pitch: 'E4', dur: 1 }, { pitch: 'E4', dur: 1 },
-      { pitch: 'D4', dur: 1 }, { pitch: 'D4', dur: 1 },
-      { pitch: 'C4', dur: 2 },
-    ], 2),
-  }),
-  withDrums({
-    key: 'mary',
-    emoji: '🐑',
-    lyrics: [
-      "Mary had a little lamb,",
-      "Little lamb, little lamb,",
-      "Mary had a little lamb,",
-      "Its fleece was white as snow.",
-      '',
-      "And everywhere that Mary went,",
-      "Mary went, Mary went,",
-      "And everywhere that Mary went,",
-      "The lamb was sure to go.",
-      '',
-      "It followed her to school one day,",
-      "School one day, school one day,",
-      "It followed her to school one day,",
-      "Which was against the rules.",
-      '',
-      "It made the children laugh and play,",
-      "Laugh and play, laugh and play,",
-      "It made the children laugh and play,",
-      "To see a lamb at school.",
-      '',
-      "Why does the lamb love Mary so?",
-      "Love Mary so? Love Mary so?",
-      "Why does the lamb love Mary so?",
-      "The eager children cry.",
-    ],
-    notes: repeat([
-      { pitch: 'E4', dur: 1.5 }, { pitch: 'D4', dur: 0.5 },
-      { pitch: 'C4', dur: 1 }, { pitch: 'D4', dur: 1 },
-      { pitch: 'E4', dur: 1 }, { pitch: 'E4', dur: 1 },
-      { pitch: 'E4', dur: 2 },
-      { pitch: 'D4', dur: 1 }, { pitch: 'D4', dur: 1 },
-      { pitch: 'D4', dur: 2 },
-      { pitch: 'E4', dur: 1 }, { pitch: 'G4', dur: 1 },
-      { pitch: 'G4', dur: 2 },
-      { pitch: 'E4', dur: 1.5 }, { pitch: 'D4', dur: 0.5 },
-      { pitch: 'C4', dur: 1 }, { pitch: 'D4', dur: 1 },
-      { pitch: 'E4', dur: 1 }, { pitch: 'E4', dur: 1 },
-      { pitch: 'E4', dur: 1 }, { pitch: 'E4', dur: 1 },
-      { pitch: 'D4', dur: 1 }, { pitch: 'D4', dur: 1 },
-      { pitch: 'E4', dur: 1 }, { pitch: 'D4', dur: 1 },
-      { pitch: 'C4', dur: 4 },
-    ], 5),
-  }),
-  withDrums({
-    key: 'london',
-    emoji: '🌉',
-    lyrics: [
-      'London Bridge is falling down,',
-      'Falling down, falling down,',
-      'London Bridge is falling down,',
-      'My fair lady.',
-      '',
-      'Build it up with iron bars,',
-      'Iron bars, iron bars,',
-      'Build it up with iron bars,',
-      'My fair lady.',
-      '',
-      'Iron bars will bend and break,',
-      'Bend and break, bend and break,',
-      'Iron bars will bend and break,',
-      'My fair lady.',
-    ],
-    notes: repeat([
-      { pitch: 'G4', dur: 1.5 }, { pitch: 'A4', dur: 0.5 },
-      { pitch: 'G4', dur: 1 }, { pitch: 'F4', dur: 1 },
-      { pitch: 'E4', dur: 1 }, { pitch: 'F4', dur: 1 },
-      { pitch: 'G4', dur: 2 },
-      { pitch: 'D4', dur: 1 }, { pitch: 'E4', dur: 1 },
-      { pitch: 'F4', dur: 2 },
-      { pitch: 'E4', dur: 1 }, { pitch: 'F4', dur: 1 },
-      { pitch: 'G4', dur: 2 },
-      { pitch: 'G4', dur: 1.5 }, { pitch: 'A4', dur: 0.5 },
-      { pitch: 'G4', dur: 1 }, { pitch: 'F4', dur: 1 },
-      { pitch: 'E4', dur: 1 }, { pitch: 'F4', dur: 1 },
-      { pitch: 'G4', dur: 2 },
-      { pitch: 'D4', dur: 2 }, { pitch: 'G4', dur: 2 },
-      { pitch: 'E4', dur: 1 }, { pitch: 'C4', dur: 3 },
-    ], 3),
-  }),
-  withDrums({
-    key: 'row',
-    emoji: '🚣',
-    lyrics: [
-      'Row, row, row your boat,',
-      'Gently down the stream.',
-      'Merrily, merrily, merrily, merrily,',
-      'Life is but a dream.',
-      '',
-      'Row, row, row your boat,',
-      'Gently down the stream.',
-      'If you see a crocodile,',
-      "Don't forget to scream!",
-      '',
-      'Row, row, row your boat,',
-      'Gently down the river.',
-      'If you see a polar bear,',
-      "Don't forget to shiver!",
-      '',
-      'Row, row, row your boat,',
-      'Gently to the shore.',
-      'If you see a lion there,',
-      "Don't forget to roar!",
-      '',
-      'Row, row, row your boat,',
-      'Gently down the lake.',
-      'If you see a little snake,',
-      "Don't forget to shake!",
-    ],
-    notes: repeat([
-      { pitch: 'C4', dur: 1.5 }, { pitch: 'C4', dur: 1.5 },
-      { pitch: 'C4', dur: 1 }, { pitch: 'D4', dur: 0.5 },
-      { pitch: 'E4', dur: 1.5 },
-      { pitch: 'E4', dur: 1 }, { pitch: 'D4', dur: 0.5 },
-      { pitch: 'E4', dur: 1 }, { pitch: 'F4', dur: 0.5 },
-      { pitch: 'G4', dur: 3 },
-      { pitch: 'C5', dur: 0.5 }, { pitch: 'C5', dur: 0.5 },
-      { pitch: 'C5', dur: 0.5 },
-      { pitch: 'G4', dur: 0.5 }, { pitch: 'G4', dur: 0.5 },
-      { pitch: 'G4', dur: 0.5 },
-      { pitch: 'E4', dur: 0.5 }, { pitch: 'E4', dur: 0.5 },
-      { pitch: 'E4', dur: 0.5 },
-      { pitch: 'C4', dur: 0.5 }, { pitch: 'C4', dur: 0.5 },
-      { pitch: 'C4', dur: 0.5 },
-      { pitch: 'G4', dur: 1 }, { pitch: 'F4', dur: 0.5 },
-      { pitch: 'E4', dur: 1 }, { pitch: 'D4', dur: 0.5 },
-      { pitch: 'C4', dur: 3 },
-    ], 5),
-  }, makeSixEightDrums),
-  withDrums({
-    key: 'oldMac',
-    emoji: '🐷',
-    lyrics: [
-      'Old MacDonald had a farm,',
-      'E-I-E-I-O,',
-      'And on his farm he had a pig,',
-      'E-I-E-I-O,',
-      'With an oink oink here and an oink oink there,',
-      'Here an oink, there an oink, everywhere an oink oink.',
-      'Old MacDonald had a farm,',
-      'E-I-E-I-O,',
-      '',
-      'Old MacDonald had a farm,',
-      'E-I-E-I-O,',
-      'And on his farm he had a cow,',
-      'E-I-E-I-O,',
-      'With a moo moo here and a moo moo there,',
-      'Here a moo, there a moo, everywhere a moo moo.',
-      'Old MacDonald had a farm,',
-      'E-I-E-I-O,',
-      '',
-      'Old MacDonald had a farm,',
-      'E-I-E-I-O,',
-      'And on his farm he had a duck,',
-      'E-I-E-I-O,',
-      'With a quack quack here and a quack quack there,',
-      'Here a quack, there a quack, everywhere a quack quack.',
-      'Old MacDonald had a farm,',
-      'E-I-E-I-O,',
-      '',
-      'Old MacDonald had a farm,',
-      'E-I-E-I-O,',
-      'And on his farm he had a horse,',
-      'E-I-E-I-O,',
-      'With a neigh neigh here and a neigh neigh there,',
-      'Here a neigh, there a neigh, everywhere a neigh neigh.',
-      'Old MacDonald had a farm,',
-      'E-I-E-I-O,',
-    ],
-    notes: repeat([
-      { pitch: 'G4', dur: 1 }, { pitch: 'G4', dur: 1 },
-      { pitch: 'G4', dur: 1 }, { pitch: 'D4', dur: 1 },
-      { pitch: 'E4', dur: 1 }, { pitch: 'E4', dur: 1 },
-      { pitch: 'D4', dur: 2 },
-      { pitch: 'B4', dur: 1 }, { pitch: 'B4', dur: 1 },
-      { pitch: 'A4', dur: 1 }, { pitch: 'A4', dur: 1 },
-      { pitch: 'G4', dur: 3 }, { pitch: 'D4', dur: 1 },
-      { pitch: 'G4', dur: 1 }, { pitch: 'G4', dur: 1 },
-      { pitch: 'G4', dur: 1 }, { pitch: 'D4', dur: 1 },
-      { pitch: 'E4', dur: 1 }, { pitch: 'E4', dur: 1 },
-      { pitch: 'D4', dur: 2 },
-      { pitch: 'B4', dur: 1 }, { pitch: 'B4', dur: 1 },
-      { pitch: 'A4', dur: 1 }, { pitch: 'A4', dur: 1 },
-      { pitch: 'G4', dur: 3 }, { pitch: 'D4', dur: 0.5 }, { pitch: 'D4', dur: 0.5 },
-      { pitch: 'G4', dur: 1 }, { pitch: 'G4', dur: 1 },
-      { pitch: 'G4', dur: 1 }, { pitch: 'D4', dur: 0.5 }, { pitch: 'D4', dur: 0.5 },
-      { pitch: 'G4', dur: 1 }, { pitch: 'G4', dur: 1 },
-      { pitch: 'G4', dur: 1 }, { pitch: '', dur: 1 },
-      { pitch: 'G4', dur: 0.5 }, { pitch: 'G4', dur: 0.5 },
-      { pitch: 'G4', dur: 0.5 }, { pitch: '', dur: 0.5 },
-      { pitch: 'G4', dur: 0.5 }, { pitch: 'G4', dur: 0.5 },
-      { pitch: 'G4', dur: 0.5 }, { pitch: '', dur: 0.5 },
-
-      { pitch: 'G4', dur: 0.5 }, { pitch: 'G4', dur: 0.5 },
-      { pitch: 'G4', dur: 0.5 }, { pitch: 'G4', dur: 0.5 },
-
-      { pitch: 'G4', dur: 1 }, { pitch: 'G4', dur: 1 },
-      { pitch: 'G4', dur: 1 }, { pitch: 'G4', dur: 1 },
-      { pitch: 'G4', dur: 1 }, { pitch: 'D4', dur: 1 },
-      { pitch: 'E4', dur: 1 }, { pitch: 'E4', dur: 1 },
-      { pitch: 'D4', dur: 2 },
-      { pitch: 'B4', dur: 1 }, { pitch: 'B4', dur: 1 },
-      { pitch: 'A4', dur: 1 }, { pitch: 'A4', dur: 1 },
-      { pitch: 'G4', dur: 4 },
-    ], 4),
-  }),
-  withDrums({
-    key: 'happy',
-    emoji: '😊',
-    lyrics: [
-      "If you're happy and you know it, clap your hands!",
-      "If you're happy and you know it, clap your hands!",
-      "If you're happy and you know it, then your face will surely show it,",
-      "If you're happy and you know it, clap your hands!",
-      '',
-      "If you're happy and you know it, stomp your feet!",
-      "If you're happy and you know it, stomp your feet!",
-      "If you're happy and you know it, then your face will surely show it,",
-      "If you're happy and you know it, stomp your feet!",
-      '',
-      "If you're happy and you know it, shout hurray!",
-      "If you're happy and you know it, shout hurray!",
-      "If you're happy and you know it, then your face will surely show it,",
-      "If you're happy and you know it, shout hurray!",
-    ],
-    notes: repeat([
-      { pitch: 'C4', dur: 1 }, { pitch: 'C4', dur: 0.5 },
-      { pitch: 'F4', dur: 1 }, { pitch: 'F4', dur: 0.5 },
-      { pitch: 'F4', dur: 1 }, { pitch: 'F4', dur: 0.5 },
-      { pitch: 'F4', dur: 1 }, { pitch: 'F4', dur: 0.5 },
-      { pitch: 'E4', dur: 1 }, { pitch: 'F4', dur: 0.5 },
-      { pitch: 'G4', dur: 1.5 },
-      { pitch: '', dur: 1.5 }, { pitch: '', dur: 1.5 },
-      { pitch: 'C4', dur: 1 }, { pitch: 'C4', dur: 0.5 },
-      { pitch: 'G4', dur: 1 }, { pitch: 'G4', dur: 0.5 },
-      { pitch: 'G4', dur: 1 }, { pitch: 'G4', dur: 0.5 },
-      { pitch: 'G4', dur: 1 }, { pitch: 'G4', dur: 0.5 },
-      { pitch: 'F4', dur: 1 }, { pitch: 'G4', dur: 0.5 },
-      { pitch: 'A4', dur: 1.5 },
-      { pitch: '', dur: 1.5 }, { pitch: '', dur: 1.5 },
-      { pitch: 'A4', dur: 1 }, { pitch: 'A4', dur: 0.5 },
-      { pitch: 'A#4', dur: 1 }, { pitch: 'A#4', dur: 0.5 },
-      { pitch: 'A#4', dur: 1 }, { pitch: 'A#4', dur: 0.5 },
-      { pitch: 'D4', dur: 1 }, { pitch: 'D4', dur: 0.5 },
-      { pitch: 'A#4', dur: 1 }, { pitch: 'A#4', dur: 0.5 },
-      { pitch: 'A4', dur: 1 }, { pitch: 'A4', dur: 0.5 },
-      { pitch: 'A4', dur: 1 }, { pitch: 'G4', dur: 0.5 },
-      { pitch: 'F4', dur: 1 }, { pitch: 'F4', dur: 0.5 },
-      { pitch: 'A4', dur: 1 }, { pitch: 'A4', dur: 0.5 },
-      { pitch: 'G4', dur: 1 }, { pitch: 'G4', dur: 0.5 },
-      { pitch: 'G4', dur: 1 }, { pitch: 'F4', dur: 0.5 },
-      { pitch: 'E4', dur: 1 }, { pitch: 'E4', dur: 0.5 },
-      { pitch: 'D4', dur: 1 }, { pitch: 'E4', dur: 0.5 },
-      { pitch: 'F4', dur: 1.5 },
-      { pitch: '', dur: 1.5 }, { pitch: '', dur: 1.5 },
-    ], 3),
-  }, makeHappyDrums),
-  withDrums({
-    key: 'birthday',
-    emoji: '🎂',
-    lyrics: [
-      "Happy birthday to you,",
-      "Happy birthday to you,",
-      "Happy birthday dear you,",
-      "Happy birthday to you!",
-    ],
-    notes: [
-      // Verse 1
-      { pitch: 'C4', dur: 1 }, { pitch: 'C4', dur: 1 },
-      { pitch: 'D4', dur: 1 }, { pitch: 'C4', dur: 1 },
-      { pitch: 'F4', dur: 1 }, { pitch: 'E4', dur: 2 },
-      { pitch: 'C4', dur: 1 }, { pitch: 'C4', dur: 1 },
-      { pitch: 'D4', dur: 1 }, { pitch: 'C4', dur: 1 },
-      { pitch: 'G4', dur: 1 }, { pitch: 'F4', dur: 2 },
-      { pitch: 'C4', dur: 1 }, { pitch: 'C4', dur: 1 },
-      { pitch: 'C5', dur: 1 }, { pitch: 'A4', dur: 1 },
-      { pitch: 'F4', dur: 1 }, { pitch: 'E4', dur: 1 },
-      { pitch: 'D4', dur: 2 },
-      { pitch: 'A#4', dur: 1 }, { pitch: 'A#4', dur: 1 },
-      { pitch: 'A4', dur: 1 }, { pitch: 'F4', dur: 1 },
-      { pitch: 'G4', dur: 1 }, { pitch: 'F4', dur: 2 },
-    ],
-  }, makeThreeFourDrums),
-]
 
 export const INSTRUMENTS: Instrument[] = [
   {
@@ -585,16 +203,6 @@ export const INSTRUMENTS: Instrument[] = [
     ],
   },
 ]
-
-export const SONG_TKEYS: Record<string, StringKey> = {
-  twinkle: 'musicBoxTwinkle',
-  mary: 'musicBoxMary',
-  london: 'musicBoxLondon',
-  row: 'musicBoxRow',
-  oldMac: 'musicBoxOldMac',
-  happy: 'musicBoxHappy',
-  birthday: 'musicBoxHappyBirthday',
-}
 
 export const INST_TKEYS: Record<string, StringKey> = {
   bell: 'musicBoxBell',
@@ -712,11 +320,22 @@ export const MIN_OCTAVE = -3
 export const MAX_OCTAVE = 3
 export const MIN_DRUM_VOLUME = 0
 export const MAX_DRUM_VOLUME = 1
+const DRUM_PAD_BUTTONS: ReadonlyArray<{ readonly kind: DrumKind; readonly label: string }> = [
+  { kind: 'kick', label: 'Kick' },
+  { kind: 'snare', label: 'Snare' },
+  { kind: 'hat', label: 'Hat' },
+  { kind: 'clap', label: 'Clap' },
+  { kind: 'stomp', label: 'Stomp' },
+  { kind: 'cheer', label: 'Hurray' },
+]
 
 const clampDrumVolume = (value: number): number =>
   Number.isFinite(value)
     ? Math.min(MAX_DRUM_VOLUME, Math.max(MIN_DRUM_VOLUME, Math.round(value * 100) / 100))
     : 1
+
+const parseBottomPanelMode = (value: string): BottomPanelMode =>
+  BOTTOM_PANEL_MODES.includes(value as BottomPanelMode) ? value as BottomPanelMode : 'simple'
 
 export const Model = S.Struct({
   selectedSong: S.Number,
@@ -725,7 +344,7 @@ export const Model = S.Struct({
   isPaused: S.Boolean,
   songTranspose: S.Number,
   whiteKeys: S.Number,
-  showBottomKeyboard: S.Boolean,
+  bottomPanelMode: BottomPanelModeSchema,
   octaveOffset: S.Number,
   bottomShift: S.Number,
   topShift: S.Number,
@@ -750,6 +369,7 @@ export const RemoveKey = m('MusicBoxRemoveKey')
 export const OctaveUp = m('MusicBoxOctaveUp')
 export const OctaveDown = m('MusicBoxOctaveDown')
 export const ToggleBottomKeyboard = m('MusicBoxToggleBottomKeyboard')
+export const SetBottomPanelMode = m('MusicBoxSetBottomPanelMode', { value: BottomPanelModeSchema })
 export const ShiftBottom = m('MusicBoxShiftBottom', { delta: S.Number })
 export const ShiftTop = m('MusicBoxShiftTop', { delta: S.Number })
 export const TempoUp = m('MusicBoxTempoUp')
@@ -759,12 +379,13 @@ export const TogglePause = m('MusicBoxTogglePause')
 export const TransposeUp = m('MusicBoxTransposeUp')
 export const TransposeDown = m('MusicBoxTransposeDown')
 export const SetDrumVolume = m('MusicBoxSetDrumVolume', { value: S.Number })
+export const DrumPadHit = m('MusicBoxDrumPadHit', { kind: DrumKindSchema })
 export const ToggleSongVisibility = m('MusicBoxToggleSongVisibility', { index: S.Number })
 export const SongDragStarted = m('MusicBoxSongDragStarted', { index: S.Number })
 export const SongDroppedOn = m('MusicBoxSongDroppedOn', { index: S.Number })
 export const SongDragEnded = m('MusicBoxSongDragEnded')
 
-export const Message = S.Union([Play, Stop, SetSong, SetInstrument, SongEnded, NoteOn, NoteOff, AddKey, RemoveKey, OctaveUp, OctaveDown, ToggleBottomKeyboard, ShiftBottom, ShiftTop, TempoUp, TempoDown, ToggleLyrics, TogglePause, TransposeUp, TransposeDown, SetDrumVolume, ToggleSongVisibility, SongDragStarted, SongDroppedOn, SongDragEnded])
+export const Message = S.Union([Play, Stop, SetSong, SetInstrument, SongEnded, NoteOn, NoteOff, AddKey, RemoveKey, OctaveUp, OctaveDown, ToggleBottomKeyboard, SetBottomPanelMode, ShiftBottom, ShiftTop, TempoUp, TempoDown, ToggleLyrics, TogglePause, TransposeUp, TransposeDown, SetDrumVolume, DrumPadHit, ToggleSongVisibility, SongDragStarted, SongDroppedOn, SongDragEnded])
 export type Message = typeof Message.Type
 
 export const init = (): Model => {
@@ -779,7 +400,7 @@ export const init = (): Model => {
   MutableRef.set(playbackTranspose, 0)
   MutableRef.set(playbackDrumVolume, 1)
   MutableRef.set(currentLyricLine, -1)
-  return { selectedSong: 0, selectedInstrument: 0, isPlaying: false, isPaused: false, songTranspose: 0, whiteKeys: 8, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, drumVolume: 1, lyricsExpanded: false, songOrder: SONGS.map((_, i) => i), hiddenSongs: SONGS.map(() => false), dragIndex: -1 }
+  return { selectedSong: 0, selectedInstrument: 0, isPlaying: false, isPaused: false, songTranspose: 0, whiteKeys: 8, bottomPanelMode: 'simple', octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, drumVolume: 1, lyricsExpanded: false, songOrder: SONGS.map((_, i) => i), hiddenSongs: SONGS.map(() => false), dragIndex: -1 }
 }
 
 export const update = (
@@ -849,7 +470,11 @@ export const update = (
         return model.whiteKeys > MIN_WHITE_KEYS ? [{ ...model, whiteKeys: model.whiteKeys - 1 }, []] : [model, []]
       },
       MusicBoxToggleBottomKeyboard: () => {
-        return [{ ...model, showBottomKeyboard: !model.showBottomKeyboard }, []]
+        const next = model.bottomPanelMode === 'keyboard' ? 'simple' : 'keyboard'
+        return [{ ...model, bottomPanelMode: next }, []]
+      },
+      MusicBoxSetBottomPanelMode: (msg) => {
+        return [{ ...model, bottomPanelMode: msg.value }, []]
       },
       MusicBoxOctaveUp: () => {
         return model.octaveOffset < MAX_OCTAVE ? [{ ...model, octaveOffset: model.octaveOffset + 1 }, []] : [model, []]
@@ -906,6 +531,14 @@ export const update = (
         const next = clampDrumVolume(msg.value)
         MutableRef.set(playbackDrumVolume, next)
         return [{ ...model, drumVolume: next }, []]
+      },
+      MusicBoxDrumPadHit: (msg) => {
+        const gain = clampDrumVolume(model.drumVolume)
+        if (gain > 0) {
+          audioRuntime.primeFromGesture()
+          audioRuntime.playDrumHit({ kind: msg.kind, gain })
+        }
+        return [model, []]
       },
       MusicBoxToggleSongVisibility: (msg) => {
         if (msg.index < 0 || msg.index >= SONGS.length) return [model, []]
@@ -1059,10 +692,19 @@ export const view = (model: Model, language: string = 'en') => {
             [h.OnClick(AddKey()), h.Class('btn btn-tiny'), h.Disabled(model.whiteKeys >= MAX_WHITE_KEYS)],
             ['+'],
           ),
-          h.label([h.Class('piano-toggle-label')], [
-            h.input([h.Type('checkbox'), h.Checked(model.showBottomKeyboard), h.OnChange(() => ToggleBottomKeyboard())]),
-            h.span([h.Class('piano-toggle-text')], [t('musicBoxShowBottom', language)]),
-          ]),
+          h.select(
+            [
+              h.Value(model.bottomPanelMode),
+              h.OnChange(v => SetBottomPanelMode({ value: parseBottomPanelMode(v) })),
+              h.Class('musicbox-select bottom-panel-select'),
+              h.Attribute('aria-label', 'Lower panel'),
+            ],
+            [
+              h.option([h.Value('simple')], ['🎹']),
+              h.option([h.Value('drums')], ['🎹🥁']),
+              h.option([h.Value('keyboard')], ['🎹🎹']),
+            ],
+          ),
           h.select(
             [
               h.Value(model.selectedInstrument.toString()),
@@ -1092,7 +734,7 @@ export const view = (model: Model, language: string = 'en') => {
               ['+'],
             ),
           ]),
-          ...(model.showBottomKeyboard
+          ...(model.bottomPanelMode === 'keyboard'
             ? [h.div([h.Class('shift-controls')], [
               h.button(
                 [h.OnClick(ShiftBottom({ delta: -1 })), h.Class('btn btn-tiny'), h.Disabled(model.bottomShift <= -7)],
@@ -1106,7 +748,7 @@ export const view = (model: Model, language: string = 'en') => {
             ])]
             : []),
         ]),
-        ...(model.showBottomKeyboard
+        ...(model.bottomPanelMode === 'keyboard'
           ? (() => {
             const bottomStart = shiftStart('C3', model.bottomShift)
             const botKb = buildKeyboard(bottomStart, model.whiteKeys, model.octaveOffset)
@@ -1117,6 +759,9 @@ export const view = (model: Model, language: string = 'en') => {
             ]
           })()
           : []),
+        ...(model.bottomPanelMode === 'drums'
+          ? [renderDrumPad(h, model.drumVolume)]
+          : []),
         h.div([h.Class('keybind-info'), h.Key('keybind')], [
           'i',
           h.div([h.Class('tooltip')], ['Z/X: Octave  Space: Play/Pause  QWERTY: Piano']),
@@ -1125,6 +770,24 @@ export const view = (model: Model, language: string = 'en') => {
     ],
   )
 }
+
+const renderDrumPad = (h: ReturnType<typeof html<Message>>, drumVolume: number) =>
+  h.div([h.Class('drum-pad-panel'), h.Key('drum-pad')], [
+    h.div([h.Class('drum-pad-grid')], DRUM_PAD_BUTTONS.map(({ kind, label }) =>
+      h.button(
+        [
+          h.Class('drum-pad-button'),
+          h.OnClick(DrumPadHit({ kind })),
+          h.Disabled(clampDrumVolume(drumVolume) <= 0),
+          h.Attribute('data-drum-kind', kind),
+        ],
+        [
+          h.span([h.Class('drum-pad-kind')], [label]),
+          h.span([h.Class('drum-pad-hint')], [kind]),
+        ],
+      ),
+    )),
+  ])
 
 // ── Piano keyboard view helper ──────────────────────────────────────────
 

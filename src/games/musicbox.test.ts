@@ -164,7 +164,7 @@ describe('MusicBox', () => {
   it('init state', () => {
     expect(MusicBox.init()).toStrictEqual({
       selectedSong: 0, selectedInstrument: 0, isPlaying: false, isPaused: false, songTranspose: 0,
-      whiteKeys: 8, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, drumVolume: 1, lyricsExpanded: false,
+      whiteKeys: 8, bottomPanelMode: 'simple', octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, drumVolume: 1, lyricsExpanded: false,
       songOrder: [0, 1, 2, 3, 4, 5, 6], hiddenSongs: [false, false, false, false, false, false, false], dragIndex: -1,
     })
   })
@@ -479,7 +479,7 @@ describe('MusicBox', () => {
     it('Stop sets isPlaying to false', () => {
       Story.story(
         MusicBox.update,
-        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: true, whiteKeys: 12, showBottomKeyboard: true, tempo: 1, lyricsExpanded: false, }),
+        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: true, whiteKeys: 12, bottomPanelMode: 'keyboard', tempo: 1, lyricsExpanded: false, }),
         Story.message(MusicBox.Stop()),
         Story.model((model) => {
           expect(model.isPlaying).toBe(false)
@@ -539,7 +539,7 @@ describe('MusicBox', () => {
     it('SongEnded sets isPlaying to false', () => {
       Story.story(
         MusicBox.update,
-        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: true, whiteKeys: 12, showBottomKeyboard: true, tempo: 1, lyricsExpanded: false, }),
+        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: true, whiteKeys: 12, bottomPanelMode: 'keyboard', tempo: 1, lyricsExpanded: false, }),
         Story.message(MusicBox.SongEnded()),
         Story.model((model) => {
           expect(model.isPlaying).toBe(false)
@@ -563,7 +563,7 @@ describe('MusicBox', () => {
     it('RemoveKey decrements whiteKeys', () => {
       Story.story(
         MusicBox.update,
-        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 12, showBottomKeyboard: true, tempo: 1, lyricsExpanded: false, }),
+        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 12, bottomPanelMode: 'keyboard', tempo: 1, lyricsExpanded: false, }),
         Story.message(MusicBox.RemoveKey()),
         Story.model((model) => {
           expect(model.whiteKeys).toBe(11)
@@ -575,7 +575,7 @@ describe('MusicBox', () => {
     it('AddKey is capped at MAX_WHITE_KEYS', () => {
       Story.story(
         MusicBox.update,
-        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MAX_WHITE_KEYS, showBottomKeyboard: true, tempo: 1, lyricsExpanded: false, }),
+        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MAX_WHITE_KEYS, bottomPanelMode: 'keyboard', tempo: 1, lyricsExpanded: false, }),
         Story.message(MusicBox.AddKey()),
         Story.model((model) => {
           expect(model.whiteKeys).toBe(MusicBox.MAX_WHITE_KEYS)
@@ -587,7 +587,7 @@ describe('MusicBox', () => {
     it('RemoveKey is capped at MIN_WHITE_KEYS', () => {
       Story.story(
         MusicBox.update,
-        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MIN_WHITE_KEYS, showBottomKeyboard: true, tempo: 1, lyricsExpanded: false, }),
+        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MIN_WHITE_KEYS, bottomPanelMode: 'keyboard', tempo: 1, lyricsExpanded: false, }),
         Story.message(MusicBox.RemoveKey()),
         Story.model((model) => {
           expect(model.whiteKeys).toBe(MusicBox.MIN_WHITE_KEYS)
@@ -599,7 +599,7 @@ describe('MusicBox', () => {
     it('AddKey works at boundary MAX_WHITE_KEYS - 1', () => {
       Story.story(
         MusicBox.update,
-        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MAX_WHITE_KEYS - 1, showBottomKeyboard: true, tempo: 1, lyricsExpanded: false, }),
+        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MAX_WHITE_KEYS - 1, bottomPanelMode: 'keyboard', tempo: 1, lyricsExpanded: false, }),
         Story.message(MusicBox.AddKey()),
         Story.model((model) => {
           expect(model.whiteKeys).toBe(MusicBox.MAX_WHITE_KEYS)
@@ -611,7 +611,7 @@ describe('MusicBox', () => {
     it('RemoveKey works at boundary MIN_WHITE_KEYS + 1', () => {
       Story.story(
         MusicBox.update,
-        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MIN_WHITE_KEYS + 1, showBottomKeyboard: true, tempo: 1, lyricsExpanded: false, }),
+        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MIN_WHITE_KEYS + 1, bottomPanelMode: 'keyboard', tempo: 1, lyricsExpanded: false, }),
         Story.message(MusicBox.RemoveKey()),
         Story.model((model) => {
           expect(model.whiteKeys).toBe(MusicBox.MIN_WHITE_KEYS)
@@ -620,25 +620,25 @@ describe('MusicBox', () => {
       )
     })
 
-    it('ToggleBottomKeyboard toggles showBottomKeyboard', () => {
+    it('ToggleBottomKeyboard opens the second keyboard', () => {
       Story.story(
         MusicBox.update,
         Story.with(MusicBox.init()),
         Story.message(MusicBox.ToggleBottomKeyboard()),
         Story.model((model) => {
-          expect(model.showBottomKeyboard).toBe(true)
+          expect(model.bottomPanelMode).toBe('keyboard')
         }),
         Story.Command.expectNone(),
       )
     })
 
-    it('ToggleBottomKeyboard toggles back to true', () => {
+    it('ToggleBottomKeyboard closes the second keyboard', () => {
       Story.story(
         MusicBox.update,
-        Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 12, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, lyricsExpanded: false, }),
+        Story.with({ ...MusicBox.init(), bottomPanelMode: 'keyboard' }),
         Story.message(MusicBox.ToggleBottomKeyboard()),
         Story.model((model) => {
-          expect(model.showBottomKeyboard).toBe(true)
+          expect(model.bottomPanelMode).toBe('simple')
         }),
         Story.Command.expectNone(),
       )
@@ -755,6 +755,81 @@ describe('MusicBox', () => {
         Story.message(MusicBox.SetDrumVolume({ value: 2 })),
         Story.model((model) => {
           expect(model.drumVolume).toBe(1)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('SetBottomPanelMode selects lower panel content', () => {
+      Story.story(
+        MusicBox.update,
+        Story.with(MusicBox.init()),
+        Story.message(MusicBox.SetBottomPanelMode({ value: 'drums' })),
+        Story.model((model) => {
+          expect(model.bottomPanelMode).toBe('drums')
+        }),
+        Story.message(MusicBox.SetBottomPanelMode({ value: 'keyboard' })),
+        Story.model((model) => {
+          expect(model.bottomPanelMode).toBe('keyboard')
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('DrumPadHit plays through the musicbox audio runtime', () => {
+      globalThis.AudioContext = MockAudioContext as unknown as typeof AudioContext
+
+      Story.story(
+        MusicBox.update,
+        Story.with({ ...MusicBox.init(), drumVolume: 0.7 }),
+        Story.message(MusicBox.DrumPadHit({ kind: 'kick' })),
+        Story.model((model) => {
+          expect(model.drumVolume).toBe(0.7)
+          expect(startedFrequencies[0]!).toBeCloseTo(130)
+          expect(compressorCreateCount).toBe(1)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('DrumPadHit lights the matching drumpad', () => {
+      globalThis.AudioContext = MockAudioContext as unknown as typeof AudioContext
+      const kick = document.createElement('button')
+      kick.className = 'drum-pad-button'
+      kick.setAttribute('data-drum-kind', 'kick')
+      const snare = document.createElement('button')
+      snare.className = 'drum-pad-button'
+      snare.setAttribute('data-drum-kind', 'snare')
+      document.body.append(kick, snare)
+
+      Story.story(
+        MusicBox.update,
+        Story.with({ ...MusicBox.init(), drumVolume: 0.7 }),
+        Story.message(MusicBox.DrumPadHit({ kind: 'kick' })),
+        Story.model(() => {
+          expect(kick.classList.contains('drum-pad-button--active')).toBe(true)
+          expect(snare.classList.contains('drum-pad-button--active')).toBe(false)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('DrumPadHit is silent when drum volume is zero', () => {
+      globalThis.AudioContext = MockAudioContext as unknown as typeof AudioContext
+      const kick = document.createElement('button')
+      kick.className = 'drum-pad-button'
+      kick.setAttribute('data-drum-kind', 'kick')
+      document.body.append(kick)
+
+      Story.story(
+        MusicBox.update,
+        Story.with({ ...MusicBox.init(), drumVolume: 0 }),
+        Story.message(MusicBox.DrumPadHit({ kind: 'kick' })),
+        Story.model((model) => {
+          expect(model.drumVolume).toBe(0)
+          expect(startedFrequencies).toEqual([])
+          expect(contextCreateCount).toBe(0)
+          expect(kick.classList.contains('drum-pad-button--active')).toBe(false)
         }),
         Story.Command.expectNone(),
       )
@@ -1064,7 +1139,7 @@ describe('MusicBox', () => {
     it('renders stop button when playing', () => {
       Scene.scene(
         { update: MusicBox.update, view: MusicBox.view },
-        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: true, whiteKeys: 12, showBottomKeyboard: true, tempo: 1, lyricsExpanded: false, songOrder: [0, 1, 2, 3, 4, 5, 6], hiddenSongs: [false, false, false, false, false, false, false], dragIndex: -1 }),
+        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: true, whiteKeys: 12, bottomPanelMode: 'keyboard', tempo: 1, lyricsExpanded: false, songOrder: [0, 1, 2, 3, 4, 5, 6], hiddenSongs: [false, false, false, false, false, false, false], dragIndex: -1 }),
         Scene.Mount.resolveAll(resolvePianoTop, resolvePianoBot),
         Scene.expect(Scene.selector('#musicbox-stop svg')).toExist(),
         Scene.Command.expectNone(),
@@ -1074,7 +1149,7 @@ describe('MusicBox', () => {
     it('play button disabled when playing', () => {
       Scene.scene(
         { update: MusicBox.update, view: MusicBox.view },
-        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: true, whiteKeys: 12, showBottomKeyboard: true, tempo: 1, lyricsExpanded: false, songOrder: [0, 1, 2, 3, 4, 5, 6], hiddenSongs: [false, false, false, false, false, false, false], dragIndex: -1 }),
+        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: true, whiteKeys: 12, bottomPanelMode: 'keyboard', tempo: 1, lyricsExpanded: false, songOrder: [0, 1, 2, 3, 4, 5, 6], hiddenSongs: [false, false, false, false, false, false, false], dragIndex: -1 }),
         Scene.Mount.resolveAll(resolvePianoTop, resolvePianoBot),
         Scene.expect(Scene.selector('#musicbox-play svg')).toExist(),
         Scene.Command.expectNone(),
@@ -1114,7 +1189,7 @@ describe('MusicBox', () => {
     it('- button exists at MIN_WHITE_KEYS', () => {
       Scene.scene(
         { update: MusicBox.update, view: MusicBox.view },
-        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MIN_WHITE_KEYS, showBottomKeyboard: true, tempo: 1, lyricsExpanded: false, songOrder: [0, 1, 2, 3, 4, 5, 6], hiddenSongs: [false, false, false, false, false, false, false], dragIndex: -1 }),
+        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MIN_WHITE_KEYS, bottomPanelMode: 'keyboard', tempo: 1, lyricsExpanded: false, songOrder: [0, 1, 2, 3, 4, 5, 6], hiddenSongs: [false, false, false, false, false, false, false], dragIndex: -1 }),
         Scene.Mount.resolveAll(resolvePianoTop, resolvePianoBot),
         Scene.expect(Scene.text('−')).toExist(),
         Scene.Command.expectNone(),
@@ -1124,7 +1199,7 @@ describe('MusicBox', () => {
     it('+ button exists at MAX_WHITE_KEYS', () => {
       Scene.scene(
         { update: MusicBox.update, view: MusicBox.view },
-        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MAX_WHITE_KEYS, showBottomKeyboard: true, tempo: 1, lyricsExpanded: false, songOrder: [0, 1, 2, 3, 4, 5, 6], hiddenSongs: [false, false, false, false, false, false, false], dragIndex: -1 }),
+        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MAX_WHITE_KEYS, bottomPanelMode: 'keyboard', tempo: 1, lyricsExpanded: false, songOrder: [0, 1, 2, 3, 4, 5, 6], hiddenSongs: [false, false, false, false, false, false, false], dragIndex: -1 }),
         Scene.Mount.resolveAll(resolvePianoTop, resolvePianoBot),
         Scene.expect(Scene.text('+')).toExist(),
         Scene.Command.expectNone(),
@@ -1141,22 +1216,36 @@ describe('MusicBox', () => {
       )
     })
 
-    it('renders bottom keyboard toggle checkbox', () => {
+    it('renders compact lower panel dropdown options', () => {
       Scene.scene(
         { update: MusicBox.update, view: MusicBox.view },
         Scene.with(MusicBox.init()),
         Scene.Mount.resolveAll(...resolveMount),
-        Scene.expect(Scene.text('Bottom keyboard')).toExist(),
+        Scene.expect(Scene.text('🎹')).toExist(),
+        Scene.expect(Scene.text('🎹🥁')).toExist(),
+        Scene.expect(Scene.text('🎹🎹')).toExist(),
         Scene.Command.expectNone(),
       )
     })
 
-    it('does not render bottom keyboard when toggled off', () => {
+    it('does not render bottom keyboard in simple lower panel mode', () => {
       Scene.scene(
         { update: MusicBox.update, view: MusicBox.view },
-        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 12, showBottomKeyboard: false, octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, lyricsExpanded: false, songOrder: [0, 1, 2, 3, 4, 5, 6], hiddenSongs: [false, false, false, false, false, false, false], dragIndex: -1 }),
+        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 12, bottomPanelMode: 'simple', octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, lyricsExpanded: false, songOrder: [0, 1, 2, 3, 4, 5, 6], hiddenSongs: [false, false, false, false, false, false, false], dragIndex: -1 }),
         Scene.Mount.resolveAll(resolvePianoTop),
-        Scene.expect(Scene.text('Bottom keyboard')).toExist(),
+        Scene.expect(Scene.selector('[key="piano-bot"]')).not.toExist(),
+        Scene.Command.expectNone(),
+      )
+    })
+
+    it('renders drumpads instead of the bottom keyboard in drums lower panel mode', () => {
+      Scene.scene(
+        { update: MusicBox.update, view: MusicBox.view },
+        Scene.with({ ...MusicBox.init(), bottomPanelMode: 'drums' }),
+        Scene.Mount.resolveAll(resolvePianoTop),
+        Scene.expect(Scene.selector('[key="drum-pad"]')).toExist(),
+        Scene.expect(Scene.selector('[data-drum-kind="kick"]')).toExist(),
+        Scene.expect(Scene.selector('[key="piano-bot"]')).not.toExist(),
         Scene.Command.expectNone(),
       )
     })

@@ -8,7 +8,7 @@ const resolvePianoBot = [{ name: 'piano-bot' as const }, MusicBox.NoteOn({ pitch
 
 const baseModel = {
   selectedSong: 0, selectedInstrument: 0, isPlaying: false, isPaused: false,
-  songTranspose: 0, whiteKeys: 8, showBottomKeyboard: false,
+  songTranspose: 0, whiteKeys: 8, bottomPanelMode: 'simple',
   octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1,
   lyricsExpanded: false, songOrder: [0, 1, 2, 3, 4, 5, 6],
   hiddenSongs: [false, false, false, false, false, false, false], dragIndex: -1,
@@ -18,7 +18,7 @@ describe('bottom keyboard', () => {
   it('renders bottom keyboard keys when visible', () => {
     Scene.scene(
       { update: MusicBox.update, view: MusicBox.view },
-      Scene.with({ ...baseModel, showBottomKeyboard: true }),
+      Scene.with({ ...baseModel, bottomPanelMode: 'keyboard' }),
       Scene.Mount.resolveAll(resolvePianoTop, resolvePianoBot),
       Scene.expect(Scene.text('C3')).toExist(),
       Scene.Command.expectNone(),
@@ -35,13 +35,13 @@ describe('bottom keyboard', () => {
     )
   })
 
-  it('toggle changes showBottomKeyboard', () => {
+  it('toggle opens the bottom keyboard', () => {
     Story.story(
       MusicBox.update,
       Story.with(MusicBox.init()),
       Story.message(MusicBox.ToggleBottomKeyboard()),
       Story.model((model) => {
-        expect(model.showBottomKeyboard).toBe(true)
+        expect(model.bottomPanelMode).toBe('keyboard')
       }),
       Story.Command.expectNone(),
     )
@@ -50,10 +50,10 @@ describe('bottom keyboard', () => {
   it('toggle from on to off', () => {
     Story.story(
       MusicBox.update,
-      Story.with({ ...MusicBox.init(), showBottomKeyboard: true }),
+      Story.with({ ...MusicBox.init(), bottomPanelMode: 'keyboard' }),
       Story.message(MusicBox.ToggleBottomKeyboard()),
       Story.model((model) => {
-        expect(model.showBottomKeyboard).toBe(false)
+        expect(model.bottomPanelMode).toBe('simple')
       }),
       Story.Command.expectNone(),
     )
@@ -62,7 +62,7 @@ describe('bottom keyboard', () => {
   it('bottom keyboard has data-pitch C3', () => {
     Scene.scene(
       { update: MusicBox.update, view: MusicBox.view },
-      Scene.with({ ...baseModel, showBottomKeyboard: true }),
+      Scene.with({ ...baseModel, bottomPanelMode: 'keyboard' }),
       Scene.Mount.resolveAll(resolvePianoTop, resolvePianoBot),
       Scene.expect(Scene.selector('[data-pitch="C3"]')).toExist(),
       Scene.Command.expectNone(),
@@ -72,7 +72,7 @@ describe('bottom keyboard', () => {
   it('top keyboard works alongside bottom keyboard', () => {
     Scene.scene(
       { update: MusicBox.update, view: MusicBox.view },
-      Scene.with({ ...baseModel, showBottomKeyboard: true }),
+      Scene.with({ ...baseModel, bottomPanelMode: 'keyboard' }),
       Scene.Mount.resolveAll(resolvePianoTop, resolvePianoBot),
       Scene.expect(Scene.selector('[data-pitch="C4"]')).toExist(),
       Scene.Command.expectNone(),
@@ -82,7 +82,7 @@ describe('bottom keyboard', () => {
   it('bottom keyboard has correct number of white keys', () => {
     Scene.scene(
       { update: MusicBox.update, view: MusicBox.view },
-      Scene.with({ ...baseModel, showBottomKeyboard: true, whiteKeys: 7 }),
+      Scene.with({ ...baseModel, bottomPanelMode: 'keyboard', whiteKeys: 7 }),
       Scene.Mount.resolveAll(resolvePianoTop, resolvePianoBot),
       Scene.expect(Scene.text('G3')).toExist(),
       Scene.Command.expectNone(),
@@ -104,7 +104,7 @@ describe('bottom keyboard', () => {
   it('piano-bot has vnode key when bottom keyboard shown', () => {
     Scene.scene(
       { update: MusicBox.update, view: MusicBox.view },
-      Scene.with({ ...baseModel, showBottomKeyboard: true }),
+      Scene.with({ ...baseModel, bottomPanelMode: 'keyboard' }),
       Scene.Mount.resolveAll(resolvePianoTop, resolvePianoBot),
       Scene.expect(Scene.selector('[key="piano-bot"]')).toExist(),
       Scene.Command.expectNone(),
@@ -124,7 +124,7 @@ describe('bottom keyboard', () => {
   it('keybind-info has vnode key when bottom keyboard shown', () => {
     Scene.scene(
       { update: MusicBox.update, view: MusicBox.view },
-      Scene.with({ ...baseModel, showBottomKeyboard: true }),
+      Scene.with({ ...baseModel, bottomPanelMode: 'keyboard' }),
       Scene.Mount.resolveAll(resolvePianoTop, resolvePianoBot),
       Scene.expect(Scene.selector('[key="keybind"]')).toExist(),
       Scene.Command.expectNone(),
@@ -144,7 +144,7 @@ describe('bottom keyboard', () => {
   it('all six children have distinct vnode keys when bottom keyboard shown', () => {
     Scene.scene(
       { update: MusicBox.update, view: MusicBox.view },
-      Scene.with({ ...baseModel, showBottomKeyboard: true }),
+      Scene.with({ ...baseModel, bottomPanelMode: 'keyboard' }),
       Scene.Mount.resolveAll(resolvePianoTop, resolvePianoBot),
       Scene.expect(Scene.selector('[key="card"]')).toExist(),
       Scene.expect(Scene.selector('[key="inner"]')).toExist(),

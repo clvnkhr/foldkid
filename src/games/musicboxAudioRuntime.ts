@@ -7,6 +7,7 @@ export interface KeyHighlightHooks {
   readonly highlightKey: (pitch: string) => void
   readonly unhighlightKey: (pitch: string) => void
   readonly unhighlightAllKeys: () => void
+  readonly highlightDrum: (kind: DrumKind) => void
 }
 
 export interface ScheduledNote {
@@ -163,6 +164,7 @@ export const createMusicBoxAudioRuntime = (deps: MusicBoxAudioRuntimeDeps): Musi
     if (!ctx) return
     const now = ctx.currentTime + SAFETY_MARGIN
     const gain = DRUM_GAIN[hit.kind] * (hit.gain ?? 1)
+    deps.hooks.highlightDrum(hit.kind)
 
     switch (hit.kind) {
       case 'kick':

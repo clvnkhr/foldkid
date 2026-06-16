@@ -53,6 +53,11 @@ const cssClassNames = (css: string): string[] =>
       .filter(className => !generatedClassNames.has(className)),
   )].sort()
 
+const cssRule = (selector: string): string => {
+  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return styles.match(new RegExp(`${escapedSelector}\\s*\\{([^}]*)\\}`))?.[1] ?? ''
+}
+
 describe('styles.css invariants', () => {
   it('keeps the root stylesheet as an import manifest', () => {
     expect(stylesEntry.trim().split('\n').every(line => line.startsWith('@import '))).toBe(true)
@@ -77,6 +82,21 @@ describe('styles.css invariants', () => {
     ]) {
       expect(styles, selector).toContain(selector)
     }
+  })
+
+  it('keeps musicbox drumpads in the same footprint as the piano keyboard', () => {
+    const piano = cssRule('.piano-container')
+    const drumPad = cssRule('.drum-pad-panel')
+    const drumGrid = cssRule('.drum-pad-grid')
+
+    expect(drumPad).toContain('width: 100%')
+    expect(drumPad).toContain('height: 150px')
+    expect(drumPad).toContain('padding: 5px 4px 0')
+    expect(piano).toContain('width: 100%')
+    expect(piano).toContain('height: 150px')
+    expect(piano).toContain('padding: 5px 4px 0')
+    expect(drumGrid).toContain('grid-template-columns: repeat(3, minmax(0, 1fr))')
+    expect(drumGrid).toContain('grid-template-rows: repeat(2, minmax(0, 1fr))')
   })
 
   it('does not keep unused keyframes', () => {

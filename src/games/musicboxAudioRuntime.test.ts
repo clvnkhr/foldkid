@@ -17,15 +17,12 @@ describe('musicboxAudioRuntime', () => {
   it('ignores duplicate manual starts for the same pitch', () => {
     const starts: number[] = []
     const ctx = makeContext(starts)
+    const hooks = makeHooks()
     const runtime = createMusicBoxAudioRuntime({
       getContext: () => ctx,
       resetContext: vi.fn(),
       frequencies: MUSICBOX_FREQUENCIES,
-      hooks: {
-        highlightKey: vi.fn(),
-        unhighlightKey: vi.fn(),
-        unhighlightAllKeys: vi.fn(),
-      },
+      hooks,
     })
     const pitch = Pitch.unsafe('C4')
 
@@ -39,15 +36,12 @@ describe('musicboxAudioRuntime', () => {
     const starts: number[] = []
     const connections: Array<{ from: string; to: string }> = []
     const ctx = makeContext(starts, connections)
+    const hooks = makeHooks()
     const runtime = createMusicBoxAudioRuntime({
       getContext: () => ctx,
       resetContext: vi.fn(),
       frequencies: MUSICBOX_FREQUENCIES,
-      hooks: {
-        highlightKey: vi.fn(),
-        unhighlightKey: vi.fn(),
-        unhighlightAllKeys: vi.fn(),
-      },
+      hooks,
     })
     const pitch = Pitch.unsafe('C4')
 
@@ -62,15 +56,12 @@ describe('musicboxAudioRuntime', () => {
     const starts: number[] = []
     const connections: Array<{ from: string; to: string }> = []
     const ctx = makeContext(starts, connections)
+    const hooks = makeHooks()
     const runtime = createMusicBoxAudioRuntime({
       getContext: () => ctx,
       resetContext: vi.fn(),
       frequencies: MUSICBOX_FREQUENCIES,
-      hooks: {
-        highlightKey: vi.fn(),
-        unhighlightKey: vi.fn(),
-        unhighlightAllKeys: vi.fn(),
-      },
+      hooks,
     })
 
     runtime.playDrumHit({ kind: 'kick' })
@@ -79,7 +70,16 @@ describe('musicboxAudioRuntime', () => {
     expect(connections.filter(connection => connection.from === 'compressor' && connection.to === 'destination')).toHaveLength(1)
     expect(connections.filter(connection => connection.from === 'gain' && connection.to === 'compressor').length).toBeGreaterThanOrEqual(3)
     expect(connections.some(connection => connection.from === 'filter' && connection.to === 'gain')).toBe(true)
+    expect(hooks.highlightDrum).toHaveBeenCalledWith('kick')
+    expect(hooks.highlightDrum).toHaveBeenCalledWith('clap')
   })
+})
+
+const makeHooks = () => ({
+  highlightKey: vi.fn(),
+  unhighlightKey: vi.fn(),
+  unhighlightAllKeys: vi.fn(),
+  highlightDrum: vi.fn(),
 })
 
 const makeAudioParam = (initial = 0): AudioParam => ({

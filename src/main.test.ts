@@ -125,6 +125,8 @@ describe('settings persistence', () => {
     { label: 'BubblesClickedColor', msg: Bubbles.ClickedColor({ color: 'rainbow', duration: 500 }), resolves: resolveBubblesChime },
     { label: 'BubblesSetRainbowMode', msg: Bubbles.SetRainbowMode({ value: true }) },
     { label: 'MusicBoxNoteOn', msg: MusicBox.NoteOn({ pitch: 'C4' }) },
+    { label: 'MusicBoxSetBottomPanelMode', msg: MusicBox.SetBottomPanelMode({ value: 'drums' }) },
+    { label: 'MusicBoxDrumPadHit', msg: MusicBox.DrumPadHit({ kind: 'kick' }) },
   ]
 
   it('keeps the persisted message tag list aligned with persistence tests', () => {
