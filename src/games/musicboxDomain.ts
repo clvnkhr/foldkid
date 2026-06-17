@@ -3,7 +3,17 @@ export interface Note {
   dur: number
 }
 
-export const DRUM_KINDS = ['kick', 'snare', 'hat', 'clap', 'stomp', 'cheer'] as const
+export const DRUM_KINDS = [
+  'kick',
+  'snare',
+  'hatClosed',
+  'hatOpen',
+  'tomLow',
+  'tomHigh',
+  'clap',
+  'stomp',
+  'cheer',
+] as const
 
 export type DrumKind = typeof DRUM_KINDS[number]
 

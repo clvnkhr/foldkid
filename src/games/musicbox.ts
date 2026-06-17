@@ -28,6 +28,7 @@ import {
 import { SONGS, SONG_TKEYS } from './musicboxSongs'
 
 export {
+  DRUM_KEYBINDS,
   QWERTY_BLACKS,
   QWERTY_WHITES,
 } from './musicboxKeyboardRuntime'
@@ -44,7 +45,10 @@ const BottomPanelModeSchema = S.Union([S.Literal('simple'), S.Literal('drums'), 
 const DrumKindSchema = S.Union([
   S.Literal('kick'),
   S.Literal('snare'),
-  S.Literal('hat'),
+  S.Literal('hatClosed'),
+  S.Literal('hatOpen'),
+  S.Literal('tomLow'),
+  S.Literal('tomHigh'),
   S.Literal('clap'),
   S.Literal('stomp'),
   S.Literal('cheer'),
@@ -323,10 +327,10 @@ export const MAX_DRUM_VOLUME = 1
 const DRUM_PAD_BUTTONS: ReadonlyArray<{ readonly kind: DrumKind; readonly label: string }> = [
   { kind: 'kick', label: 'Kick' },
   { kind: 'snare', label: 'Snare' },
-  { kind: 'hat', label: 'Hat' },
-  { kind: 'clap', label: 'Clap' },
-  { kind: 'stomp', label: 'Stomp' },
-  { kind: 'cheer', label: 'Hurray' },
+  { kind: 'hatClosed', label: 'Hat' },
+  { kind: 'hatOpen', label: 'Open' },
+  { kind: 'tomLow', label: 'Low Tom' },
+  { kind: 'tomHigh', label: 'High Tom' },
 ]
 
 const clampDrumVolume = (value: number): number =>
@@ -764,7 +768,7 @@ export const view = (model: Model, language: string = 'en') => {
           : []),
         h.div([h.Class('keybind-info'), h.Key('keybind')], [
           'i',
-          h.div([h.Class('tooltip')], ['Z/X: Octave  Space: Play/Pause  QWERTY: Piano']),
+          h.div([h.Class('tooltip')], ['Z/X: Octave  Space: Play/Pause  QWERTY: Piano  C/V/B/N/M/,: Drums']),
         ]),
       ]),
     ],

@@ -86,7 +86,7 @@ const makeStorage = (): Storage => {
 }
 
 beforeEach(() => {
-  if (!globalThis.localStorage) {
+  if (!globalThis.localStorage || typeof globalThis.localStorage.clear !== 'function') {
     Object.defineProperty(globalThis, 'localStorage', {
       value: makeStorage(),
       configurable: true,

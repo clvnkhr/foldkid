@@ -38,10 +38,13 @@ const SAFETY_MARGIN = 0.03
 const DRUM_GAIN: Record<DrumKind, number> = {
   kick: 0.22,
   snare: 0.16,
-  hat: 0.06,
-  clap: 0.18,
-  stomp: 0.28,
-  cheer: 0.18,
+  hatClosed: 0.06,
+  hatOpen: 0.07,
+  tomLow: 0.24,
+  tomHigh: 0.2,
+  clap: 0.16,
+  stomp: 0.32,
+  cheer: 0.12,
 }
 
 export const createMusicBoxAudioRuntime = (deps: MusicBoxAudioRuntimeDeps): MusicBoxAudioRuntime => {
@@ -53,6 +56,12 @@ export const createMusicBoxAudioRuntime = (deps: MusicBoxAudioRuntimeDeps): Musi
 
   let masterCompressor: DynamicsCompressorNode | undefined
   let compressorContext: AudioContext | undefined
+  let activeOpenHat: {
+    readonly source: AudioBufferSourceNode
+    readonly filter: BiquadFilterNode
+    readonly gain: GainNode
+    readonly cleanupId: ReturnType<typeof setTimeout>
+  } | undefined
 
   const getMusicBoxContext = (): AudioContext | undefined => {
     const ctx = deps.getContext()
@@ -159,6 +168,120 @@ export const createMusicBoxAudioRuntime = (deps: MusicBoxAudioRuntimeDeps): Musi
     }, duration * 1000 + 100)
   }
 
+  const playTom = (
+    ctx: AudioContext,
+    at: number,
+    gainValue: number,
+    startFreq: number,
+    endFreq: number,
+    duration: number,
+  ): void => {
+    const osc = ctx.createOscillator()
+    osc.type = 'sine'
+    osc.frequency.setValueAtTime(startFreq, at)
+    osc.frequency.exponentialRampToValueAtTime(endFreq, at + duration * 0.7)
+    const body = ctx.createOscillator()
+    body.type = 'triangle'
+    body.frequency.setValueAtTime(startFreq * 1.48, at)
+    body.frequency.exponentialRampToValueAtTime(endFreq * 1.25, at + duration * 0.55)
+    const gain = ctx.createGain()
+    gain.gain.value = 0
+    gain.gain.setValueAtTime(0, at)
+    gain.gain.linearRampToValueAtTime(gainValue, at + 0.007)
+    gain.gain.exponentialRampToValueAtTime(0.0001, at + duration)
+    osc.connect(gain)
+    body.connect(gain)
+    connectToOutput(ctx, gain)
+    osc.start(at)
+    body.start(at)
+    osc.stop(at + duration + 0.01)
+    body.stop(at + duration + 0.01)
+    setTimeout(() => {
+      try { osc.stop() } catch { /* already stopped */ }
+      try { body.stop() } catch { /* already stopped */ }
+      osc.disconnect()
+      body.disconnect()
+      gain.disconnect()
+    }, duration * 1000 + 100)
+  }
+
+  const playClosedHat = (ctx: AudioContext, at: number, gainValue: number): void => {
+    chokeOpenHat(at)
+    playNoise(ctx, at, 0.04, gainValue, 'highpass', 6500)
+  }
+
+  const cleanupOpenHat = (): void => {
+    if (!activeOpenHat) return
+    const openHat = activeOpenHat
+    activeOpenHat = undefined
+    clearTimeout(openHat.cleanupId)
+    try { openHat.source.stop() } catch { /* already stopped */ }
+    openHat.source.disconnect()
+    openHat.filter.disconnect()
+    openHat.gain.disconnect()
+  }
+
+  const chokeOpenHat = (at: number): void => {
+    if (!activeOpenHat) return
+    const openHat = activeOpenHat
+    activeOpenHat = undefined
+    clearTimeout(openHat.cleanupId)
+    openHat.gain.gain.cancelScheduledValues(at)
+    openHat.gain.gain.setValueAtTime(Math.max(openHat.gain.gain.value, 0.0001), at)
+    openHat.gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.025)
+    try { openHat.source.stop(at + 0.03) } catch { /* already stopped */ }
+    setTimeout(() => {
+      openHat.source.disconnect()
+      openHat.filter.disconnect()
+      openHat.gain.disconnect()
+    }, 130)
+  }
+
+  const playClap = (ctx: AudioContext, at: number, gainValue: number): void => {
+    playNoise(ctx, at, 0.045, gainValue * 0.9, 'bandpass', 1500)
+    playNoise(ctx, at + 0.018, 0.055, gainValue * 0.85, 'bandpass', 1900)
+    playNoise(ctx, at + 0.043, 0.12, gainValue * 0.7, 'bandpass', 2300)
+    playNoise(ctx, at + 0.012, 0.035, gainValue * 0.22, 'highpass', 5200)
+  }
+
+  const playStomp = (ctx: AudioContext, at: number, gainValue: number): void => {
+    playThump(ctx, at, gainValue, 90, 34, 0.38)
+    playThump(ctx, at + 0.018, gainValue * 0.28, 64, 32, 0.42)
+    playNoise(ctx, at + 0.006, 0.16, gainValue * 0.42, 'lowpass', 520)
+  }
+
+  const playCheer = (ctx: AudioContext, at: number, gainValue: number): void => {
+    playNoise(ctx, at, 0.22, gainValue * 0.75, 'bandpass', 950)
+    playNoise(ctx, at + 0.045, 0.24, gainValue * 0.82, 'bandpass', 1500)
+    playNoise(ctx, at + 0.105, 0.2, gainValue * 0.62, 'bandpass', 2350)
+    playNoise(ctx, at + 0.16, 0.12, gainValue * 0.35, 'highpass', 4200)
+  }
+
+  const playChokableOpenHat = (ctx: AudioContext, at: number, gainValue: number): void => {
+    cleanupOpenHat()
+    const source = makeNoiseSource(ctx, 0.46)
+    const filter = ctx.createBiquadFilter()
+    filter.type = 'highpass'
+    filter.frequency.value = 4800
+    filter.Q.value = 0.9
+    const gain = ctx.createGain()
+    gain.gain.value = 0
+    gain.gain.setValueAtTime(0, at)
+    gain.gain.linearRampToValueAtTime(gainValue, at + 0.004)
+    gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.46)
+    source.connect(filter)
+    filter.connect(gain)
+    connectToOutput(ctx, gain)
+    source.start(at)
+    source.stop(at + 0.47)
+    activeOpenHat = {
+      source,
+      filter,
+      gain,
+      cleanupId: setTimeout(cleanupOpenHat, 570),
+    }
+  }
+
   const playDrumHit = (hit: Omit<DrumHit, 'at'>): void => {
     const ctx = getMusicBoxContext()
     if (!ctx) return
@@ -170,24 +293,30 @@ export const createMusicBoxAudioRuntime = (deps: MusicBoxAudioRuntimeDeps): Musi
       case 'kick':
         playThump(ctx, now, gain, 130, 48, 0.24)
         break
-      case 'stomp':
-        playThump(ctx, now, gain, 95, 36, 0.34)
-        playNoise(ctx, now + 0.01, 0.11, gain * 0.35, 'lowpass', 650)
-        break
       case 'snare':
         playNoise(ctx, now, 0.13, gain, 'bandpass', 1600)
         playThump(ctx, now, gain * 0.35, 190, 150, 0.09)
         break
-      case 'hat':
-        playNoise(ctx, now, 0.055, gain, 'highpass', 4200)
+      case 'hatClosed':
+        playClosedHat(ctx, now, gain)
+        break
+      case 'hatOpen':
+        playChokableOpenHat(ctx, now, gain)
+        break
+      case 'tomLow':
+        playTom(ctx, now, gain, 170, 92, 0.3)
+        break
+      case 'tomHigh':
+        playTom(ctx, now, gain, 235, 135, 0.24)
         break
       case 'clap':
-        playNoise(ctx, now, 0.075, gain, 'bandpass', 1800)
-        playNoise(ctx, now + 0.055, 0.08, gain * 0.85, 'bandpass', 1700)
+        playClap(ctx, now, gain)
+        break
+      case 'stomp':
+        playStomp(ctx, now, gain)
         break
       case 'cheer':
-        playNoise(ctx, now, 0.16, gain * 0.8, 'bandpass', 2200)
-        playNoise(ctx, now + 0.09, 0.08, gain * 0.55, 'highpass', 3600)
+        playCheer(ctx, now, gain)
         break
     }
   }

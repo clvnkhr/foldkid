@@ -99,6 +99,16 @@ describe('styles.css invariants', () => {
     expect(drumGrid).toContain('grid-template-rows: repeat(2, minmax(0, 1fr))')
   })
 
+  it('keeps the settings panel scrollable on touch devices', () => {
+    const settingsPanel = cssRule('.settings-panel')
+    const dragHandle = cssRule('.settings-drag-handle')
+
+    expect(settingsPanel).toContain('overflow-y: auto')
+    expect(settingsPanel).toContain('touch-action: pan-y')
+    expect(settingsPanel).toContain('-webkit-overflow-scrolling: touch')
+    expect(dragHandle).toContain('touch-action: none')
+  })
+
   it('does not keep unused keyframes', () => {
     const keyframes = [...styles.matchAll(/@keyframes\s+([-_a-zA-Z0-9]+)/g)].map(match => match[1]!)
 

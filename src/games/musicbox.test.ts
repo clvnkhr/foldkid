@@ -3,10 +3,13 @@ import { Scene, Story } from 'foldkit/test'
 import { Effect, Fiber } from 'effect'
 import { resetContext } from '../audio'
 import * as MusicBox from './musicbox'
+import { withDrums } from './musicboxSongs/helpers'
 
 const resolvePianoTop = [{ name: 'piano-top' as const }, MusicBox.NoteOn({ pitch: 'C4' })] as const
 const resolvePianoBot = [{ name: 'piano-bot' as const }, MusicBox.NoteOn({ pitch: 'C3' })] as const
 const resolveMount = [resolvePianoTop]
+const defaultSongOrder = () => MusicBox.SONGS.map((_, index) => index)
+const defaultHiddenSongs = () => MusicBox.SONGS.map(() => false)
 const originalAudioContext = globalThis.AudioContext
 const originalAudio = globalThis.Audio
 
@@ -165,7 +168,7 @@ describe('MusicBox', () => {
     expect(MusicBox.init()).toStrictEqual({
       selectedSong: 0, selectedInstrument: 0, isPlaying: false, isPaused: false, songTranspose: 0,
       whiteKeys: 8, bottomPanelMode: 'simple', octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, drumVolume: 1, lyricsExpanded: false,
-      songOrder: [0, 1, 2, 3, 4, 5, 6], hiddenSongs: [false, false, false, false, false, false, false], dragIndex: -1,
+      songOrder: defaultSongOrder(), hiddenSongs: defaultHiddenSongs(), dragIndex: -1,
     })
   })
 
@@ -183,6 +186,41 @@ describe('MusicBox', () => {
     document.dispatchEvent(up)
 
     expect(up.defaultPrevented).toBe(true)
+  })
+
+  it('QWERTY right bracket starts F#5 instead of left bracket', () => {
+    globalThis.AudioContext = MockAudioContext as unknown as typeof AudioContext
+    MusicBox.init()
+
+    const oldDown = new KeyboardEvent('keydown', { key: '[', cancelable: true })
+    document.dispatchEvent(oldDown)
+    expect(oldDown.defaultPrevented).toBe(false)
+    expect(startedFrequencies).toEqual([])
+
+    const newDown = new KeyboardEvent('keydown', { key: ']', cancelable: true })
+    document.dispatchEvent(newDown)
+    expect(newDown.defaultPrevented).toBe(true)
+    expect(startedFrequencies[0]!).toBeCloseTo(MusicBox.FREQUENCIES['F#5']!)
+  })
+
+  it('drum keybinds trigger the visible drum kit', () => {
+    globalThis.AudioContext = MockAudioContext as unknown as typeof AudioContext
+    MusicBox.init()
+
+    expect(MusicBox.DRUM_KEYBINDS.map(({ qwerty, kind }) => [qwerty, kind])).toEqual([
+      ['C', 'kick'],
+      ['V', 'snare'],
+      ['B', 'hatClosed'],
+      ['N', 'hatOpen'],
+      ['M', 'tomLow'],
+      [',', 'tomHigh'],
+    ])
+
+    const down = new KeyboardEvent('keydown', { key: 'c', cancelable: true, bubbles: true })
+    document.body.dispatchEvent(down)
+
+    expect(down.defaultPrevented).toBe(true)
+    expect(startedFrequencies[0]!).toBeCloseTo(130)
   })
 
   it('QWERTY keys follow the rendered octave offset', () => {
@@ -950,6 +988,16 @@ describe('MusicBox', () => {
       expect(new Set(keys).size).toBe(keys.length)
     })
 
+    it('includes the added nursery songs with title keys', () => {
+      const keys = MusicBox.SONGS.map(song => song.key)
+
+      expect(keys).toEqual(expect.arrayContaining(['incy', 'fish', 'duke', 'frere']))
+      expect(MusicBox.SONG_TKEYS.incy).toBe('musicBoxIncy')
+      expect(MusicBox.SONG_TKEYS.fish).toBe('musicBoxFish')
+      expect(MusicBox.SONG_TKEYS.duke).toBe('musicBoxDuke')
+      expect(MusicBox.SONG_TKEYS.frere).toBe('musicBoxFrere')
+    })
+
     it('all songs have valid lofi drum tracks inside the song timeline', () => {
       for (const song of MusicBox.SONGS) {
         const totalDuration = song.notes.reduce((sum, note) => sum + note.dur, 0)
@@ -976,19 +1024,74 @@ describe('MusicBox', () => {
       expect(timesFor('row', 'snare').slice(0, 4)).toEqual([1.5, 4.5, 7.5, 10.5])
       expect(timesFor('row', 'kick')).not.toContain(4)
 
-      expect(timesFor('birthday', 'kick').slice(0, 4)).toEqual([0, 3, 6, 9])
-      expect(timesFor('birthday', 'snare').slice(0, 4)).toEqual([2, 5, 8, 11])
-      expect(timesFor('birthday', 'kick')).not.toContain(4)
+      expect(timesFor('birthday', 'kick').slice(0, 4)).toEqual([1, 4, 7, 10])
+      expect(timesFor('birthday', 'snare').slice(0, 4)).toEqual([3, 6, 9, 12])
+      expect(timesFor('birthday', 'kick')).not.toContain(0)
+
+      expect(timesFor('incy', 'kick').slice(0, 4)).toEqual([0.5, 3.5, 6.5, 9.5])
+      expect(timesFor('incy', 'snare').slice(0, 4)).toEqual([2, 5, 8, 11])
+      expect(timesFor('incy', 'kick')).not.toContain(0)
 
       expect(timesFor('happy', 'kick').slice(0, 3)).toEqual([1.5, 4.5, 7.5])
       expect(timesFor('happy', 'kick')).not.toContain(0)
       expect(timesFor('happy', 'clap').slice(0, 2)).toEqual([9, 10.5])
-      expect(timesFor('happy', 'hat')).not.toContain(9.5)
-      expect(timesFor('happy', 'hat')).not.toContain(10)
-      expect(timesFor('happy', 'hat')).not.toContain(11)
-      expect(timesFor('happy', 'hat')).not.toContain(11.5)
+      expect(timesFor('happy', 'hatClosed')).not.toContain(9.5)
+      expect(timesFor('happy', 'hatClosed')).not.toContain(10)
+      expect(timesFor('happy', 'hatClosed')).not.toContain(11)
+      expect(timesFor('happy', 'hatClosed')).not.toContain(11.5)
       expect(timesFor('happy', 'kick')).not.toContain(9)
       expect(timesFor('happy', 'snare')).not.toContain(10.5)
+    })
+
+    it('can offset generated drums and trims hits outside the song timeline', () => {
+      const song = withDrums({
+        key: 'offset-test',
+        emoji: '🥁',
+        lyrics: ['Offset test'],
+        notes: [{ pitch: 'C4', dur: 4 }],
+      }, () => [
+        { at: 0, kind: 'kick' },
+        { at: 3.5, kind: 'snare' },
+      ], { drumOffset: 0.75 })
+
+      expect(song.drums.map(drum => [drum.at, drum.kind])).toEqual([[0.75, 'kick']])
+    })
+
+    it('can derive drum offsets from pickup notes', () => {
+      const song = withDrums({
+        key: 'pickup-test',
+        emoji: '🥁',
+        lyrics: ['Pickup test'],
+        notes: [
+          { pitch: 'C4', dur: 0.5 },
+          { pitch: 'D4', dur: 0.5 },
+          { pitch: 'E4', dur: 4 },
+        ],
+      }, () => [
+        { at: 0, kind: 'kick' },
+        { at: 2, kind: 'snare' },
+      ], { pickupNotes: 2 })
+
+      expect(song.drums.map(drum => [drum.at, drum.kind])).toEqual([
+        [1, 'kick'],
+        [3, 'snare'],
+      ])
+    })
+
+    it('accepts drum options without passing a custom drum maker', () => {
+      const song = withDrums({
+        key: 'default-pickup-test',
+        emoji: '🥁',
+        lyrics: ['Default pickup test'],
+        notes: [
+          { pitch: 'C4', dur: 0.5 },
+          { pitch: 'D4', dur: 0.5 },
+          { pitch: 'E4', dur: 4 },
+        ],
+      }, { pickupNotes: 2 })
+
+      expect(song.drums.find(drum => drum.kind === 'kick')?.at).toBe(1)
+      expect(song.drums.find(drum => drum.kind === 'snare')?.at).toBe(3)
     })
 
     it('happy song follows the sourced 6/8 melody and rhythm for every verse', () => {
@@ -1046,6 +1149,54 @@ describe('MusicBox', () => {
         ...restStarts.slice(6, 12).map(start => [start, 'stomp']),
         ...restStarts.slice(12, 18).map(start => [start, 'cheer']),
       ])
+    })
+
+    it('fish song follows the corrected melody and repeats once', () => {
+      const fish = MusicBox.SONGS.find(song => song.key === 'fish')
+      expect(fish).toBeDefined()
+      const expectedVerse = [
+        ['E4', 1], ['E4', 1], ['D4', 0.5], ['C4', 0.5], ['C4', 1],
+        ['C4', 0.5], ['D4', 0.5], ['E4', 0.5], ['G4', 0.5],
+        ['G4', 0.5], ['F4', 0.5], ['F4', 1],
+        ['F4', 1], ['F4', 0.5], ['E4', 0.5],
+        ['E4', 0.5], ['D4', 0.5], ['D4', 1],
+        ['C4', 0.5], ['B3', 0.5], ['A3', 0.5], ['B3', 0.5],
+        ['D4', 0.5], ['C4', 0.5], ['C4', 1],
+      ]
+
+      expect(fish!.notes).toHaveLength(expectedVerse.length * 2)
+      expect(fish!.notes.slice(0, expectedVerse.length).map(note => [note.pitch, note.dur])).toEqual(expectedVerse)
+      expect(fish!.notes.slice(expectedVerse.length).map(note => [note.pitch, note.dur])).toEqual(expectedVerse)
+    })
+
+    it('duke song follows the corrected Eb-major melody with lead-in drums', () => {
+      const duke = MusicBox.SONGS.find(song => song.key === 'duke')
+      expect(duke).toBeDefined()
+
+      const expectedMelody = [
+        ['D#4', 0.5], ['F4', 0.5], ['G4', 1], ['D#4', 1],
+        ['D#4', 1], ['D#4', 1], ['D#4', 3],
+        ['D#4', 1], ['F4', 1], ['F4', 1], ['F4', 1], ['F4', 1], ['F4', 3],
+        ['F4', 0.5], ['F4', 0.5], ['G4', 1], ['G4', 1], ['G4', 1],
+        ['G4', 0.5], ['G4', 0.5],
+        ['G#4', 1], ['G#4', 1], ['G#4', 1], ['G#4', 0.5], ['G#4', 0.5],
+        ['G4', 1], ['D#4', 1], ['F4', 1], ['D4', 1], ['D#4', 3],
+        ['A#3', 1], ['D#4', 1], ['D#4', 1], ['D#4', 1], ['D#4', 1], ['D#4', 3],
+        ['D#4', 1], ['F4', 1], ['F4', 1], ['F4', 1], ['F4', 1], ['F4', 3],
+        ['F4', 0.5], ['F4', 0.5], ['G4', 1], ['G4', 1], ['G4', 1],
+        ['G4', 0.5], ['G4', 0.5],
+        ['G#4', 1], ['G#4', 1], ['G#4', 1], ['G#4', 0.5], ['G#4', 0.5],
+        ['G4', 1], ['D#4', 1], ['F4', 1], ['D4', 1], ['D#4', 3], ['', 1],
+      ]
+      const duration = duke!.notes.reduce((sum, note) => sum + note.dur, 0)
+
+      expect(duration).toBe(65)
+      expect(duke!.notes.map(note => [note.pitch, note.dur])).toEqual(expectedMelody)
+      expect(duke!.drums.some(drum => drum.at === 0)).toBe(false)
+      expect(duke!.drums.filter(drum => drum.kind === 'kick').slice(0, 4).map(drum => drum.at))
+        .toEqual([1, 5, 9, 13])
+      expect(duke!.drums.filter(drum => drum.kind === 'snare').slice(0, 4).map(drum => drum.at))
+        .toEqual([3, 7, 11, 15])
     })
   })
 
@@ -1139,7 +1290,7 @@ describe('MusicBox', () => {
     it('renders stop button when playing', () => {
       Scene.scene(
         { update: MusicBox.update, view: MusicBox.view },
-        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: true, whiteKeys: 12, bottomPanelMode: 'keyboard', tempo: 1, lyricsExpanded: false, songOrder: [0, 1, 2, 3, 4, 5, 6], hiddenSongs: [false, false, false, false, false, false, false], dragIndex: -1 }),
+        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: true, whiteKeys: 12, bottomPanelMode: 'keyboard', tempo: 1, lyricsExpanded: false, songOrder: defaultSongOrder(), hiddenSongs: defaultHiddenSongs(), dragIndex: -1 }),
         Scene.Mount.resolveAll(resolvePianoTop, resolvePianoBot),
         Scene.expect(Scene.selector('#musicbox-stop svg')).toExist(),
         Scene.Command.expectNone(),
@@ -1149,7 +1300,7 @@ describe('MusicBox', () => {
     it('play button disabled when playing', () => {
       Scene.scene(
         { update: MusicBox.update, view: MusicBox.view },
-        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: true, whiteKeys: 12, bottomPanelMode: 'keyboard', tempo: 1, lyricsExpanded: false, songOrder: [0, 1, 2, 3, 4, 5, 6], hiddenSongs: [false, false, false, false, false, false, false], dragIndex: -1 }),
+        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: true, whiteKeys: 12, bottomPanelMode: 'keyboard', tempo: 1, lyricsExpanded: false, songOrder: defaultSongOrder(), hiddenSongs: defaultHiddenSongs(), dragIndex: -1 }),
         Scene.Mount.resolveAll(resolvePianoTop, resolvePianoBot),
         Scene.expect(Scene.selector('#musicbox-play svg')).toExist(),
         Scene.Command.expectNone(),
@@ -1189,7 +1340,7 @@ describe('MusicBox', () => {
     it('- button exists at MIN_WHITE_KEYS', () => {
       Scene.scene(
         { update: MusicBox.update, view: MusicBox.view },
-        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MIN_WHITE_KEYS, bottomPanelMode: 'keyboard', tempo: 1, lyricsExpanded: false, songOrder: [0, 1, 2, 3, 4, 5, 6], hiddenSongs: [false, false, false, false, false, false, false], dragIndex: -1 }),
+        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MIN_WHITE_KEYS, bottomPanelMode: 'keyboard', tempo: 1, lyricsExpanded: false, songOrder: defaultSongOrder(), hiddenSongs: defaultHiddenSongs(), dragIndex: -1 }),
         Scene.Mount.resolveAll(resolvePianoTop, resolvePianoBot),
         Scene.expect(Scene.text('−')).toExist(),
         Scene.Command.expectNone(),
@@ -1199,7 +1350,7 @@ describe('MusicBox', () => {
     it('+ button exists at MAX_WHITE_KEYS', () => {
       Scene.scene(
         { update: MusicBox.update, view: MusicBox.view },
-        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MAX_WHITE_KEYS, bottomPanelMode: 'keyboard', tempo: 1, lyricsExpanded: false, songOrder: [0, 1, 2, 3, 4, 5, 6], hiddenSongs: [false, false, false, false, false, false, false], dragIndex: -1 }),
+        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MAX_WHITE_KEYS, bottomPanelMode: 'keyboard', tempo: 1, lyricsExpanded: false, songOrder: defaultSongOrder(), hiddenSongs: defaultHiddenSongs(), dragIndex: -1 }),
         Scene.Mount.resolveAll(resolvePianoTop, resolvePianoBot),
         Scene.expect(Scene.text('+')).toExist(),
         Scene.Command.expectNone(),
@@ -1231,7 +1382,7 @@ describe('MusicBox', () => {
     it('does not render bottom keyboard in simple lower panel mode', () => {
       Scene.scene(
         { update: MusicBox.update, view: MusicBox.view },
-        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 12, bottomPanelMode: 'simple', octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, lyricsExpanded: false, songOrder: [0, 1, 2, 3, 4, 5, 6], hiddenSongs: [false, false, false, false, false, false, false], dragIndex: -1 }),
+        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 12, bottomPanelMode: 'simple', octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, lyricsExpanded: false, songOrder: defaultSongOrder(), hiddenSongs: defaultHiddenSongs(), dragIndex: -1 }),
         Scene.Mount.resolveAll(resolvePianoTop),
         Scene.expect(Scene.selector('[key="piano-bot"]')).not.toExist(),
         Scene.Command.expectNone(),
@@ -1245,6 +1396,13 @@ describe('MusicBox', () => {
         Scene.Mount.resolveAll(resolvePianoTop),
         Scene.expect(Scene.selector('[key="drum-pad"]')).toExist(),
         Scene.expect(Scene.selector('[data-drum-kind="kick"]')).toExist(),
+        Scene.expect(Scene.selector('[data-drum-kind="hatClosed"]')).toExist(),
+        Scene.expect(Scene.selector('[data-drum-kind="hatOpen"]')).toExist(),
+        Scene.expect(Scene.selector('[data-drum-kind="tomLow"]')).toExist(),
+        Scene.expect(Scene.selector('[data-drum-kind="tomHigh"]')).toExist(),
+        Scene.expect(Scene.selector('[data-drum-kind="clap"]')).not.toExist(),
+        Scene.expect(Scene.selector('[data-drum-kind="stomp"]')).not.toExist(),
+        Scene.expect(Scene.selector('[data-drum-kind="cheer"]')).not.toExist(),
         Scene.expect(Scene.selector('[key="piano-bot"]')).not.toExist(),
         Scene.Command.expectNone(),
       )

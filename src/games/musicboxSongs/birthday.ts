@@ -10,18 +10,18 @@ export const song = withDrums({
     "Happy birthday to you!",
   ],
   notes: [
-    { pitch: 'C4', dur: 1 }, { pitch: 'C4', dur: 1 },
+    { pitch: 'C4', dur: 0.5 }, { pitch: 'C4', dur: 0.5 },
     { pitch: 'D4', dur: 1 }, { pitch: 'C4', dur: 1 },
     { pitch: 'F4', dur: 1 }, { pitch: 'E4', dur: 2 },
-    { pitch: 'C4', dur: 1 }, { pitch: 'C4', dur: 1 },
+    { pitch: 'C4', dur: 0.5 }, { pitch: 'C4', dur: 0.5 },
     { pitch: 'D4', dur: 1 }, { pitch: 'C4', dur: 1 },
     { pitch: 'G4', dur: 1 }, { pitch: 'F4', dur: 2 },
-    { pitch: 'C4', dur: 1 }, { pitch: 'C4', dur: 1 },
+    { pitch: 'C4', dur: 0.5 }, { pitch: 'C4', dur: 0.5 },
     { pitch: 'C5', dur: 1 }, { pitch: 'A4', dur: 1 },
     { pitch: 'F4', dur: 1 }, { pitch: 'E4', dur: 1 },
     { pitch: 'D4', dur: 2 },
-    { pitch: 'A#4', dur: 1 }, { pitch: 'A#4', dur: 1 },
+    { pitch: 'A#4', dur: 0.5 }, { pitch: 'A#4', dur: 0.5 },
     { pitch: 'A4', dur: 1 }, { pitch: 'F4', dur: 1 },
     { pitch: 'G4', dur: 1 }, { pitch: 'F4', dur: 2 },
   ],
-}, makeThreeFourDrums)
+}, makeThreeFourDrums, { pickupNotes: 2 })

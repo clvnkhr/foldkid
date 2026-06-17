@@ -1,5 +1,5 @@
 import { MutableRef } from 'effect'
-import type { FrequencyTable, Instrument, Pitch } from './musicboxDomain'
+import type { DrumKind, FrequencyTable, Instrument, Pitch } from './musicboxDomain'
 import { Pitch as PitchValue } from './musicboxDomain'
 import type { MusicBoxAudioRuntime } from './musicboxAudioRuntime'
 
@@ -31,7 +31,16 @@ export const QWERTY_BLACKS: QWERTYKey[] = [
   { qwerty: 'U', pitch: PitchValue.unsafe('A#4') },
   { qwerty: 'O', pitch: PitchValue.unsafe('C#5') },
   { qwerty: 'P', pitch: PitchValue.unsafe('D#5') },
-  { qwerty: '[', pitch: PitchValue.unsafe('F#5') },
+  { qwerty: ']', pitch: PitchValue.unsafe('F#5') },
+]
+
+export const DRUM_KEYBINDS: ReadonlyArray<{ readonly qwerty: string; readonly kind: DrumKind }> = [
+  { qwerty: 'C', kind: 'kick' },
+  { qwerty: 'V', kind: 'snare' },
+  { qwerty: 'B', kind: 'hatClosed' },
+  { qwerty: 'N', kind: 'hatOpen' },
+  { qwerty: 'M', kind: 'tomLow' },
+  { qwerty: ',', kind: 'tomHigh' },
 ]
 
 export interface MusicBoxKeyboardRuntime {
@@ -46,7 +55,7 @@ export interface MusicBoxKeyboardRuntimeDeps {
   readonly getInstrument: () => Instrument | undefined
   readonly audio: Pick<
     MusicBoxAudioRuntime,
-    'primeFromGesture' | 'startManualNote' | 'stopManualNote' | 'clearActiveNotes'
+    'primeFromGesture' | 'startManualNote' | 'stopManualNote' | 'playDrumHit' | 'clearActiveNotes'
   >
 }
 
@@ -55,6 +64,9 @@ const SILENT_WAV = 'data:audio/wav;base64,UklGRiYAAABXQVZFZm10IBAAAAABAAEARKwAAI
 const QWERTY_MAP: Record<string, Pitch> = {}
 for (const k of QWERTY_WHITES) QWERTY_MAP[k.qwerty.toLowerCase()] = k.pitch
 for (const k of QWERTY_BLACKS) QWERTY_MAP[k.qwerty.toLowerCase()] = k.pitch
+
+const DRUM_KEY_MAP: Partial<Record<string, DrumKind>> = {}
+for (const k of DRUM_KEYBINDS) DRUM_KEY_MAP[k.qwerty.toLowerCase()] = k.kind
 
 const applyOctaveOffset = (pitch: Pitch, offset: number, frequencies: FrequencyTable): Pitch | undefined => {
   if (offset === 0) return pitch
@@ -124,7 +136,12 @@ export const createMusicBoxKeyboardRuntime = (deps: MusicBoxKeyboardRuntimeDeps)
     const target = e.target
     if (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA') return
     const key = e.key.toLowerCase()
-    if (key === 'z') {
+    const drumKind = DRUM_KEY_MAP[key]
+    if (drumKind) {
+      e.preventDefault()
+      deps.audio.primeFromGesture()
+      deps.audio.playDrumHit({ kind: drumKind })
+    } else if (key === 'z') {
       e.preventDefault()
       deps.document.getElementById('octave-down')?.click()
     } else if (key === 'x') {

@@ -5,13 +5,15 @@ import * as MusicBox from './musicbox'
 
 const resolvePianoTop = [{ name: 'piano-top' as const }, MusicBox.NoteOn({ pitch: 'C4' })] as const
 const resolvePianoBot = [{ name: 'piano-bot' as const }, MusicBox.NoteOn({ pitch: 'C3' })] as const
+const defaultSongOrder = () => MusicBox.SONGS.map((_, index) => index)
+const defaultHiddenSongs = () => MusicBox.SONGS.map(() => false)
 
 const baseModel = {
   selectedSong: 0, selectedInstrument: 0, isPlaying: false, isPaused: false,
   songTranspose: 0, whiteKeys: 8, bottomPanelMode: 'simple',
   octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1,
-  lyricsExpanded: false, songOrder: [0, 1, 2, 3, 4, 5, 6],
-  hiddenSongs: [false, false, false, false, false, false, false], dragIndex: -1,
+  lyricsExpanded: false, songOrder: defaultSongOrder(),
+  hiddenSongs: defaultHiddenSongs(), dragIndex: -1,
 }
 
 describe('bottom keyboard', () => {

@@ -13,7 +13,11 @@
   flex-direction: column;
   gap: 1.25rem;
   animation: slideIn 0.25s ease-out;
-  touch-action: none;
+  max-height: 100vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 
 @keyframes slideIn {
