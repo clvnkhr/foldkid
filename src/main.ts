@@ -104,6 +104,9 @@ const normalizeSongOrder = (value: readonly number[] | undefined, fallback: read
 const normalizeHiddenSongs = (value: readonly boolean[] | undefined): boolean[] =>
   MusicBox.SONGS.map((_, index) => value?.[index] === true)
 
+const normalizeDrumVolume = (value: number | undefined, fallback: number): number =>
+  value === undefined ? fallback : Math.min(1, Math.max(0, value))
+
 const buildSettingsData = (model: Model): PersistedSettings => ({
   version: SETTINGS_VERSION,
   language: model.language,
@@ -299,6 +302,7 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
         ...musicBoxInit,
         songOrder: normalizeSongOrder(saved.musicBoxSongOrder, musicBoxInit.songOrder),
         hiddenSongs: normalizeHiddenSongs(saved.musicBoxHiddenSongs),
+        drumVolume: normalizeDrumVolume(saved.musicBoxDrumVolume, musicBoxInit.drumVolume),
       },
       counter: {
         ...Counter.init,
@@ -410,7 +414,7 @@ const applyImportData = (model: Model, s: PersistedSettings): Model => {
       ...model.musicBox,
       songOrder: normalizeSongOrder(s.musicBoxSongOrder, model.musicBox.songOrder),
       hiddenSongs: normalizeHiddenSongs(s.musicBoxHiddenSongs),
-      drumVolume: s.musicBoxDrumVolume === undefined ? model.musicBox.drumVolume : Math.min(1, Math.max(0, s.musicBoxDrumVolume)),
+      drumVolume: normalizeDrumVolume(s.musicBoxDrumVolume, model.musicBox.drumVolume),
     },
     landingOrder: isLandingOrder(s.landingOrder)
       ? [...s.landingOrder]
@@ -606,6 +610,9 @@ export const PERSISTED_SETTINGS_MESSAGE_TAGS = [
   'MusicBoxSetDrumVolume', 'MusicBoxToggleSongVisibility', 'MusicBoxSongDroppedOn',
 ] as const satisfies ReadonlyArray<Message['_tag']>
 
+type PersistedSettingsMessageTag = typeof PERSISTED_SETTINGS_MESSAGE_TAGS[number]
+type PersistedSettingsMessage = Extract<Message, { readonly _tag: PersistedSettingsMessageTag }>
+
 const persistedSettingsMessageTags = new Set<Message['_tag']>(PERSISTED_SETTINGS_MESSAGE_TAGS)
 
 export const shouldPersistSettings = (message: Message): boolean =>
@@ -661,6 +668,9 @@ export const preventDoubleTapZoomStream = (): Stream.Stream<never> =>
 
 export const view = (model: Model): Document => {
   const h = html<Message>()
+  const settingsOnClick = (message: PersistedSettingsMessage) => h.OnClick(message)
+  const settingsOnDrop = (message: PersistedSettingsMessage) => h.OnDrop(message)
+  const settingsOnInput = (toMessage: (value: string) => PersistedSettingsMessage) => h.OnInput(toMessage)
 
   const isLanding = model.page._tag === 'PageLanding'
   const isDark = model.darkMode === 'dark' || (model.darkMode === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches)
@@ -745,7 +755,7 @@ export const view = (model: Model): Document => {
                 h.button(
                   [
                     h.Class(val === model.language ? 'btn btn-primary' : 'btn btn-secondary'),
-                    h.OnClick(SetLanguage({ value: val })),
+                    settingsOnClick(SetLanguage({ value: val })),
                   ],
                   [label],
                 ),
@@ -758,7 +768,7 @@ export const view = (model: Model): Document => {
               h.button(
                 [
                   h.Class('mute-toggle'),
-                  h.OnClick(ToggleMute()),
+                  settingsOnClick(ToggleMute()),
                 ],
                 [model.muted ? ICON_MUTED : ICON_UNMUTED],
               ),
@@ -772,7 +782,7 @@ export const view = (model: Model): Document => {
                   h.Max('3'),
                   h.Step('0.1'),
                   h.Value(model.speechRate.toString()),
-                  h.OnInput((v) => SetSpeechRate({ value: parseFloat(v) })),
+                  settingsOnInput((v) => SetSpeechRate({ value: parseFloat(v) })),
                 ]),
                 h.span([], [model.speechRate.toFixed(1)]),
               ]),
@@ -786,7 +796,7 @@ export const view = (model: Model): Document => {
                   h.Max('4'),
                   h.Step('0.1'),
                   h.Value(model.speechPitch.toString()),
-                  h.OnInput((v) => SetSpeechPitch({ value: parseFloat(v) })),
+                  settingsOnInput((v) => SetSpeechPitch({ value: parseFloat(v) })),
                 ]),
                 h.span([], [model.speechPitch.toFixed(1)]),
               ]),
@@ -806,7 +816,7 @@ export const view = (model: Model): Document => {
                     h.button(
                       [
                         h.Class(val === model.counter.displayMode ? 'btn btn-primary' : 'btn btn-secondary'),
-                        h.OnClick(Counter.SetDisplayMode({ value: val })),
+                        settingsOnClick(Counter.SetDisplayMode({ value: val })),
                       ],
                       [label],
                     ),
@@ -826,7 +836,7 @@ export const view = (model: Model): Document => {
                   h.button(
                     [
                       h.Class(val === model.findIt.anyWins ? 'btn btn-primary' : 'btn btn-secondary'),
-                      h.OnClick(FindIt.SetAnyWins({ value: val })),
+                      settingsOnClick(FindIt.SetAnyWins({ value: val })),
                     ],
                     [label],
                   ),
@@ -834,21 +844,21 @@ export const view = (model: Model): Document => {
               ]),
               h.div([h.Class('lang-buttons'), h.Style({ marginTop: '0.5rem' })], [
                 h.button(
-                  [h.Class(!model.findIt.voiceMode ? 'btn btn-primary' : 'btn btn-secondary'), h.OnClick(FindIt.SetVoiceMode({ value: false }))],
+                  [h.Class(!model.findIt.voiceMode ? 'btn btn-primary' : 'btn btn-secondary'), settingsOnClick(FindIt.SetVoiceMode({ value: false }))],
                   [ICON_TEXT_MODE],
                 ),
                 h.button(
-                  [h.Class(model.findIt.voiceMode ? 'btn btn-primary' : 'btn btn-secondary'), h.OnClick(FindIt.SetVoiceMode({ value: true }))],
+                  [h.Class(model.findIt.voiceMode ? 'btn btn-primary' : 'btn btn-secondary'), settingsOnClick(FindIt.SetVoiceMode({ value: true }))],
                   [`${ICON_VOICE_MODE} ${t('voiceMode', model.language)}`],
                 ),
               ]),
               h.div([h.Class('lang-buttons'), h.Style({ marginTop: '0.5rem' })], [
                 h.button(
-                  [h.Class(!model.findIt.pairsMode ? 'btn btn-primary' : 'btn btn-secondary'), h.OnClick(FindIt.SetPairsMode({ value: false }))],
+                  [h.Class(!model.findIt.pairsMode ? 'btn btn-primary' : 'btn btn-secondary'), settingsOnClick(FindIt.SetPairsMode({ value: false }))],
                   [t('singleMode', model.language)],
                 ),
                 h.button(
-                  [h.Class(model.findIt.pairsMode ? 'btn btn-primary' : 'btn btn-secondary'), h.OnClick(FindIt.SetPairsMode({ value: true }))],
+                  [h.Class(model.findIt.pairsMode ? 'btn btn-primary' : 'btn btn-secondary'), settingsOnClick(FindIt.SetPairsMode({ value: true }))],
                   [t('pairsMode', model.language)],
                 ),
               ]),
@@ -862,7 +872,7 @@ export const view = (model: Model): Document => {
                       [
                         h.Class(enabled ? 'btn btn-primary emoji-pack-btn' : 'btn btn-secondary emoji-pack-btn'),
                         h.Disabled(isLastEnabled),
-                        h.OnClick(FindIt.SetEmojiPackEnabled({ key: pack.key, value: !enabled })),
+                        settingsOnClick(FindIt.SetEmojiPackEnabled({ key: pack.key, value: !enabled })),
                       ],
                       [
                         h.span([h.Class('emoji-pack-sample')], [pack.sample]),
@@ -879,15 +889,15 @@ export const view = (model: Model): Document => {
               h.h3([], [t('bubblesTitle', model.language)]),
               h.div([h.Class('lang-buttons')], [
                 h.button(
-                  [h.Class(!model.bubbles.popLabel && !model.bubbles.sayColor ? 'btn btn-primary' : 'btn btn-secondary'), h.OnClick(Bubbles.SetPopLabel({ value: false }))],
+                  [h.Class(!model.bubbles.popLabel && !model.bubbles.sayColor ? 'btn btn-primary' : 'btn btn-secondary'), settingsOnClick(Bubbles.SetPopLabel({ value: false }))],
                   [t('normal', model.language)],
                 ),
                 h.button(
-                  [h.Class(model.bubbles.popLabel && !model.bubbles.sayColor ? 'btn btn-primary' : 'btn btn-secondary'), h.OnClick(Bubbles.SetPopLabel({ value: true }))],
+                  [h.Class(model.bubbles.popLabel && !model.bubbles.sayColor ? 'btn btn-primary' : 'btn btn-secondary'), settingsOnClick(Bubbles.SetPopLabel({ value: true }))],
                   [t('popLabel', model.language)],
                 ),
                 h.button(
-                  [h.Class(model.bubbles.sayColor ? 'btn btn-primary' : 'btn btn-secondary'), h.OnClick(Bubbles.SetSayColor({ value: true }))],
+                  [h.Class(model.bubbles.sayColor ? 'btn btn-primary' : 'btn btn-secondary'), settingsOnClick(Bubbles.SetSayColor({ value: true }))],
                   [t('sayColor', model.language)],
                 ),
               ]),
@@ -905,7 +915,7 @@ export const view = (model: Model): Document => {
                     h.Max('1'),
                     h.Step('0.05'),
                     h.Value(model.musicBox.drumVolume.toString()),
-                    h.OnInput((v) => MusicBox.SetDrumVolume({ value: parseFloat(v) })),
+                    settingsOnInput((v) => MusicBox.SetDrumVolume({ value: parseFloat(v) })),
                   ]),
                   h.span([], [`${Math.round(model.musicBox.drumVolume * 100)}%`]),
                 ]),
@@ -926,7 +936,7 @@ export const view = (model: Model): Document => {
                         h.Attribute('draggable', 'true'),
                         h.OnDragStart(MusicBox.SongDragStarted({ index: displayIdx })),
                         h.AllowDrop(),
-                        h.OnDrop(MusicBox.SongDroppedOn({ index: displayIdx })),
+                        settingsOnDrop(MusicBox.SongDroppedOn({ index: displayIdx })),
                         h.OnDragEnd(MusicBox.SongDragEnded()),
                       ],
                       [
@@ -935,7 +945,7 @@ export const view = (model: Model): Document => {
                           `${song.emoji} ${t(songKey ?? 'musicBoxTwinkle', model.language)}`,
                         ]),
                         h.button(
-                          [h.Class('btn btn-tiny'), h.Disabled(isLastVisibleSong), h.OnClick(MusicBox.ToggleSongVisibility({ index: songIdx }))],
+                          [h.Class('btn btn-tiny'), h.Disabled(isLastVisibleSong), settingsOnClick(MusicBox.ToggleSongVisibility({ index: songIdx }))],
                           [isHidden ? t('musicBoxShow', model.language) : t('musicBoxHide', model.language)],
                         ),
                     ],

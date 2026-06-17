@@ -560,6 +560,23 @@ describe('Main', () => {
       expect(stored.findItEnabledPacks).toEqual(['numbers'])
     })
 
+    it('persists MusicBox drum volume and loads it on init', async () => {
+      const [next, cmds] = Main.update(createModel(), MusicBox.SetDrumVolume({ value: 0.35 }))
+      const cmd = cmds[0]
+
+      expect(next.musicBox.drumVolume).toBe(0.35)
+      expect(cmd?.name).toBe('PersistSettings')
+      if (!cmd) throw new Error('missing PersistSettings command')
+
+      await Effect.runPromise(cmd.effect)
+
+      const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') as { musicBoxDrumVolume?: number }
+      expect(stored.musicBoxDrumVolume).toBe(0.35)
+
+      const [loaded] = Main.init()
+      expect(loaded.musicBox.drumVolume).toBe(0.35)
+    })
+
     it('does not export or persist transient Bubbles selected color', async () => {
       const customized = {
         ...createModel(),
