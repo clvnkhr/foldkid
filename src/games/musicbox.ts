@@ -234,6 +234,7 @@ const pauseFlag = MutableRef.make(false)
 const playbackTempo = MutableRef.make(1)
 const playbackTranspose = MutableRef.make(0)
 const playbackDrumVolume = MutableRef.make(1)
+const playbackId = MutableRef.make(0)
 const currentLyricLine = MutableRef.make(-1)
 
 const resetAudioGraph = (): void => {
@@ -257,9 +258,13 @@ export const resetWakeMonitor = (): void => {
 const playSongCmd = (
   song: Song,
   msg: ReturnType<typeof SongEnded>,
+  currentPlaybackId: number,
 ): Command.Command<ReturnType<typeof SongEnded>> => ({
   name: 'PlayMusicBox',
   effect: Effect.gen(function* () {
+    const isCurrentPlayback = (): boolean => MutableRef.get(playbackId) === currentPlaybackId
+    const shouldStop = (): boolean => MutableRef.get(stopFlag) || !isCurrentPlayback()
+    if (!isCurrentPlayback()) return msg
     MutableRef.set(stopFlag, false)
     MutableRef.set(pauseFlag, false)
     const instr = INSTRUMENTS[MutableRef.get(selectedInstrumentIndex)]
@@ -278,12 +283,13 @@ const playSongCmd = (
     }
     let cumDur = 0
     for (let i = 0; i < song.notes.length; i++) {
-      if (MutableRef.get(stopFlag)) break
+      if (shouldStop()) break
       const note = song.notes[i]!
-      while (drumIndex < drums.length && drums[drumIndex]!.at <= cumDur + 0.0001) {
+      while (drumIndex < drums.length && drums[drumIndex]!.at <= cumDur + 0.0001 && !shouldStop()) {
         playDrum(drums[drumIndex]!)
         drumIndex += 1
       }
+      if (shouldStop()) break
       if (note.pitch) {
         const tp = transposePitch(note.pitch, MutableRef.get(playbackTranspose))
         const pitch = Pitch.fromString(tp, MUSICBOX_FREQUENCIES)
@@ -294,31 +300,35 @@ const playSongCmd = (
       highlightLyricLine(nonEmptyIndices[rawIdx]!)
       const noteEnd = cumDur + note.dur
       let segmentStart = cumDur
-      while (drumIndex < drums.length && drums[drumIndex]!.at < noteEnd - 0.0001) {
+      while (drumIndex < drums.length && drums[drumIndex]!.at < noteEnd - 0.0001 && !shouldStop()) {
         const drum = drums[drumIndex]!
         if (drum.at > segmentStart + 0.0001) {
           yield* Effect.sleep(((drum.at - segmentStart) * 350) / MutableRef.get(playbackTempo))
-          if (MutableRef.get(stopFlag)) break
-          while (MutableRef.get(pauseFlag) && !MutableRef.get(stopFlag)) {
+          if (shouldStop()) break
+          while (MutableRef.get(pauseFlag) && !shouldStop()) {
             yield* Effect.sleep(100)
           }
+          if (shouldStop()) break
         }
         playDrum(drum)
         segmentStart = drum.at
         drumIndex += 1
       }
-      if (MutableRef.get(stopFlag)) break
+      if (shouldStop()) break
       cumDur += note.dur
       yield* Effect.sleep(((noteEnd - segmentStart) * 350) / MutableRef.get(playbackTempo))
+      if (shouldStop()) break
       unhighlightAllKeys()
-      while (MutableRef.get(pauseFlag) && !MutableRef.get(stopFlag)) {
+      while (MutableRef.get(pauseFlag) && !shouldStop()) {
         yield* Effect.sleep(100)
       }
     }
-    MutableRef.set(stopFlag, false)
-    MutableRef.set(pauseFlag, false)
-    unhighlightAllKeys()
-    unhighlightAllLyricLines()
+    if (isCurrentPlayback()) {
+      MutableRef.set(stopFlag, false)
+      MutableRef.set(pauseFlag, false)
+      unhighlightAllKeys()
+      unhighlightAllLyricLines()
+    }
     return msg
   }),
 })
@@ -375,7 +385,9 @@ export const Play = m('MusicBoxPlay')
 export const Stop = m('MusicBoxStop')
 export const SetSong = m('MusicBoxSetSong', { value: S.Number })
 export const SetInstrument = m('MusicBoxSetInstrument', { value: S.Number })
-export const SongEnded = m('MusicBoxSongEnded')
+export const SongEnded = m('MusicBoxSongEnded', { playbackId: S.Number })
+export const PreviousSong = m('MusicBoxPreviousSong')
+export const SkipSong = m('MusicBoxSkipSong')
 export const NoteOn = m('MusicBoxNoteOn', { pitch: S.String })
 export const NoteOff = m('MusicBoxNoteOff', { pitch: S.String })
 export const AddKey = m('MusicBoxAddKey')
@@ -400,11 +412,42 @@ export const SongDragStarted = m('MusicBoxSongDragStarted', { index: S.Number })
 export const SongDroppedOn = m('MusicBoxSongDroppedOn', { index: S.Number })
 export const SongDragEnded = m('MusicBoxSongDragEnded')
 
-export const Message = S.Union([Play, Stop, SetSong, SetInstrument, SongEnded, NoteOn, NoteOff, AddKey, RemoveKey, OctaveUp, OctaveDown, ToggleBottomKeyboard, SetBottomPanelMode, ShiftBottom, ShiftTop, TempoUp, TempoDown, ToggleLyrics, TogglePause, TransposeUp, TransposeDown, CycleRepeatMode, SetDrumVolume, DrumPadHit, ToggleSongVisibility, SongDragStarted, SongDroppedOn, SongDragEnded])
+export const Message = S.Union([Play, Stop, SetSong, SetInstrument, SongEnded, PreviousSong, SkipSong, NoteOn, NoteOff, AddKey, RemoveKey, OctaveUp, OctaveDown, ToggleBottomKeyboard, SetBottomPanelMode, ShiftBottom, ShiftTop, TempoUp, TempoDown, ToggleLyrics, TogglePause, TransposeUp, TransposeDown, CycleRepeatMode, SetDrumVolume, DrumPadHit, ToggleSongVisibility, SongDragStarted, SongDroppedOn, SongDragEnded])
 export type Message = typeof Message.Type
 
 const visibleSongOrder = (model: Model): number[] =>
   model.songOrder.filter(i => !model.hiddenSongs[i] && i < SONGS.length && SONGS[i] !== undefined)
+
+const adjacentVisibleSong = (model: Model, delta: -1 | 1): number | undefined => {
+  const visible = visibleSongOrder(model)
+  if (visible.length === 0) return undefined
+  const currentIndex = visible.indexOf(model.selectedSong)
+  if (currentIndex < 0) return visible[0]
+  return visible[(currentIndex + delta + visible.length) % visible.length]
+}
+
+const stopPlaybackForSongChange = (): void => {
+  MutableRef.set(stopFlag, true)
+  MutableRef.set(pauseFlag, false)
+  MutableRef.set(playbackId, MutableRef.get(playbackId) + 1)
+  audioRuntime.stopAllManualNotes()
+  unhighlightAllKeys()
+  unhighlightAllLyricLines()
+}
+
+const playSelectedSong = (model: Model, selectedSong: number): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
+  MutableRef.set(playbackTempo, model.tempo)
+  MutableRef.set(playbackTranspose, model.songTranspose)
+  MutableRef.set(playbackDrumVolume, clampDrumVolume(model.drumVolume))
+  const song = SONGS[selectedSong]
+  if (!song) return [model, []]
+  const nextPlaybackId = MutableRef.get(playbackId) + 1
+  MutableRef.set(playbackId, nextPlaybackId)
+  return [
+    { ...model, selectedSong, isPlaying: true, isPaused: false },
+    [playSongCmd(song, SongEnded({ playbackId: nextPlaybackId }), nextPlaybackId)],
+  ]
+}
 
 export const nextSongForRepeat = (model: Model, random = Math.random()): number | undefined => {
   const mode = repeatModeOrDefault(model.repeatMode)
@@ -432,6 +475,7 @@ export const init = (): Model => {
   MutableRef.set(playbackTempo, 1)
   MutableRef.set(playbackTranspose, 0)
   MutableRef.set(playbackDrumVolume, 1)
+  MutableRef.set(playbackId, 0)
   MutableRef.set(currentLyricLine, -1)
   return { selectedSong: 0, selectedInstrument: 0, isPlaying: false, isPaused: false, songTranspose: 0, whiteKeys: 8, bottomPanelMode: 'simple', octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, drumVolume: 1, repeatMode: 'off', lyricsExpanded: false, songOrder: SONGS.map((_, i) => i), hiddenSongs: SONGS.map(() => false), dragIndex: -1 }
 }
@@ -449,52 +493,51 @@ export const update = (
           return [{ ...model, isPaused: false }, []]
         }
         audioRuntime.primeFromGesture() // Safari: AudioContext must be created within a user gesture
-        MutableRef.set(playbackTempo, model.tempo)
-        MutableRef.set(playbackTranspose, model.songTranspose)
-        MutableRef.set(playbackDrumVolume, clampDrumVolume(model.drumVolume))
-        const song = SONGS[model.selectedSong]
-        if (!song) return [model, []]
-        return [
-          { ...model, isPlaying: true, isPaused: false },
-          [playSongCmd(song, SongEnded())],
-        ]
+        return playSelectedSong(model, model.selectedSong)
       },
       MusicBoxStop: () => {
         MutableRef.set(stopFlag, true)
         MutableRef.set(pauseFlag, false)
+        MutableRef.set(playbackId, MutableRef.get(playbackId) + 1)
         audioRuntime.stopAllManualNotes()
         unhighlightAllKeys()
         unhighlightAllLyricLines()
         return [{ ...model, isPlaying: false, isPaused: false }, []]
       },
       MusicBoxSetSong: (msg) => {
-        if (model.isPlaying) {
-          MutableRef.set(stopFlag, true)
-          MutableRef.set(pauseFlag, false)
-          audioRuntime.stopAllManualNotes()
-          unhighlightAllKeys()
-        }
-        unhighlightAllLyricLines()
+        if (model.isPlaying) stopPlaybackForSongChange()
+        else unhighlightAllLyricLines()
         return [{ ...model, selectedSong: msg.value, isPlaying: false, isPaused: false }, []]
+      },
+      MusicBoxPreviousSong: () => {
+        const selectedSong = adjacentVisibleSong(model, -1)
+        if (selectedSong === undefined) return [model, []]
+        const shouldAutoPlay = model.isPlaying && !model.isPaused
+        if (model.isPlaying) stopPlaybackForSongChange()
+        else unhighlightAllLyricLines()
+        if (shouldAutoPlay) return playSelectedSong(model, selectedSong)
+        return [{ ...model, selectedSong, isPlaying: false, isPaused: false }, []]
+      },
+      MusicBoxSkipSong: () => {
+        const selectedSong = adjacentVisibleSong(model, 1)
+        if (selectedSong === undefined) return [model, []]
+        const shouldAutoPlay = model.isPlaying && !model.isPaused
+        if (model.isPlaying) stopPlaybackForSongChange()
+        else unhighlightAllLyricLines()
+        if (shouldAutoPlay) return playSelectedSong(model, selectedSong)
+        return [{ ...model, selectedSong, isPlaying: false, isPaused: false }, []]
       },
       MusicBoxSetInstrument: (msg) => {
         MutableRef.set(selectedInstrumentIndex, msg.value)
         return [{ ...model, selectedInstrument: msg.value }, []]
       },
-      MusicBoxSongEnded: () => {
+      MusicBoxSongEnded: (msg) => {
         MutableRef.set(pauseFlag, false)
+        if (msg.playbackId !== MutableRef.get(playbackId)) return [model, []]
         if (!model.isPlaying) return [{ ...model, isPaused: false }, []]
         const selectedSong = nextSongForRepeat(model)
         if (selectedSong === undefined) return [{ ...model, isPlaying: false, isPaused: false }, []]
-        MutableRef.set(playbackTempo, model.tempo)
-        MutableRef.set(playbackTranspose, model.songTranspose)
-        MutableRef.set(playbackDrumVolume, clampDrumVolume(model.drumVolume))
-        const song = SONGS[selectedSong]
-        if (!song) return [{ ...model, isPlaying: false, isPaused: false }, []]
-        return [
-          { ...model, selectedSong, isPlaying: true, isPaused: false },
-          [playSongCmd(song, SongEnded())],
-        ]
+        return playSelectedSong(model, selectedSong)
       },
       MusicBoxNoteOn: (msg) => {
         audioRuntime.primeFromGesture() // Safari: ensure AudioContext from user gesture
@@ -686,10 +729,22 @@ const renderRepeatIcon = (h: ReturnType<typeof html<Message>>, mode: RepeatMode)
   }
 }
 
+const renderSongNavIcon = (h: ReturnType<typeof html<Message>>, direction: 'previous' | 'skip') =>
+  h.svg([h.ViewBox('0 0 24 24'), h.Width('16'), h.Height('16'), h.Fill('currentColor')], direction === 'previous'
+    ? [
+        h.path([h.D('M6 5h2v14H6z')], []),
+        h.path([h.D('M19 5v14L9 12l10-7z')], []),
+      ]
+    : [
+        h.path([h.D('M16 5h2v14h-2z')], []),
+        h.path([h.D('M5 5v14l10-7L5 5z')], []),
+      ])
+
 export const view = (model: Model, language: string = 'en') => {
   keyboardRuntime.setOctaveOffset(model.octaveOffset)
   const h = html<Message>()
   const repeatMode = repeatModeOrDefault(model.repeatMode)
+  const visibleSongs = visibleSongOrder(model)
   const topKb = buildKeyboard(shiftStart('C4', model.topShift), model.whiteKeys, model.octaveOffset)
   const topWhite = topKb.keys.filter(k => k.type === 'white')
   const topBlack = topKb.keys.filter(k => k.type === 'black')
@@ -703,7 +758,33 @@ export const view = (model: Model, language: string = 'en') => {
 
           h.div([h.Class('musicbox-controls')], [
             h.div([h.Class('musicbox-dropdown')], [
-              h.label([h.Class('musicbox-dropdown-label')], [t('musicBoxPickSong', language)]),
+              h.div([h.Class('musicbox-song-label-row')], [
+                h.label([h.Class('musicbox-dropdown-label')], [t('musicBoxPickSong', language)]),
+                h.div([h.Class('musicbox-song-nav')], [
+                  h.button(
+                    [
+                      h.Id('musicbox-previous'),
+                      h.OnClick(PreviousSong()),
+                      h.Class('btn btn-tiny musicbox-song-nav-btn'),
+                      h.Disabled(visibleSongs.length <= 1),
+                      h.Attribute('aria-label', 'Previous song'),
+                      h.Attribute('title', 'Previous song'),
+                    ],
+                    [renderSongNavIcon(h, 'previous')],
+                  ),
+                  h.button(
+                    [
+                      h.Id('musicbox-skip'),
+                      h.OnClick(SkipSong()),
+                      h.Class('btn btn-tiny musicbox-song-nav-btn'),
+                      h.Disabled(visibleSongs.length <= 1),
+                      h.Attribute('aria-label', 'Skip song'),
+                      h.Attribute('title', 'Skip song'),
+                    ],
+                    [renderSongNavIcon(h, 'skip')],
+                  ),
+                ]),
+              ]),
               h.select(
                 [
                   h.Value(model.selectedSong.toString()),
@@ -711,9 +792,7 @@ export const view = (model: Model, language: string = 'en') => {
                   h.Class('musicbox-select'),
                 ],
                 [
-                  ...model.songOrder
-                    .filter(i => !model.hiddenSongs[i] && i < SONGS.length && SONGS[i] !== undefined)
-                    .map(songIdx => {
+                  ...visibleSongs.map(songIdx => {
                       const song = SONGS[songIdx]!
                       const key = SONG_TKEYS[song.key]
                       return h.option(

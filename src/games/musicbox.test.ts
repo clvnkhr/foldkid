@@ -294,6 +294,30 @@ describe('MusicBox', () => {
     expect(startedFrequencies).not.toContain(130)
   })
 
+  it('stops the old playback command before auto-playing the skipped song', async () => {
+    globalThis.AudioContext = MockAudioContext as unknown as typeof AudioContext
+    const [playing, playCommands] = MusicBox.update(MusicBox.init(), MusicBox.Play())
+    const oldCommand = playCommands[0]
+    if (!oldCommand) throw new Error('missing initial PlayMusicBox command')
+
+    const oldFiber = Effect.runFork(oldCommand.effect)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    const c4 = MusicBox.FREQUENCIES.C4!
+    const c4CountAfterStart = startedFrequencies.filter(frequency => frequency === c4).length
+    expect(c4CountAfterStart).toBeGreaterThan(0)
+
+    const [, skipCommands] = MusicBox.update(playing, MusicBox.SkipSong())
+    const newCommand = skipCommands[0]
+    if (!newCommand) throw new Error('missing skipped PlayMusicBox command')
+    const newFiber = Effect.runFork(newCommand.effect)
+
+    await new Promise(resolve => setTimeout(resolve, 450))
+    await Effect.runPromise(Fiber.interrupt(oldFiber))
+    await Effect.runPromise(Fiber.interrupt(newFiber))
+
+    expect(startedFrequencies.filter(frequency => frequency === c4).length).toBe(c4CountAfterStart)
+  })
+
   it('primes Safari audio once from the first trusted gesture', () => {
     globalThis.AudioContext = MockAudioContext as unknown as typeof AudioContext
     const originalAudioSession = Object.getOwnPropertyDescriptor(navigator, 'audioSession')
@@ -471,6 +495,63 @@ describe('MusicBox', () => {
       )
     })
 
+    it('SkipSong moves to the next visible song in configured order', () => {
+      const order = [2, 0, 1, ...MusicBox.SONGS.map((_, index) => index).slice(3)]
+      Story.story(
+        MusicBox.update,
+        Story.with({ ...MusicBox.init(), selectedSong: 0, songOrder: order }),
+        Story.message(MusicBox.SkipSong()),
+        Story.model((model) => {
+          expect(model.selectedSong).toBe(1)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('PreviousSong wraps to the previous visible song and skips hidden songs', () => {
+      Story.story(
+        MusicBox.update,
+        Story.with({
+          ...MusicBox.init(),
+          selectedSong: 0,
+          hiddenSongs: MusicBox.SONGS.map((_, index) => index === MusicBox.SONGS.length - 1),
+        }),
+        Story.message(MusicBox.PreviousSong()),
+        Story.model((model) => {
+          expect(model.selectedSong).toBe(MusicBox.SONGS.length - 2)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('song navigation auto-plays the shifted song while actively playing', () => {
+      const [next, cmds] = MusicBox.update(
+        { ...MusicBox.init(), selectedSong: 0, isPlaying: true, isPaused: false },
+        MusicBox.SkipSong(),
+      )
+      const [afterStaleEnd, staleCmds] = MusicBox.update(next, MusicBox.SongEnded({ playbackId: 0 }))
+
+      expect(next.selectedSong).toBe(1)
+      expect(next.isPlaying).toBe(true)
+      expect(next.isPaused).toBe(false)
+      expect(cmds[0]?.name).toBe('PlayMusicBox')
+      expect(afterStaleEnd.selectedSong).toBe(1)
+      expect(afterStaleEnd.isPlaying).toBe(true)
+      expect(staleCmds).toEqual([])
+    })
+
+    it('song navigation does not auto-play while paused', () => {
+      const [next, cmds] = MusicBox.update(
+        { ...MusicBox.init(), selectedSong: 0, isPlaying: true, isPaused: true },
+        MusicBox.SkipSong(),
+      )
+
+      expect(next.selectedSong).toBe(1)
+      expect(next.isPlaying).toBe(false)
+      expect(next.isPaused).toBe(false)
+      expect(cmds).toEqual([])
+    })
+
     it('SetInstrument updates selectedInstrument', () => {
       Story.story(
         MusicBox.update,
@@ -492,7 +573,7 @@ describe('MusicBox', () => {
           expect(model.isPlaying).toBe(true)
         }),
         Story.Command.resolveAll(
-          [{ name: 'PlayMusicBox' }, MusicBox.SongEnded()],
+          [{ name: 'PlayMusicBox' }, MusicBox.SongEnded({ playbackId: 1 })],
         ),
         Story.model((model) => {
           expect(model.isPlaying).toBe(false)
@@ -602,7 +683,7 @@ describe('MusicBox', () => {
       Story.story(
         MusicBox.update,
         Story.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: true, whiteKeys: 12, bottomPanelMode: 'keyboard', tempo: 1, lyricsExpanded: false, }),
-        Story.message(MusicBox.SongEnded()),
+        Story.message(MusicBox.SongEnded({ playbackId: 0 })),
         Story.model((model) => {
           expect(model.isPlaying).toBe(false)
         }),
@@ -614,7 +695,7 @@ describe('MusicBox', () => {
       Story.story(
         MusicBox.update,
         Story.with({ ...MusicBox.init(), selectedSong: 0, isPlaying: false, isPaused: false, repeatMode: 'loop' }),
-        Story.message(MusicBox.SongEnded()),
+        Story.message(MusicBox.SongEnded({ playbackId: 0 })),
         Story.model(model => {
           expect(model.selectedSong).toBe(0)
           expect(model.isPlaying).toBe(false)
@@ -633,8 +714,8 @@ describe('MusicBox', () => {
         hiddenSongs: MusicBox.SONGS.map((_, index) => index === 1),
       }
 
-      const [next, cmds] = MusicBox.update(model, MusicBox.SongEnded())
-      const [afterNext] = MusicBox.update(next, MusicBox.SongEnded())
+      const [next, cmds] = MusicBox.update(model, MusicBox.SongEnded({ playbackId: 0 }))
+      const [afterNext] = MusicBox.update(next, MusicBox.SongEnded({ playbackId: 1 }))
 
       expect(next.selectedSong).toBe(2)
       expect(next.isPlaying).toBe(true)
@@ -647,7 +728,7 @@ describe('MusicBox', () => {
     it('SongEnded with loop one repeats the selected song', () => {
       const [next, cmds] = MusicBox.update(
         { ...MusicBox.init(), selectedSong: 2, isPlaying: true, repeatMode: 'loopOne' },
-        MusicBox.SongEnded(),
+        MusicBox.SongEnded({ playbackId: 0 }),
       )
 
       expect(next.selectedSong).toBe(2)
@@ -1390,6 +1471,17 @@ describe('MusicBox', () => {
       )
     })
 
+    it('renders previous and skip buttons beside the song picker label', () => {
+      Scene.scene(
+        { update: MusicBox.update, view: MusicBox.view },
+        Scene.with(MusicBox.init()),
+        Scene.Mount.resolveAll(...resolveMount),
+        Scene.expect(Scene.selector('.musicbox-song-label-row #musicbox-previous svg')).toExist(),
+        Scene.expect(Scene.selector('.musicbox-song-label-row #musicbox-skip svg')).toExist(),
+        Scene.Command.expectNone(),
+      )
+    })
+
     it('renders stop button when playing', () => {
       Scene.scene(
         { update: MusicBox.update, view: MusicBox.view },
@@ -1538,7 +1630,7 @@ describe('MusicBox', () => {
           expect(model.isPlaying).toBe(true)
         }),
         Story.Command.resolveAll(
-          [{ name: 'PlayMusicBox' }, MusicBox.SongEnded()],
+          [{ name: 'PlayMusicBox' }, MusicBox.SongEnded({ playbackId: 1 })],
         ),
         Story.model((model) => {
           expect(model.isPlaying).toBe(false)
@@ -1551,7 +1643,7 @@ describe('MusicBox', () => {
       Story.story(
         MusicBox.update,
         Story.with({ ...MusicBox.init(), isPlaying: true, isPaused: false }),
-        Story.message(MusicBox.SongEnded()),
+        Story.message(MusicBox.SongEnded({ playbackId: 0 })),
         Story.model((model) => {
           expect(model.isPlaying).toBe(false)
           expect(model.isPaused).toBe(false)

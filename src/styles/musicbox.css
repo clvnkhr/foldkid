@@ -9,30 +9,17 @@
 }
 
 .musicbox-inline-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.05rem;
-  height: 2.05rem;
-  padding: 0;
-  font-size: 0.75rem;
-  border-radius: 0.35rem;
-  border: none;
-  cursor: pointer;
-  font-weight: 600;
-  font-family: inherit;
-  white-space: nowrap;
-  background: #667eea;
-  color: white;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 2.05rem; height: 2.05rem; padding: 0;
+  font-size: 0.75rem; border-radius: 0.35rem; border: none; cursor: pointer;
+  font-weight: 600; font-family: inherit; white-space: nowrap;
+  background: #667eea; color: white;
 }
 .musicbox-inline-btn:active {
   opacity: 0.8;
 }
 
-.playback-btns {
-  display: flex;
-  gap: 0.35rem;
-}
+.playback-btns { display: flex; gap: 0.35rem; }
 
 .repeat-mode-btn--off {
   background: var(--button-secondary-bg, #6b7280);
@@ -64,6 +51,27 @@
   font-size: 0.7rem;
   font-weight: 600;
   color: var(--text-secondary);
+}
+
+.musicbox-song-label-row,
+.musicbox-song-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.musicbox-song-label-row { justify-content: space-between; min-height: 1.55rem; }
+
+.musicbox-song-nav { gap: 0.25rem; }
+
+.musicbox-song-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.45rem;
+  height: 1.45rem;
+  padding: 0;
+  line-height: 1;
 }
 
 .musicbox-select {
