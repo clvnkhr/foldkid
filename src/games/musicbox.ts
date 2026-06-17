@@ -41,7 +41,10 @@ export const MIN_TRANSPOSE = -12
 export const MAX_TRANSPOSE = 12
 export const BOTTOM_PANEL_MODES = ['simple', 'drums', 'keyboard'] as const
 export type BottomPanelMode = typeof BOTTOM_PANEL_MODES[number]
+export const REPEAT_MODES = ['off', 'loop', 'loopOne', 'shuffle'] as const
+export type RepeatMode = typeof REPEAT_MODES[number]
 const BottomPanelModeSchema = S.Union([S.Literal('simple'), S.Literal('drums'), S.Literal('keyboard')])
+const RepeatModeSchema = S.Union([S.Literal('off'), S.Literal('loop'), S.Literal('loopOne'), S.Literal('shuffle')])
 const DrumKindSchema = S.Union([
   S.Literal('kick'),
   S.Literal('snare'),
@@ -341,6 +344,12 @@ const clampDrumVolume = (value: number): number =>
 const parseBottomPanelMode = (value: string): BottomPanelMode =>
   BOTTOM_PANEL_MODES.includes(value as BottomPanelMode) ? value as BottomPanelMode : 'simple'
 
+const repeatModeOrDefault = (value: RepeatMode | undefined): RepeatMode =>
+  value && REPEAT_MODES.includes(value) ? value : 'off'
+
+const nextRepeatMode = (mode: RepeatMode): RepeatMode =>
+  REPEAT_MODES[(REPEAT_MODES.indexOf(mode) + 1) % REPEAT_MODES.length]!
+
 export const Model = S.Struct({
   selectedSong: S.Number,
   selectedInstrument: S.Number,
@@ -354,6 +363,7 @@ export const Model = S.Struct({
   topShift: S.Number,
   tempo: S.Number,
   drumVolume: S.Number,
+  repeatMode: RepeatModeSchema,
   lyricsExpanded: S.Boolean,
   songOrder: S.Array(S.Number),
   hiddenSongs: S.Array(S.Boolean),
@@ -382,6 +392,7 @@ export const ToggleLyrics = m('MusicBoxToggleLyrics')
 export const TogglePause = m('MusicBoxTogglePause')
 export const TransposeUp = m('MusicBoxTransposeUp')
 export const TransposeDown = m('MusicBoxTransposeDown')
+export const CycleRepeatMode = m('MusicBoxCycleRepeatMode')
 export const SetDrumVolume = m('MusicBoxSetDrumVolume', { value: S.Number })
 export const DrumPadHit = m('MusicBoxDrumPadHit', { kind: DrumKindSchema })
 export const ToggleSongVisibility = m('MusicBoxToggleSongVisibility', { index: S.Number })
@@ -389,8 +400,26 @@ export const SongDragStarted = m('MusicBoxSongDragStarted', { index: S.Number })
 export const SongDroppedOn = m('MusicBoxSongDroppedOn', { index: S.Number })
 export const SongDragEnded = m('MusicBoxSongDragEnded')
 
-export const Message = S.Union([Play, Stop, SetSong, SetInstrument, SongEnded, NoteOn, NoteOff, AddKey, RemoveKey, OctaveUp, OctaveDown, ToggleBottomKeyboard, SetBottomPanelMode, ShiftBottom, ShiftTop, TempoUp, TempoDown, ToggleLyrics, TogglePause, TransposeUp, TransposeDown, SetDrumVolume, DrumPadHit, ToggleSongVisibility, SongDragStarted, SongDroppedOn, SongDragEnded])
+export const Message = S.Union([Play, Stop, SetSong, SetInstrument, SongEnded, NoteOn, NoteOff, AddKey, RemoveKey, OctaveUp, OctaveDown, ToggleBottomKeyboard, SetBottomPanelMode, ShiftBottom, ShiftTop, TempoUp, TempoDown, ToggleLyrics, TogglePause, TransposeUp, TransposeDown, CycleRepeatMode, SetDrumVolume, DrumPadHit, ToggleSongVisibility, SongDragStarted, SongDroppedOn, SongDragEnded])
 export type Message = typeof Message.Type
+
+const visibleSongOrder = (model: Model): number[] =>
+  model.songOrder.filter(i => !model.hiddenSongs[i] && i < SONGS.length && SONGS[i] !== undefined)
+
+export const nextSongForRepeat = (model: Model, random = Math.random()): number | undefined => {
+  const mode = repeatModeOrDefault(model.repeatMode)
+  if (mode === 'off') return undefined
+  const visible = visibleSongOrder(model)
+  if (visible.length === 0) return undefined
+  if (mode === 'loopOne') return visible.includes(model.selectedSong) ? model.selectedSong : visible[0]
+  if (mode === 'shuffle') {
+    const pool = visible.length > 1 ? visible.filter(index => index !== model.selectedSong) : visible
+    const index = Math.min(pool.length - 1, Math.max(0, Math.floor(random * pool.length)))
+    return pool[index]
+  }
+  const currentIndex = visible.indexOf(model.selectedSong)
+  return visible[(currentIndex + 1) % visible.length]
+}
 
 export const init = (): Model => {
   audioRuntime.clearActiveNotes()
@@ -404,7 +433,7 @@ export const init = (): Model => {
   MutableRef.set(playbackTranspose, 0)
   MutableRef.set(playbackDrumVolume, 1)
   MutableRef.set(currentLyricLine, -1)
-  return { selectedSong: 0, selectedInstrument: 0, isPlaying: false, isPaused: false, songTranspose: 0, whiteKeys: 8, bottomPanelMode: 'simple', octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, drumVolume: 1, lyricsExpanded: false, songOrder: SONGS.map((_, i) => i), hiddenSongs: SONGS.map(() => false), dragIndex: -1 }
+  return { selectedSong: 0, selectedInstrument: 0, isPlaying: false, isPaused: false, songTranspose: 0, whiteKeys: 8, bottomPanelMode: 'simple', octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, drumVolume: 1, repeatMode: 'off', lyricsExpanded: false, songOrder: SONGS.map((_, i) => i), hiddenSongs: SONGS.map(() => false), dragIndex: -1 }
 }
 
 export const update = (
@@ -454,7 +483,18 @@ export const update = (
       },
       MusicBoxSongEnded: () => {
         MutableRef.set(pauseFlag, false)
-        return [{ ...model, isPlaying: false, isPaused: false }, []]
+        if (!model.isPlaying) return [{ ...model, isPaused: false }, []]
+        const selectedSong = nextSongForRepeat(model)
+        if (selectedSong === undefined) return [{ ...model, isPlaying: false, isPaused: false }, []]
+        MutableRef.set(playbackTempo, model.tempo)
+        MutableRef.set(playbackTranspose, model.songTranspose)
+        MutableRef.set(playbackDrumVolume, clampDrumVolume(model.drumVolume))
+        const song = SONGS[selectedSong]
+        if (!song) return [{ ...model, isPlaying: false, isPaused: false }, []]
+        return [
+          { ...model, selectedSong, isPlaying: true, isPaused: false },
+          [playSongCmd(song, SongEnded())],
+        ]
       },
       MusicBoxNoteOn: (msg) => {
         audioRuntime.primeFromGesture() // Safari: ensure AudioContext from user gesture
@@ -531,6 +571,9 @@ export const update = (
         MutableRef.set(playbackTranspose, next)
         return [{ ...model, songTranspose: next }, []]
       },
+      MusicBoxCycleRepeatMode: () => {
+        return [{ ...model, repeatMode: nextRepeatMode(repeatModeOrDefault(model.repeatMode)) }, []]
+      },
       MusicBoxSetDrumVolume: (msg) => {
         const next = clampDrumVolume(msg.value)
         MutableRef.set(playbackDrumVolume, next)
@@ -579,9 +622,74 @@ export const update = (
     }),
   )
 
+const repeatModeLabel = (mode: RepeatMode): string => {
+  switch (mode) {
+    case 'off': return 'Repeat off'
+    case 'loop': return 'Loop all'
+    case 'loopOne': return 'Loop one'
+    case 'shuffle': return 'Shuffle'
+  }
+}
+
+const repeatModeClass: Record<RepeatMode, string> = {
+  off: 'repeat-mode-btn--off',
+  loop: 'repeat-mode-btn--loop',
+  loopOne: 'repeat-mode-btn--loopOne',
+  shuffle: 'repeat-mode-btn--shuffle',
+}
+
+const repeatSvgAttrs = (h: ReturnType<typeof html<Message>>) => [
+  h.ViewBox('0 0 24 24'),
+  h.Width('17'),
+  h.Height('17'),
+  h.Fill('none'),
+  h.Attribute('stroke', 'currentColor'),
+  h.Attribute('stroke-width', '2'),
+  h.Attribute('stroke-linecap', 'round'),
+  h.Attribute('stroke-linejoin', 'round'),
+]
+
+const renderRepeatIcon = (h: ReturnType<typeof html<Message>>, mode: RepeatMode) => {
+  switch (mode) {
+    case 'off':
+      return h.svg(repeatSvgAttrs(h), [
+        h.path([h.D('M17 2l4 4-4 4')], []),
+        h.path([h.D('M3 11V9a3 3 0 013-3h15')], []),
+        h.path([h.D('M7 22l-4-4 4-4')], []),
+        h.path([h.D('M21 13v2a3 3 0 01-3 3H3')], []),
+        h.path([h.D('M4 4l16 16')], []),
+      ])
+    case 'loop':
+      return h.svg(repeatSvgAttrs(h), [
+        h.path([h.D('M17 2l4 4-4 4')], []),
+        h.path([h.D('M3 11V9a3 3 0 013-3h15')], []),
+        h.path([h.D('M7 22l-4-4 4-4')], []),
+        h.path([h.D('M21 13v2a3 3 0 01-3 3H3')], []),
+      ])
+    case 'loopOne':
+      return h.svg(repeatSvgAttrs(h), [
+        h.path([h.D('M17 2l4 4-4 4')], []),
+        h.path([h.D('M3 11V9a3 3 0 013-3h15')], []),
+        h.path([h.D('M7 22l-4-4 4-4')], []),
+        h.path([h.D('M21 13v2a3 3 0 01-3 3H3')], []),
+        h.path([h.D('M12 9v6')], []),
+        h.path([h.D('M10.5 10.5L12 9l1.5 1.5')], []),
+      ])
+    case 'shuffle':
+      return h.svg(repeatSvgAttrs(h), [
+        h.path([h.D('M18 4l3 3-3 3')], []),
+        h.path([h.D('M18 14l3 3-3 3')], []),
+        h.path([h.D('M3 7h3c2 0 3.5 1.5 5 5s3 5 5 5h5')], []),
+        h.path([h.D('M3 17h3c1.7 0 3-1 4.1-3')], []),
+        h.path([h.D('M14 7c1.1 0 2.1 0 4 0h3')], []),
+      ])
+  }
+}
+
 export const view = (model: Model, language: string = 'en') => {
   keyboardRuntime.setOctaveOffset(model.octaveOffset)
   const h = html<Message>()
+  const repeatMode = repeatModeOrDefault(model.repeatMode)
   const topKb = buildKeyboard(shiftStart('C4', model.topShift), model.whiteKeys, model.octaveOffset)
   const topWhite = topKb.keys.filter(k => k.type === 'white')
   const topBlack = topKb.keys.filter(k => k.type === 'black')
@@ -635,6 +743,16 @@ export const view = (model: Model, language: string = 'en') => {
                 [h.svg([h.ViewBox('0 0 24 24'), h.Width('18'), h.Height('18'), h.Fill('currentColor')], [
                   h.rect([h.X('4'), h.Y('4'), h.Width('16'), h.Height('16'), h.Attribute('rx', '2')], []),
                 ])],
+              ),
+              h.button(
+                [
+                  h.Id('musicbox-repeat'),
+                  h.OnClick(CycleRepeatMode()),
+                  h.Class(`btn btn-tiny musicbox-inline-btn repeat-mode-btn ${repeatModeClass[repeatMode]}`),
+                  h.Attribute('aria-label', repeatModeLabel(repeatMode)),
+                  h.Attribute('title', repeatModeLabel(repeatMode)),
+                ],
+                [renderRepeatIcon(h, repeatMode)],
               ),
             ]),
             h.div([h.Class('musicbox-dropdown')], [

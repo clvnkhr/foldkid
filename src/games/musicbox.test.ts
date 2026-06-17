@@ -167,7 +167,7 @@ describe('MusicBox', () => {
   it('init state', () => {
     expect(MusicBox.init()).toStrictEqual({
       selectedSong: 0, selectedInstrument: 0, isPlaying: false, isPaused: false, songTranspose: 0,
-      whiteKeys: 8, bottomPanelMode: 'simple', octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, drumVolume: 1, lyricsExpanded: false,
+      whiteKeys: 8, bottomPanelMode: 'simple', octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, drumVolume: 1, repeatMode: 'off', lyricsExpanded: false,
       songOrder: defaultSongOrder(), hiddenSongs: defaultHiddenSongs(), dragIndex: -1,
     })
   })
@@ -574,6 +574,30 @@ describe('MusicBox', () => {
       )
     })
 
+    it('CycleRepeatMode cycles off, loop, loop one, shuffle, off', () => {
+      Story.story(
+        MusicBox.update,
+        Story.with(MusicBox.init()),
+        Story.message(MusicBox.CycleRepeatMode()),
+        Story.model(model => {
+          expect(model.repeatMode).toBe('loop')
+        }),
+        Story.message(MusicBox.CycleRepeatMode()),
+        Story.model(model => {
+          expect(model.repeatMode).toBe('loopOne')
+        }),
+        Story.message(MusicBox.CycleRepeatMode()),
+        Story.model(model => {
+          expect(model.repeatMode).toBe('shuffle')
+        }),
+        Story.message(MusicBox.CycleRepeatMode()),
+        Story.model(model => {
+          expect(model.repeatMode).toBe('off')
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
     it('SongEnded sets isPlaying to false', () => {
       Story.story(
         MusicBox.update,
@@ -584,6 +608,74 @@ describe('MusicBox', () => {
         }),
         Story.Command.expectNone(),
       )
+    })
+
+    it('late SongEnded after Stop does not restart loop playback', () => {
+      Story.story(
+        MusicBox.update,
+        Story.with({ ...MusicBox.init(), selectedSong: 0, isPlaying: false, isPaused: false, repeatMode: 'loop' }),
+        Story.message(MusicBox.SongEnded()),
+        Story.model(model => {
+          expect(model.selectedSong).toBe(0)
+          expect(model.isPlaying).toBe(false)
+          expect(model.isPaused).toBe(false)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('SongEnded with loop selects the next visible song and keeps playing', () => {
+      const model = {
+        ...MusicBox.init(),
+        selectedSong: 0,
+        isPlaying: true,
+        repeatMode: 'loop' as const,
+        hiddenSongs: MusicBox.SONGS.map((_, index) => index === 1),
+      }
+
+      const [next, cmds] = MusicBox.update(model, MusicBox.SongEnded())
+      const [afterNext] = MusicBox.update(next, MusicBox.SongEnded())
+
+      expect(next.selectedSong).toBe(2)
+      expect(next.isPlaying).toBe(true)
+      expect(next.isPaused).toBe(false)
+      expect(cmds[0]?.name).toBe('PlayMusicBox')
+      expect(afterNext.selectedSong).toBe(3)
+      expect(afterNext.isPlaying).toBe(true)
+    })
+
+    it('SongEnded with loop one repeats the selected song', () => {
+      const [next, cmds] = MusicBox.update(
+        { ...MusicBox.init(), selectedSong: 2, isPlaying: true, repeatMode: 'loopOne' },
+        MusicBox.SongEnded(),
+      )
+
+      expect(next.selectedSong).toBe(2)
+      expect(next.isPlaying).toBe(true)
+      expect(cmds[0]?.name).toBe('PlayMusicBox')
+    })
+
+    it('nextSongForRepeat shuffles among visible songs without picking the current song when possible', () => {
+      const model = {
+        ...MusicBox.init(),
+        selectedSong: 0,
+        repeatMode: 'shuffle' as const,
+        hiddenSongs: MusicBox.SONGS.map((_, index) => index === 1),
+      }
+
+      expect(MusicBox.nextSongForRepeat(model, 0)).toBe(2)
+      expect(MusicBox.nextSongForRepeat(model, 0.99)).toBe(MusicBox.SONGS.length - 1)
+    })
+
+    it('nextSongForRepeat loops through the configured visible order', () => {
+      const model = {
+        ...MusicBox.init(),
+        selectedSong: 0,
+        repeatMode: 'loop' as const,
+        songOrder: [2, 0, 1, ...MusicBox.SONGS.map((_, index) => index).slice(3)],
+      }
+
+      expect(MusicBox.nextSongForRepeat(model)).toBe(1)
     })
 
     it('AddKey increments whiteKeys', () => {
@@ -1283,6 +1375,17 @@ describe('MusicBox', () => {
         Scene.with(MusicBox.init()),
         Scene.Mount.resolveAll(...resolveMount),
         Scene.expect(Scene.selector('#musicbox-play svg')).toExist(),
+        Scene.Command.expectNone(),
+      )
+    })
+
+    it('renders repeat mode button with a mode-specific icon', () => {
+      Scene.scene(
+        { update: MusicBox.update, view: MusicBox.view },
+        Scene.with({ ...MusicBox.init(), repeatMode: 'shuffle' }),
+        Scene.Mount.resolveAll(...resolveMount),
+        Scene.expect(Scene.selector('#musicbox-repeat svg')).toExist(),
+        Scene.expect(Scene.selector('#musicbox-repeat.repeat-mode-btn--shuffle')).toExist(),
         Scene.Command.expectNone(),
       )
     })
