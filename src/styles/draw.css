@@ -129,5 +129,10 @@
     border-width: 7px;
   }
 
+  .draw-debug { max-height: 30vh; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.4rem; padding: 0.35rem; }
+  .draw-debug-item { padding: 0.25rem; }
+  .draw-debug-item--stage { grid-column: span 2; }
+  .draw-debug-label { font-size: 0.62rem; }
+  .draw-debug-prediction { font-size: 3.4rem; line-height: 1; }
   .draw-bottom-spacer { display: none; }
 }

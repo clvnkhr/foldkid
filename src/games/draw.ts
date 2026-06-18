@@ -11,6 +11,8 @@ const MODEL_URL = `${MODEL_DIR_URL}model.keras`
 const MODEL_MANIFEST_URL = `${MODEL_DIR_URL}weights.json`
 const MODEL_WEIGHTS_URL = `${MODEL_DIR_URL}weights.bin`
 const MODEL_LABEL = 'LeNet-5 EMNIST model stored locally'
+const MODEL_CACHE_KEY = 'foldkid-draw-lenet-cache-v1'
+const MODEL_CACHE_VERSION = `${MODEL_MANIFEST_URL}|${MODEL_WEIGHTS_URL}|${MODEL_LABELS.join('')}`
 export const RecognitionMode = S.Union([S.Literal('model'), S.Literal('template')])
 export type RecognitionMode = typeof RecognitionMode.Type
 export const DEFAULT_RECOGNITION_MODE: RecognitionMode = 'model'
@@ -194,6 +196,12 @@ interface WeightsManifest {
   floatCount: number
 }
 
+interface CachedLeNetModel {
+  version: string
+  manifest: WeightsManifest
+  weightsBase64: string
+}
+
 interface LeNetModel {
   labels: string[]
   conv1Kernel: Float32Array
@@ -213,31 +221,100 @@ let leNetModelPromise: Promise<LeNetModel> | null = null
 const tensor = (weights: Float32Array, spec: TensorSpec): Float32Array =>
   weights.subarray(spec.offset, spec.offset + spec.length)
 
-const loadLeNetModel = (): Promise<LeNetModel> => {
-  if (leNetModelPromise) return leNetModelPromise
-  leNetModelPromise = Promise.all([
+const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
+  const bytes = new Uint8Array(buffer)
+  let binary = ''
+  const chunkSize = 0x8000
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize))
+  }
+  return btoa(binary)
+}
+
+const base64ToArrayBuffer = (value: string): ArrayBuffer => {
+  const binary = atob(value)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return bytes.buffer
+}
+
+const clearLeNetCache = (): void => {
+  try {
+    localStorage.removeItem(MODEL_CACHE_KEY)
+  } catch {
+    // Ignore storage access failures.
+  }
+}
+
+const cachedLeNetFiles = (): readonly [WeightsManifest, ArrayBuffer] | null => {
+  try {
+    const raw = localStorage.getItem(MODEL_CACHE_KEY)
+    if (!raw) return null
+    const cached = JSON.parse(raw) as Partial<CachedLeNetModel>
+    if (cached.version !== MODEL_CACHE_VERSION || !cached.manifest || !cached.weightsBase64) return null
+    return [cached.manifest, base64ToArrayBuffer(cached.weightsBase64)]
+  } catch {
+    clearLeNetCache()
+    return null
+  }
+}
+
+const cacheLeNetFiles = (manifest: WeightsManifest, buffer: ArrayBuffer): void => {
+  try {
+    localStorage.setItem(MODEL_CACHE_KEY, JSON.stringify({
+      version: MODEL_CACHE_VERSION,
+      manifest,
+      weightsBase64: arrayBufferToBase64(buffer),
+    } satisfies CachedLeNetModel))
+  } catch {
+    // Storage can be unavailable or full; the bundled model still works without the cache.
+  }
+}
+
+const fetchLeNetFiles = async (): Promise<readonly [WeightsManifest, ArrayBuffer]> => {
+  const [manifest, buffer] = await Promise.all([
     fetch(MODEL_MANIFEST_URL).then(response => response.json() as Promise<WeightsManifest>),
     fetch(MODEL_WEIGHTS_URL).then(response => response.arrayBuffer()),
-  ]).then(([manifest, buffer]) => {
-    const weights = new Float32Array(buffer)
-    if (weights.length !== manifest.floatCount) {
-      throw new Error(`Bad EMNIST weights length: ${weights.length}`)
+  ])
+  cacheLeNetFiles(manifest, buffer)
+  return [manifest, buffer]
+}
+
+const buildLeNetModel = (manifest: WeightsManifest, buffer: ArrayBuffer): LeNetModel => {
+  const weights = new Float32Array(buffer)
+  if (weights.length !== manifest.floatCount) {
+    throw new Error(`Bad EMNIST weights length: ${weights.length}`)
+  }
+  const tensors = manifest.tensors
+  return {
+    labels: manifest.labels,
+    conv1Kernel: tensor(weights, tensors.conv1Kernel!),
+    conv1Bias: tensor(weights, tensors.conv1Bias!),
+    conv2Kernel: tensor(weights, tensors.conv2Kernel!),
+    conv2Bias: tensor(weights, tensors.conv2Bias!),
+    dense1Kernel: tensor(weights, tensors.dense1Kernel!),
+    dense1Bias: tensor(weights, tensors.dense1Bias!),
+    dense2Kernel: tensor(weights, tensors.dense2Kernel!),
+    dense2Bias: tensor(weights, tensors.dense2Bias!),
+    dense3Kernel: tensor(weights, tensors.dense3Kernel!),
+    dense3Bias: tensor(weights, tensors.dense3Bias!),
+  }
+}
+
+const loadLeNetModel = (): Promise<LeNetModel> => {
+  if (leNetModelPromise) return leNetModelPromise
+  leNetModelPromise = (async () => {
+    const cached = cachedLeNetFiles()
+    if (cached) {
+      try {
+        return buildLeNetModel(...cached)
+      } catch {
+        clearLeNetCache()
+      }
     }
-    const tensors = manifest.tensors
-    return {
-      labels: manifest.labels,
-      conv1Kernel: tensor(weights, tensors.conv1Kernel!),
-      conv1Bias: tensor(weights, tensors.conv1Bias!),
-      conv2Kernel: tensor(weights, tensors.conv2Kernel!),
-      conv2Bias: tensor(weights, tensors.conv2Bias!),
-      dense1Kernel: tensor(weights, tensors.dense1Kernel!),
-      dense1Bias: tensor(weights, tensors.dense1Bias!),
-      dense2Kernel: tensor(weights, tensors.dense2Kernel!),
-      dense2Bias: tensor(weights, tensors.dense2Bias!),
-      dense3Kernel: tensor(weights, tensors.dense3Kernel!),
-      dense3Bias: tensor(weights, tensors.dense3Bias!),
-    }
-  })
+    const [manifest, buffer] = await fetchLeNetFiles()
+    return buildLeNetModel(manifest, buffer)
+  })()
   return leNetModelPromise
 }
 
