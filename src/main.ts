@@ -2,14 +2,15 @@ import { Effect, Match as M, Option, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { Document, html } from 'foldkit/html'
 
-import { ApplyImport, CancelResetSettings, ClickedAudioTest, ClickedBubbles, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedLanding, ClickedMusicBox, ClickedSettings, ConfirmResetSettings, CopyExportData, DismissMessage, ExportSettings, ImportSettings, ImportedSettings, LandingDragEnded, LandingDragStarted, LandingDroppedOn, ResetSettings, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsDragEnded, SettingsDragMoved, SettingsDragStarted, SettingsImportFailed, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
+import { ApplyImport, CancelResetSettings, ClickedAudioTest, ClickedBubbles, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedLanding, ClickedLetters, ClickedMusicBox, ClickedSettings, ConfirmResetSettings, CopyExportData, DismissMessage, ExportSettings, ImportSettings, ImportedSettings, LandingDragEnded, LandingDragStarted, LandingDroppedOn, ResetSettings, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsDragEnded, SettingsDragMoved, SettingsDragStarted, SettingsImportFailed, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
 
-import { Page, PageAudioTest, PageBubbles, PageCounter, PageFindIt, PageLanding, PageMusicBox } from './route'
+import { Page, PageAudioTest, PageBubbles, PageCounter, PageFindIt, PageLanding, PageLetters, PageMusicBox } from './route'
 
 import * as FindIt from './games/findit'
 import * as MusicBox from './games/musicbox'
 import * as Counter from './games/counter'
 import * as Bubbles from './games/bubbles'
+import * as Letters from './games/letters'
 import { LANDING_GAME_COUNT, view as landingView } from './pages/landing'
 import { view as audioTestView } from './pages/audiotest'
 import { Language, normalizeLanguage, t, tf } from './i18n'
@@ -45,6 +46,8 @@ const PersistedSettingsSchema = S.Struct({
   findItEnabledPacks: S.optionalKey(S.Array(FindIt.EmojiPackKey)),
   bubblesPopLabel: S.optionalKey(S.Boolean),
   bubblesSayColor: S.optionalKey(S.Boolean),
+  lettersTopN: S.optionalKey(S.Number),
+  lettersRecognitionMode: S.optionalKey(Letters.RecognitionMode),
   musicBoxSongOrder: S.optionalKey(S.Array(S.Number)),
   musicBoxHiddenSongs: S.optionalKey(S.Array(S.Boolean)),
   musicBoxDrumVolume: S.optionalKey(S.Number),
@@ -121,6 +124,8 @@ const buildSettingsData = (model: Model): PersistedSettings => ({
   findItEnabledPacks: model.findIt.enabledPacks,
   bubblesPopLabel: model.bubbles.popLabel,
   bubblesSayColor: model.bubbles.sayColor,
+  lettersTopN: model.letters.topN,
+  lettersRecognitionMode: model.letters.recognitionMode,
   musicBoxSongOrder: model.musicBox.songOrder,
   musicBoxHiddenSongs: model.musicBox.hiddenSongs,
   musicBoxDrumVolume: model.musicBox.drumVolume,
@@ -165,6 +170,7 @@ export const Model = S.Struct({
   counter: Counter.Model,
   findIt: FindIt.Model,
   bubbles: Bubbles.Model,
+  letters: Letters.Model,
   settingsPanelWidth: S.Number,
   isDraggingSettings: S.Boolean,
   settingsDragStartMouseX: S.Number,
@@ -192,6 +198,7 @@ export const Message = S.Union([
   ClickedCounter,
   ClickedFindIt,
   ClickedBubbles,
+  ClickedLetters,
   ClickedMusicBox,
   ClickedAudioTest,
   LandingDragStarted,
@@ -227,6 +234,15 @@ export const Message = S.Union([
   Bubbles.SetPopLabel,
   Bubbles.SetSayColor,
   Bubbles.ClickedColor,
+  Letters.BoardRecognized,
+  Letters.SubmitBoard,
+  Letters.NextRound,
+  Letters.SkipTarget,
+  Letters.ShuffleTarget,
+  Letters.ClearBoard,
+  Letters.SetTopN,
+  Letters.SetRecognitionMode,
+  Letters.RecognitionFailed,
   MusicBox.Play,
   MusicBox.Stop,
   MusicBox.SetSong,
@@ -317,6 +333,11 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
         popLabel: saved.bubblesPopLabel ?? false,
         sayColor: saved.bubblesSayColor ?? false,
       },
+      letters: {
+        ...Letters.init(),
+        topN: Letters.normalizeTopN(saved.lettersTopN),
+        recognitionMode: saved.lettersRecognitionMode ?? Letters.DEFAULT_RECOGNITION_MODE,
+      },
       settingsPanelWidth: 150,
       isDraggingSettings: false,
       settingsDragStartMouseX: 0,
@@ -367,6 +388,14 @@ const updateBubbles = (
   return [{ ...model, bubbles: next }, cmds]
 }
 
+const updateLetters = (
+  model: Model,
+  message: Letters.Message,
+): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
+  const [next, cmds] = Letters.update(model.letters, message)
+  return [{ ...model, letters: next }, cmds]
+}
+
 const cycleDarkMode = (current: DarkMode): DarkMode => {
   if (current === 'auto') return 'light'
   if (current === 'light') return 'dark'
@@ -412,6 +441,11 @@ const applyImportData = (model: Model, s: PersistedSettings): Model => {
       ...model.bubbles,
       popLabel: s.bubblesPopLabel ?? model.bubbles.popLabel,
       sayColor: s.bubblesSayColor ?? model.bubbles.sayColor,
+    },
+    letters: {
+      ...model.letters,
+      topN: Letters.normalizeTopN(s.lettersTopN ?? model.letters.topN),
+      recognitionMode: s.lettersRecognitionMode ?? model.letters.recognitionMode,
     },
     musicBox: {
       ...model.musicBox,
@@ -491,6 +525,7 @@ const _update = (
       ClickedCounter: () => [{ ...model, page: PageCounter() }, []],
       ClickedFindIt: () => [{ ...model, page: PageFindIt() }, []],
       ClickedBubbles: () => [{ ...model, page: PageBubbles() }, []],
+      ClickedLetters: () => [{ ...model, page: PageLetters() }, []],
       ClickedMusicBox: () => [{ ...model, page: PageMusicBox() }, []],
       ClickedAudioTest: () => [{ ...model, page: PageAudioTest() }, []],
       LandingDragStarted: (msg) => [{ ...model, landingDragIndex: msg.index }, []],
@@ -534,6 +569,15 @@ const _update = (
       BubblesSetRainbowMode: (msg) => updateBubbles(model, msg),
       BubblesSetPopLabel: (msg) => updateBubbles(model, msg),
       BubblesSetSayColor: (msg) => updateBubbles(model, msg),
+      LettersBoardRecognized: (msg) => updateLetters(model, msg),
+      LettersSubmitBoard: (msg) => updateLetters(model, msg),
+      LettersNextRound: (msg) => updateLetters(model, msg),
+      LettersSkipTarget: (msg) => updateLetters(model, msg),
+      LettersShuffleTarget: (msg) => updateLetters(model, msg),
+      LettersClearBoard: (msg) => updateLetters(model, msg),
+      LettersSetTopN: (msg) => updateLetters(model, msg),
+      LettersSetRecognitionMode: (msg) => updateLetters(model, msg),
+      LettersRecognitionFailed: (msg) => updateLetters(model, msg),
       MusicBoxPlay: (msg) => updateMusicBox(model, msg),
       MusicBoxStop: (msg) => updateMusicBox(model, msg),
       MusicBoxSetSong: (msg) => updateMusicBox(model, msg),
@@ -613,6 +657,7 @@ export const PERSISTED_SETTINGS_MESSAGE_TAGS = [
   'CounterSetDisplayMode',
   'FindItSetAnyWins', 'FindItSetVoiceMode', 'FindItSetPairsMode', 'FindItSetEmojiPackEnabled',
   'BubblesSetPopLabel', 'BubblesSetSayColor',
+  'LettersSetTopN', 'LettersSetRecognitionMode',
   'MusicBoxSetDrumVolume', 'MusicBoxToggleSongVisibility', 'MusicBoxSongDroppedOn',
 ] as const satisfies ReadonlyArray<Message['_tag']>
 
@@ -645,6 +690,7 @@ const pageTitle = (model: Model): string =>
       PageCounter: () => t('pageTitleCounter', model.language),
       PageFindIt: () => t('pageTitleFindIt', model.language),
       PageBubbles: () => t('pageTitleBubbles', model.language),
+      PageLetters: () => t('pageTitleLetters', model.language),
       PageMusicBox: () => t('pageTitleMusicBox', model.language),
       PageAudioTest: () => t('pageTitleAudioTest', model.language),
     }),
@@ -909,6 +955,35 @@ export const view = (model: Model): Document => {
               ]),
             ])
             : null,
+          model.page._tag === 'PageLetters'
+            ? h.div([h.Class('setting-section')], [
+              h.h3([], [t('lettersTitle', model.language)]),
+              h.div([h.Class('lang-buttons')], [
+                h.button(
+                  [h.Class(model.letters.recognitionMode === 'model' ? 'btn btn-primary' : 'btn btn-secondary'), settingsOnClick(Letters.SetRecognitionMode({ value: 'model' }))],
+                  ['Model'],
+                ),
+                h.button(
+                  [h.Class(model.letters.recognitionMode === 'template' ? 'btn btn-primary' : 'btn btn-secondary'), settingsOnClick(Letters.SetRecognitionMode({ value: 'template' }))],
+                  ['Template'],
+                ),
+              ]),
+              h.div([h.Class('setting-row')], [
+                h.label([], ['Top predictions']),
+                h.div([h.Class('slider-row')], [
+                  h.input([
+                    h.Type('range'),
+                    h.Min(Letters.MIN_TOP_N.toString()),
+                    h.Max(Letters.MAX_TOP_N.toString()),
+                    h.Step('1'),
+                    h.Value(model.letters.topN.toString()),
+                    settingsOnInput((v) => Letters.SetTopN({ value: parseFloat(v) })),
+                  ]),
+                  h.span([], [model.letters.topN.toString()]),
+                ]),
+              ]),
+            ])
+            : null,
           model.page._tag === 'PageMusicBox'
             ? h.div([h.Class('setting-section')], [
               h.h3([], [t('musicBoxTitle', model.language)]),
@@ -1002,6 +1077,7 @@ export const view = (model: Model): Document => {
               PageCounter: () => Counter.view(model.counter, model.language),
               PageFindIt: () => FindIt.view(model.findIt, model.language),
               PageBubbles: () => Bubbles.view(model.bubbles, model.language),
+              PageLetters: () => Letters.view(model.letters),
               PageMusicBox: () => MusicBox.view(model.musicBox, model.language),
               PageAudioTest: () => audioTestView(model.language),
             }),

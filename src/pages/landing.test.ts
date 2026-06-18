@@ -1,10 +1,10 @@
 import { describe, it } from 'vitest'
 import { Scene } from 'foldkit/test'
-import { view } from './landing'
+import { LANDING_GAME_COUNT, view } from './landing'
 import * as Main from '../main'
 
 describe('Landing', () => {
-  const defaultOrder = [0, 1, 2, 3]
+  const defaultOrder = Array.from({ length: LANDING_GAME_COUNT }, (_, i) => i)
 
   it('renders title and subtitle', () => {
     Scene.scene(
@@ -16,13 +16,14 @@ describe('Landing', () => {
     )
   })
 
-  it('renders all 4 game cards', () => {
+  it('renders all game cards', () => {
     Scene.scene(
       { update: Main.update, view: () => view(defaultOrder, 'en', -1) },
       Scene.with(Main.init()[0]),
       Scene.expect(Scene.text('Counter')).toExist(),
       Scene.expect(Scene.text('Find It!')).toExist(),
       Scene.expect(Scene.text('Bubbles!')).toExist(),
+      Scene.expect(Scene.text('Letters')).toExist(),
       Scene.expect(Scene.text('Music Box')).toExist(),
       Scene.Command.expectNone(),
     )
@@ -30,7 +31,7 @@ describe('Landing', () => {
 
   it('renders cards in custom order', () => {
       Scene.scene(
-        { update: Main.update, view: () => view([2, 0, 1, 3], 'en', -1) },
+        { update: Main.update, view: () => view([2, 0, 1, 3, 4], 'en', -1) },
       Scene.with(Main.init()[0]),
       Scene.Command.expectNone(),
     )

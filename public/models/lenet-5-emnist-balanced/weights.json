@@ -1,0 +1,137 @@
+{
+  "source": "model.keras",
+  "dtype": "float32",
+  "byteOrder": "little-endian",
+  "labels": [
+    "0",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "A",
+    "B",
+    "C",
+    "D",
+    "E",
+    "F",
+    "G",
+    "H",
+    "I",
+    "J",
+    "K",
+    "L",
+    "M",
+    "N",
+    "O",
+    "P",
+    "Q",
+    "R",
+    "S",
+    "T",
+    "U",
+    "V",
+    "W",
+    "X",
+    "Y",
+    "Z",
+    "a",
+    "b",
+    "d",
+    "e",
+    "f",
+    "g",
+    "h",
+    "n",
+    "q",
+    "r",
+    "t"
+  ],
+  "tensors": {
+    "conv1Kernel": {
+      "shape": [
+        5,
+        5,
+        1,
+        6
+      ],
+      "offset": 0,
+      "length": 150
+    },
+    "conv1Bias": {
+      "shape": [
+        6
+      ],
+      "offset": 150,
+      "length": 6
+    },
+    "conv2Kernel": {
+      "shape": [
+        5,
+        5,
+        6,
+        16
+      ],
+      "offset": 156,
+      "length": 2400
+    },
+    "conv2Bias": {
+      "shape": [
+        16
+      ],
+      "offset": 2556,
+      "length": 16
+    },
+    "dense1Kernel": {
+      "shape": [
+        400,
+        120
+      ],
+      "offset": 2572,
+      "length": 48000
+    },
+    "dense1Bias": {
+      "shape": [
+        120
+      ],
+      "offset": 50572,
+      "length": 120
+    },
+    "dense2Kernel": {
+      "shape": [
+        120,
+        84
+      ],
+      "offset": 50692,
+      "length": 10080
+    },
+    "dense2Bias": {
+      "shape": [
+        84
+      ],
+      "offset": 60772,
+      "length": 84
+    },
+    "dense3Kernel": {
+      "shape": [
+        84,
+        47
+      ],
+      "offset": 60856,
+      "length": 3948
+    },
+    "dense3Bias": {
+      "shape": [
+        47
+      ],
+      "offset": 64804,
+      "length": 47
+    }
+  },
+  "floatCount": 64851,
+  "byteLength": 259404
+}

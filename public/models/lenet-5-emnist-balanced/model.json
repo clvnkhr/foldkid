@@ -1,0 +1,22 @@
+{
+  "source": "https://huggingface.co/Ghostraptor/lenet-5-emnist-balanced",
+  "download": "https://huggingface.co/Ghostraptor/lenet-5-emnist-balanced/resolve/main/LeNet-5-EMNIST-Balanced.keras",
+  "license": "apache-2.0",
+  "library": "keras",
+  "pipeline": "image-classification",
+  "task": "handwritten character recognition",
+  "dataset": "EMNIST Balanced",
+  "classes": 47,
+  "parameters": 64851,
+  "validationAccuracy": "approximately 88%",
+  "sha": "1a29cef3eeef8aa3568108da868ddd508a978334",
+  "file": "model.keras",
+  "bytes": 825204,
+  "convertedWeights": {
+    "manifest": "weights.json",
+    "file": "weights.bin",
+    "bytes": 259404,
+    "converter": "scripts/convert-emnist-weights.py"
+  },
+  "note": "Selected as the smallest practical EMNIST handwriting-recognition model found. A smaller ONNX Model Zoo MNIST int8 model exists at about 11 KB, but it recognizes digits only."
+}

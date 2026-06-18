@@ -5,6 +5,7 @@ import * as Main from './main'
 import * as Counter from './games/counter'
 import * as FindIt from './games/findit'
 import * as Bubbles from './games/bubbles'
+import * as Letters from './games/letters'
 import * as MusicBox from './games/musicbox'
 import { ApplyImport, ClickedLanding, ClickedCounter, ClickedFindIt, ClickedBubbles, ClickedDarkMode, ConfirmResetSettings, ExportSettings, ImportedSettings, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsPersisted, ToggleMute } from './message'
 
@@ -109,6 +110,8 @@ describe('settings persistence', () => {
     { label: 'FindItSetEmojiPackEnabled', msg: FindIt.SetEmojiPackEnabled({ key: 'numbers', value: false }) },
     { label: 'BubblesSetPopLabel', msg: Bubbles.SetPopLabel({ value: true }) },
     { label: 'BubblesSetSayColor', msg: Bubbles.SetSayColor({ value: true }) },
+    { label: 'LettersSetTopN', msg: Letters.SetTopN({ value: 7 }) },
+    { label: 'LettersSetRecognitionMode', msg: Letters.SetRecognitionMode({ value: 'template' }) },
     { label: 'MusicBoxSetDrumVolume', msg: MusicBox.SetDrumVolume({ value: 0.35 }) },
     { label: 'MusicBoxToggleSongVisibility', msg: MusicBox.ToggleSongVisibility({ index: 1 }) },
     { label: 'MusicBoxSongDroppedOn', msg: MusicBox.SongDroppedOn({ index: 1 }) },
