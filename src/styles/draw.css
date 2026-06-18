@@ -1,4 +1,4 @@
-.letters-page {
+.draw-page {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
@@ -10,11 +10,11 @@
   transition: background 0.18s ease;
 }
 
-.letters-page--success {
+.draw-page--success {
   background: linear-gradient(135deg, #13b46b 0%, #55d989 100%);
 }
 
-.letters-top {
+.draw-top {
   width: min(900px, 100%);
   display: grid;
   grid-template-columns: 1fr auto;
@@ -22,14 +22,14 @@
   gap: 1rem;
 }
 
-.letters-question {
+.draw-question {
   color: #fff;
   font-size: clamp(2rem, 7vw, 4.25rem);
   line-height: 1;
   text-shadow: 0 3px 14px rgba(0, 0, 0, 0.28);
 }
 
-.letters-score {
+.draw-score {
   min-width: 3.25rem;
   height: 3.25rem;
   display: inline-flex;
@@ -43,12 +43,12 @@
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
 }
 
-.letters-board-wrap {
+.draw-board-wrap {
   width: min(900px, 100%);
   position: relative;
 }
 
-.letters-board {
+.draw-board {
   display: block;
   width: 100%;
   height: min(62vh, 520px);
@@ -61,7 +61,7 @@
   cursor: crosshair;
 }
 
-.letters-success {
+.draw-success {
   position: absolute;
   inset: 0;
   display: flex;
@@ -74,7 +74,7 @@
   pointer-events: none;
 }
 
-.letters-bottom {
+.draw-bottom {
   width: min(900px, 100%);
   min-height: 3rem;
   display: flex;
@@ -83,7 +83,7 @@
   gap: 0.6rem;
 }
 
-.letters-actions {
+.draw-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -91,8 +91,8 @@
   gap: 0.65rem;
 }
 
-.letters-guess,
-.letters-model {
+.draw-guess,
+.draw-model {
   color: rgba(255, 255, 255, 0.9);
   font-size: 1rem;
   font-weight: 700;
@@ -100,34 +100,34 @@
   overflow-wrap: anywhere;
 }
 
-.letters-bottom-spacer { min-width: 0; }
-.letters-debug { width: min(900px, 100%); max-height: 14rem; display: grid; grid-template-columns: repeat(auto-fill, minmax(5.25rem, 1fr)); gap: 0.55rem; overflow: auto; padding: 0.45rem; border-radius: 0.5rem; background: rgba(255, 255, 255, 0.2); }
-.letters-debug-item { min-width: 0; padding: 0.35rem; border-radius: 0.35rem; background: rgba(255, 255, 255, 0.9); }
-.letters-debug-item--stage { grid-column: span 2; }
-.letters-debug-img { width: 100%; aspect-ratio: 1; object-fit: contain; image-rendering: pixelated; background: #fff; border: 1px solid rgba(0, 0, 0, 0.12); }
-.letters-debug-label { margin-top: 0.25rem; color: #1f2a44; font-size: 0.7rem; font-weight: 700; text-align: center; overflow-wrap: anywhere; }
-.letters-debug-prediction{color:#1f2a44;font-size:5.4rem;font-weight:800;text-align:center}
+.draw-bottom-spacer { min-width: 0; }
+.draw-debug { width: min(900px, 100%); max-height: 14rem; display: grid; grid-template-columns: repeat(auto-fill, minmax(5.25rem, 1fr)); gap: 0.55rem; overflow: auto; padding: 0.45rem; border-radius: 0.5rem; background: rgba(255, 255, 255, 0.2); }
+.draw-debug-item { min-width: 0; padding: 0.35rem; border-radius: 0.35rem; background: rgba(255, 255, 255, 0.9); }
+.draw-debug-item--stage { grid-column: span 2; }
+.draw-debug-img { width: 100%; aspect-ratio: 1; object-fit: contain; image-rendering: pixelated; background: #fff; border: 1px solid rgba(0, 0, 0, 0.12); }
+.draw-debug-label { margin-top: 0.25rem; color: #1f2a44; font-size: 0.7rem; font-weight: 700; text-align: center; overflow-wrap: anywhere; }
+.draw-debug-prediction{color:#1f2a44;font-size:5.4rem;font-weight:800;text-align:center}
 @media (max-width: 560px) {
-  .letters-page {
+  .draw-page {
     padding-top: 4.5rem;
   }
 
-  .letters-top {
+  .draw-top {
     grid-template-columns: 1fr;
     gap: 0.5rem;
   }
 
-  .letters-score {
+  .draw-score {
     position: absolute;
     top: 4.5rem;
     right: 1rem;
   }
 
-  .letters-board {
+  .draw-board {
     height: 58vh;
     min-height: 300px;
     border-width: 7px;
   }
 
-  .letters-bottom-spacer { display: none; }
+  .draw-bottom-spacer { display: none; }
 }

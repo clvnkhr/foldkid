@@ -23,7 +23,7 @@ describe('Landing', () => {
       Scene.expect(Scene.text('Counter')).toExist(),
       Scene.expect(Scene.text('Find It!')).toExist(),
       Scene.expect(Scene.text('Bubbles!')).toExist(),
-      Scene.expect(Scene.text('Letters')).toExist(),
+      Scene.expect(Scene.text('Draw')).toExist(),
       Scene.expect(Scene.text('Music Box')).toExist(),
       Scene.Command.expectNone(),
     )

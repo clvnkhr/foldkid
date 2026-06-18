@@ -53,15 +53,15 @@ export const Model = S.Struct({
 })
 export type Model = typeof Model.Type
 
-export const BoardRecognized = m('LettersBoardRecognized', { target: S.String, mode: RecognitionMode, value: S.String, score: S.Number, predictions: S.Array(Prediction), debugImages: S.Array(DebugImage), boardImage: S.String })
-export const SubmitBoard = m('LettersSubmitBoard')
-export const NextRound = m('LettersNextRound')
-export const SkipTarget = m('LettersSkipTarget')
-export const ShuffleTarget = m('LettersShuffleTarget')
-export const ClearBoard = m('LettersClearBoard')
-export const SetTopN = m('LettersSetTopN', { value: S.Number })
-export const SetRecognitionMode = m('LettersSetRecognitionMode', { value: RecognitionMode })
-export const RecognitionFailed = m('LettersRecognitionFailed')
+export const BoardRecognized = m('DrawBoardRecognized', { target: S.String, mode: RecognitionMode, value: S.String, score: S.Number, predictions: S.Array(Prediction), debugImages: S.Array(DebugImage), boardImage: S.String })
+export const SubmitBoard = m('DrawSubmitBoard')
+export const NextRound = m('DrawNextRound')
+export const SkipTarget = m('DrawSkipTarget')
+export const ShuffleTarget = m('DrawShuffleTarget')
+export const ClearBoard = m('DrawClearBoard')
+export const SetTopN = m('DrawSetTopN', { value: S.Number })
+export const SetRecognitionMode = m('DrawSetRecognitionMode', { value: RecognitionMode })
+export const RecognitionFailed = m('DrawRecognitionFailed')
 
 export const Message = S.Union([BoardRecognized, SubmitBoard, NextRound, SkipTarget, ShuffleTarget, ClearBoard, SetTopN, SetRecognitionMode, RecognitionFailed])
 export type Message = typeof Message.Type
@@ -103,7 +103,7 @@ const nextRound = (model: Model): Model => {
 }
 
 const delayedNextRound = (): Command.Command<Message> => ({
-  name: 'LettersNextRoundDelay',
+  name: 'DrawNextRoundDelay',
   effect: Effect.sleep(700).pipe(Effect.as(NextRound())),
 })
 
@@ -120,7 +120,7 @@ export const update = (
   M.value(message).pipe(
     M.withReturnType<readonly [Model, ReadonlyArray<Command.Command<Message>>]>(),
     M.tagsExhaustive({
-      LettersBoardRecognized: (msg) => {
+      DrawBoardRecognized: (msg) => {
         if (model.success) return [model, []]
         if (msg.target !== model.target) return [model, []]
         if (msg.mode !== model.recognitionMode) return [model, []]
@@ -139,10 +139,10 @@ export const update = (
           matched ? [delayedNextRound()] : [],
         ]
       },
-      LettersSubmitBoard: () => [model, [recognizeCurrentBoardCmd(model.target, model.recognitionMode)]],
-      LettersNextRound: () => [nextRound(model), []],
-      LettersSkipTarget: () => [nextRound(model), []],
-      LettersShuffleTarget: () => [
+      DrawSubmitBoard: () => [model, [recognizeCurrentBoardCmd(model.target, model.recognitionMode)]],
+      DrawNextRound: () => [nextRound(model), []],
+      DrawSkipTarget: () => [nextRound(model), []],
+      DrawShuffleTarget: () => [
         {
           ...model,
           target: randomTarget(model.target),
@@ -157,19 +157,19 @@ export const update = (
         },
         [],
       ],
-      LettersClearBoard: () => [
+      DrawClearBoard: () => [
         { ...model, lastGuess: '', lastConfidence: 0, lastPredictions: [], clearCount: model.clearCount + 1, debugImages: [], lastBoardImage: '' },
         [],
       ],
-      LettersSetTopN: (msg) => [
+      DrawSetTopN: (msg) => [
         { ...model, topN: normalizeTopN(msg.value) },
         [],
       ],
-      LettersSetRecognitionMode: (msg) => [
+      DrawSetRecognitionMode: (msg) => [
         { ...model, recognitionMode: msg.value, lastGuess: '', lastConfidence: 0, lastPredictions: [], debugImages: [] },
         model.lastBoardImage ? [recognizeBoardImageCmd(model.target, msg.value, model.lastBoardImage)] : [],
       ],
-      LettersRecognitionFailed: () => [model, []],
+      DrawRecognitionFailed: () => [model, []],
     }),
   )
 
@@ -610,7 +610,7 @@ const boardImageToCanvas = (src: string): Promise<HTMLCanvasElement> =>
   })
 
 const recognizeBoardImageCmd = (target: string, mode: RecognitionMode, boardImage: string): Command.Command<Message> => ({
-  name: 'LettersReprocessBoard',
+  name: 'DrawReprocessBoard',
   effect: Effect.tryPromise(async () => {
     try {
       const canvas = await boardImageToCanvas(boardImage)
@@ -623,10 +623,10 @@ const recognizeBoardImageCmd = (target: string, mode: RecognitionMode, boardImag
 })
 
 const recognizeCurrentBoardCmd = (target: string, mode: RecognitionMode): Command.Command<Message> => ({
-  name: 'LettersSubmitBoard',
+  name: 'DrawSubmitBoard',
   effect: Effect.tryPromise(async () => {
     try {
-      const canvas = document.querySelector<HTMLCanvasElement>('#letters-board')
+      const canvas = document.querySelector<HTMLCanvasElement>('#draw-board')
       if (!canvas) return RecognitionFailed()
       const boardImage = canvas.toDataURL('image/png')
       const result = await recognizeFromBoard(canvas, mode)
@@ -718,48 +718,48 @@ export const view = (model: Model) => {
     : `Write the number ${model.target}`
 
   return h.div(
-    [h.Class(model.success ? 'letters-page letters-page--success' : 'letters-page')],
+    [h.Class(model.success ? 'draw-page draw-page--success' : 'draw-page')],
     [
-      h.div([h.Class('letters-top')], [
-        h.h1([h.Class('letters-question')], [prompt]),
-        h.div([h.Class('letters-score')], [`${model.score}`]),
+      h.div([h.Class('draw-top')], [
+        h.h1([h.Class('draw-question')], [prompt]),
+        h.div([h.Class('draw-score')], [`${model.score}`]),
       ]),
-      h.div([h.Class('letters-board-wrap')], [
+      h.div([h.Class('draw-board-wrap')], [
         h.canvas([
-          h.Class('letters-board'),
-          h.Id('letters-board'),
+          h.Class('draw-board'),
+          h.Id('draw-board'),
           h.Width('640'),
           h.Height('420'),
-          h.Key(`letters-board-${model.round}-${model.clearCount}`),
-          h.OnMount({ name: 'lettersWhiteboard', args: {}, f: mountWhiteboard() }),
+          h.Key(`draw-board-${model.round}-${model.clearCount}`),
+          h.OnMount({ name: 'drawWhiteboard', args: {}, f: mountWhiteboard() }),
           h.Attribute('data-model-url', MODEL_URL),
           h.Attribute('data-recognition-mode', model.recognitionMode),
         ], []),
         model.success
-          ? h.div([h.Class('letters-success')], ['✓'])
+          ? h.div([h.Class('draw-success')], ['✓'])
           : null,
       ]),
-      h.div([h.Class('letters-bottom')], [
-        h.div([h.Class('letters-actions')], [
+      h.div([h.Class('draw-bottom')], [
+        h.div([h.Class('draw-actions')], [
           h.button([h.Class('btn btn-primary'), h.OnClick(SubmitBoard())], ['Submit']),
           h.button([h.Class('btn btn-secondary'), h.OnClick(SkipTarget())], ['Skip']),
           h.button([h.Class('btn btn-secondary'), h.OnClick(ShuffleTarget())], ['Shuffle']),
           h.button([h.Class('btn btn-secondary'), h.OnClick(ClearBoard())], ['Clear']),
         ]),
         model.lastGuess && !model.success
-          ? h.span([h.Class('letters-guess')], [`I saw ${model.lastGuess} (${confidence}); target ${model.target} ${topNHasTarget ? 'is' : 'is not'} in top ${model.topN}: ${topPredictions}`])
-          : h.span([h.Class('letters-model')], [modeLabel]),
-        h.div([h.Class('letters-bottom-spacer')], []),
+          ? h.span([h.Class('draw-guess')], [`I saw ${model.lastGuess} (${confidence}); target ${model.target} ${topNHasTarget ? 'is' : 'is not'} in top ${model.topN}: ${topPredictions}`])
+          : h.span([h.Class('draw-model')], [modeLabel]),
+        h.div([h.Class('draw-bottom-spacer')], []),
       ]),
       model.debugImages.length > 0
-        ? h.div([h.Class('letters-debug')], [
+        ? h.div([h.Class('draw-debug')], [
           ...model.debugImages.map((image, index) => {
             const isPrediction = image.kind === 'prediction'
-            return h.figure([h.Class(index < 3 ? 'letters-debug-item letters-debug-item--stage' : 'letters-debug-item'), h.Key(`${index}-${image.label}`)], [
+            return h.figure([h.Class(index < 3 ? 'draw-debug-item draw-debug-item--stage' : 'draw-debug-item'), h.Key(`${index}-${image.label}`)], [
               isPrediction
-                ? h.div([h.Class('letters-debug-prediction')], [image.value ?? image.label])
-                : h.img([h.Class('letters-debug-img'), h.Src(image.src), h.Alt(image.label)]),
-              h.figcaption([h.Class('letters-debug-label')], [image.label]),
+                ? h.div([h.Class('draw-debug-prediction')], [image.value ?? image.label])
+                : h.img([h.Class('draw-debug-img'), h.Src(image.src), h.Alt(image.label)]),
+              h.figcaption([h.Class('draw-debug-label')], [image.label]),
             ])
           }),
         ])
