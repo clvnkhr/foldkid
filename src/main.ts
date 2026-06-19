@@ -48,6 +48,7 @@ const PersistedSettingsSchema = S.Struct({
   bubblesSayColor: S.optionalKey(S.Boolean),
   drawTopN: S.optionalKey(S.Number),
   drawRecognitionMode: S.optionalKey(Draw.RecognitionMode),
+  drawFreeMode: S.optionalKey(S.Boolean),
   musicBoxSongOrder: S.optionalKey(S.Array(S.Number)),
   musicBoxHiddenSongs: S.optionalKey(S.Array(S.Boolean)),
   musicBoxDrumVolume: S.optionalKey(S.Number),
@@ -126,6 +127,7 @@ const buildSettingsData = (model: Model): PersistedSettings => ({
   bubblesSayColor: model.bubbles.sayColor,
   drawTopN: model.draw.topN,
   drawRecognitionMode: model.draw.recognitionMode,
+  drawFreeMode: model.draw.freeMode,
   musicBoxSongOrder: model.musicBox.songOrder,
   musicBoxHiddenSongs: model.musicBox.hiddenSongs,
   musicBoxDrumVolume: model.musicBox.drumVolume,
@@ -242,6 +244,7 @@ export const Message = S.Union([
   Draw.ClearBoard,
   Draw.SetTopN,
   Draw.SetRecognitionMode,
+  Draw.SetFreeMode,
   Draw.RecognitionFailed,
   MusicBox.Play,
   MusicBox.Stop,
@@ -337,6 +340,7 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
         ...Draw.init(),
         topN: Draw.normalizeTopN(saved.drawTopN),
         recognitionMode: saved.drawRecognitionMode ?? Draw.DEFAULT_RECOGNITION_MODE,
+        freeMode: saved.drawFreeMode ?? false,
       },
       settingsPanelWidth: 150,
       isDraggingSettings: false,
@@ -446,6 +450,7 @@ const applyImportData = (model: Model, s: PersistedSettings): Model => {
       ...model.draw,
       topN: Draw.normalizeTopN(s.drawTopN ?? model.draw.topN),
       recognitionMode: s.drawRecognitionMode ?? model.draw.recognitionMode,
+      freeMode: s.drawFreeMode ?? model.draw.freeMode,
     },
     musicBox: {
       ...model.musicBox,
@@ -577,6 +582,7 @@ const _update = (
       DrawClearBoard: (msg) => updateDraw(model, msg),
       DrawSetTopN: (msg) => updateDraw(model, msg),
       DrawSetRecognitionMode: (msg) => updateDraw(model, msg),
+      DrawSetFreeMode: (msg) => updateDraw(model, msg),
       DrawRecognitionFailed: (msg) => updateDraw(model, msg),
       MusicBoxPlay: (msg) => updateMusicBox(model, msg),
       MusicBoxStop: (msg) => updateMusicBox(model, msg),
@@ -657,7 +663,7 @@ export const PERSISTED_SETTINGS_MESSAGE_TAGS = [
   'CounterSetDisplayMode',
   'FindItSetAnyWins', 'FindItSetVoiceMode', 'FindItSetPairsMode', 'FindItSetEmojiPackEnabled',
   'BubblesSetPopLabel', 'BubblesSetSayColor',
-  'DrawSetTopN', 'DrawSetRecognitionMode',
+  'DrawSetTopN', 'DrawSetRecognitionMode', 'DrawSetFreeMode',
   'MusicBoxSetDrumVolume', 'MusicBoxToggleSongVisibility', 'MusicBoxSongDroppedOn',
 ] as const satisfies ReadonlyArray<Message['_tag']>
 
@@ -966,6 +972,16 @@ export const view = (model: Model): Document => {
                 h.button(
                   [h.Class(model.draw.recognitionMode === 'template' ? 'btn btn-primary' : 'btn btn-secondary'), settingsOnClick(Draw.SetRecognitionMode({ value: 'template' }))],
                   ['Template'],
+                ),
+              ]),
+              h.div([h.Class('lang-buttons')], [
+                h.button(
+                  [h.Class(!model.draw.freeMode ? 'btn btn-primary' : 'btn btn-secondary'), settingsOnClick(Draw.SetFreeMode({ value: false }))],
+                  ['Prompt'],
+                ),
+                h.button(
+                  [h.Class(model.draw.freeMode ? 'btn btn-primary' : 'btn btn-secondary'), settingsOnClick(Draw.SetFreeMode({ value: true }))],
+                  ['Free mode'],
                 ),
               ]),
               h.div([h.Class('setting-row')], [

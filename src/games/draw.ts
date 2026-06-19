@@ -1,4 +1,4 @@
-import { Effect, Match as M, Schema as S, Stream } from 'effect'
+import { Effect, Match as M, Queue, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
@@ -49,6 +49,7 @@ export const Model = S.Struct({
   lastPredictions: S.Array(Prediction),
   topN: S.Number,
   recognitionMode: RecognitionMode,
+  freeMode: S.Boolean,
   clearCount: S.Number,
   debugImages: S.Array(DebugImage),
   lastBoardImage: S.String,
@@ -64,9 +65,10 @@ export const ShuffleTarget = m('DrawShuffleTarget')
 export const ClearBoard = m('DrawClearBoard')
 export const SetTopN = m('DrawSetTopN', { value: S.Number })
 export const SetRecognitionMode = m('DrawSetRecognitionMode', { value: RecognitionMode })
+export const SetFreeMode = m('DrawSetFreeMode', { value: S.Boolean })
 export const RecognitionFailed = m('DrawRecognitionFailed')
 
-export const Message = S.Union([BoardRecognized, SubmitBoard, NextRound, SkipTarget, ShuffleTarget, ClearBoard, SetTopN, SetRecognitionMode, RecognitionFailed])
+export const Message = S.Union([BoardRecognized, SubmitBoard, NextRound, SkipTarget, ShuffleTarget, ClearBoard, SetTopN, SetRecognitionMode, SetFreeMode, RecognitionFailed])
 export type Message = typeof Message.Type
 
 const nextTarget = (round: number): string => TARGETS[round % TARGETS.length] ?? 'A'
@@ -85,6 +87,7 @@ export const init = (): Model => ({
   lastPredictions: [],
   topN: DEFAULT_TOP_N,
   recognitionMode: DEFAULT_RECOGNITION_MODE,
+  freeMode: false,
   clearCount: 0,
   debugImages: [],
   lastBoardImage: '',
@@ -121,9 +124,24 @@ export const update = (
     M.withReturnType<readonly [Model, ReadonlyArray<Command.Command<Message>>]>(),
     M.tagsExhaustive({
       DrawBoardRecognized: (msg) => {
+        if (msg.mode !== model.recognitionMode) return [model, []]
+        if (model.freeMode) {
+          return [
+            {
+              ...model,
+              success: false,
+              lastGuess: msg.value,
+              lastConfidence: msg.score,
+              lastPredictions: msg.predictions,
+              debugImages: msg.debugImages,
+              lastBoardImage: msg.boardImage,
+              winningImage: '',
+            },
+            [],
+          ]
+        }
         if (model.success) return [model, []]
         if (msg.target !== model.target) return [model, []]
-        if (msg.mode !== model.recognitionMode) return [model, []]
         const matched = msg.predictions.slice(0, model.topN).some(prediction => isNearMatch(prediction.value, msg.target))
         const winningImage = matched ? msg.debugImages.find(image => image.label === 'cropped and centered')?.src ?? msg.boardImage : ''
         return [
@@ -171,6 +189,10 @@ export const update = (
       DrawSetRecognitionMode: (msg) => [
         { ...model, recognitionMode: msg.value, lastGuess: '', lastConfidence: 0, lastPredictions: [], debugImages: [] },
         model.lastBoardImage ? [RecognizeBoardImage({ target: model.target, mode: msg.value, boardImage: model.lastBoardImage })] : [],
+      ],
+      DrawSetFreeMode: (msg) => [
+        { ...model, freeMode: msg.value, success: false, lastGuess: '', lastConfidence: 0, lastPredictions: [], clearCount: model.clearCount + 1, debugImages: [], lastBoardImage: '', winningImage: '' },
+        [],
       ],
       DrawRecognitionFailed: () => [model, []],
     }),
@@ -778,8 +800,11 @@ const RecognizeCurrentBoard = (args: { target: string; mode: RecognitionMode }):
   effect: Effect.promise(() => recognizeCurrentBoard(args.target, args.mode)),
 })
 
-const mountWhiteboard = () => (element: Element): Stream.Stream<Message> =>
-  Stream.callback<Message>(() =>
+const modeFromCanvas = (canvas: HTMLCanvasElement): RecognitionMode =>
+  canvas.dataset.recognitionMode === 'template' ? 'template' : 'model'
+
+const mountWhiteboard = (target: string) => (element: Element): Stream.Stream<Message> =>
+  Stream.callback<Message>(queue =>
     Effect.gen(function* () {
       yield* Effect.acquireRelease(
         Effect.sync(() => {
@@ -827,6 +852,11 @@ const mountWhiteboard = () => (element: Element): Stream.Stream<Message> =>
             event.preventDefault()
             activePointers.delete(event.pointerId)
             if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId)
+            if (canvas.dataset.freeMode !== 'true') return
+            const mode = modeFromCanvas(canvas)
+            void recognizeFromBoard(canvas, mode).then(result => {
+              if (result) Queue.offerUnsafe(queue, BoardRecognized({ ...result, target, mode, boardImage: canvas.toDataURL('image/png') }))
+            })
           }
 
           canvas.addEventListener('pointerdown', onDown)
@@ -854,7 +884,9 @@ export const view = (model: Model) => {
   const topN = model.lastPredictions.slice(0, model.topN)
   const topPredictions = topN.map(prediction => prediction.value).join(', ')
   const topNHasTarget = topN.some(prediction => isNearMatch(prediction.value, model.target))
-  const prompt = model.target.match(/[A-Za-z]/)
+  const prompt = model.freeMode
+    ? 'Draw anything'
+    : model.target.match(/[A-Za-z]/)
     ? `Write the letter ${model.target}`
     : `Write the number ${model.target}`
 
@@ -863,10 +895,10 @@ export const view = (model: Model) => {
     [
       h.div([h.Class('draw-top')], [
         h.h1([h.Class('draw-question')], [prompt]),
-        h.div([h.Class('draw-score')], [`${model.score}`]),
+        model.freeMode ? null : h.div([h.Class('draw-score')], [`${model.score}`]),
       ]),
       h.div([h.Class('draw-board-wrap')], [
-        model.success
+        model.success && !model.freeMode
           ? h.div([h.Class('draw-win-card')], [
             h.img([h.Class('draw-win-img'), h.Src(model.winningImage), h.Alt('Winning drawing')]),
             h.div([h.Class('draw-win-mark')], ['✓']),
@@ -879,24 +911,33 @@ export const view = (model: Model) => {
             h.Width('640'),
             h.Height('420'),
             h.Key(`draw-board-${model.round}-${model.clearCount}`),
-            h.OnMount({ name: 'drawWhiteboard', args: {}, f: mountWhiteboard() }),
+            h.OnMount({ name: 'drawWhiteboard', args: { target: model.target }, f: mountWhiteboard(model.target) }),
             h.Attribute('data-model-url', MODEL_URL),
             h.Attribute('data-recognition-mode', model.recognitionMode),
+            h.Attribute('data-free-mode', model.freeMode ? 'true' : 'false'),
           ], []),
       ]),
       h.div([h.Class('draw-bottom')], [
-        model.success
+        model.success && !model.freeMode
           ? null
-          : h.div([h.Class('draw-actions')], [
-            h.button([h.Class('btn btn-primary'), h.OnClick(SubmitBoard())], ['Submit']),
-            h.button([h.Class('btn btn-secondary'), h.OnClick(SkipTarget())], ['Skip']),
-            h.button([h.Class('btn btn-secondary'), h.OnClick(ShuffleTarget())], ['Shuffle']),
-            h.button([h.Class('btn btn-secondary'), h.OnClick(ClearBoard())], ['Clear']),
-          ]),
-        model.success
+          : model.freeMode
+            ? h.div([h.Class('draw-actions')], [
+              h.button([h.Class('btn btn-secondary'), h.OnClick(ClearBoard())], ['Clear']),
+            ])
+            : h.div([h.Class('draw-actions')], [
+              h.button([h.Class('btn btn-primary'), h.OnClick(SubmitBoard())], ['Submit']),
+              h.button([h.Class('btn btn-secondary'), h.OnClick(SkipTarget())], ['Skip']),
+              h.button([h.Class('btn btn-secondary'), h.OnClick(ShuffleTarget())], ['Shuffle']),
+              h.button([h.Class('btn btn-secondary'), h.OnClick(ClearBoard())], ['Clear']),
+            ]),
+        model.success && !model.freeMode
           ? null
           : model.lastGuess
-            ? h.span([h.Class('draw-guess')], [`I saw ${model.lastGuess} (${confidence}); target ${model.target} ${topNHasTarget ? 'is' : 'is not'} in top ${model.topN}: ${topPredictions}`])
+            ? h.span([h.Class('draw-guess')], [
+              model.freeMode
+                ? `I saw ${model.lastGuess} (${confidence}); top ${model.topN}: ${topPredictions}`
+                : `I saw ${model.lastGuess} (${confidence}); target ${model.target} ${topNHasTarget ? 'is' : 'is not'} in top ${model.topN}: ${topPredictions}`,
+            ])
             : h.span([h.Class('draw-model')], [modeLabel]),
       ]),
       model.debugImages.length > 0

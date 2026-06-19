@@ -112,6 +112,7 @@ describe('settings persistence', () => {
     { label: 'BubblesSetSayColor', msg: Bubbles.SetSayColor({ value: true }) },
     { label: 'DrawSetTopN', msg: Draw.SetTopN({ value: 7 }) },
     { label: 'DrawSetRecognitionMode', msg: Draw.SetRecognitionMode({ value: 'template' }) },
+    { label: 'DrawSetFreeMode', msg: Draw.SetFreeMode({ value: true }) },
     { label: 'MusicBoxSetDrumVolume', msg: MusicBox.SetDrumVolume({ value: 0.35 }) },
     { label: 'MusicBoxToggleSongVisibility', msg: MusicBox.ToggleSongVisibility({ index: 1 }) },
     { label: 'MusicBoxSongDroppedOn', msg: MusicBox.SongDroppedOn({ index: 1 }) },

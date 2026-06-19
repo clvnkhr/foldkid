@@ -30,6 +30,7 @@ describe('Draw', () => {
     expect(model.success).toBe(false)
     expect(model.topN).toBe(Draw.DEFAULT_TOP_N)
     expect(model.recognitionMode).toBe(Draw.DEFAULT_RECOGNITION_MODE)
+    expect(model.freeMode).toBe(false)
   })
 
   it('normalizes top N into the supported range', () => {
@@ -100,6 +101,43 @@ describe('Draw', () => {
 
     expect(wrongMode).toBe(model)
     expect(wrongTarget).toBe(model)
+  })
+
+  it('free mode reports the best guess without scoring or checking the target', () => {
+    const model = { ...Draw.init(), target: 'A', freeMode: true, topN: 3 }
+    const [next, cmds] = Draw.update(model, recognized(model, ['B', 'C'], { target: 'stale-target' }))
+
+    expect(next.success).toBe(false)
+    expect(next.score).toBe(0)
+    expect(next.lastGuess).toBe('B')
+    expect(next.lastConfidence).toBe(0.9)
+    expect(next.lastPredictions.map(prediction => prediction.value)).toEqual(['B', 'C'])
+    expect(next.lastBoardImage).toBe('data:image/png;base64,board')
+    expect(cmds).toHaveLength(0)
+  })
+
+  it('toggling free mode clears the current board state', () => {
+    const model = {
+      ...Draw.init(),
+      success: true,
+      lastGuess: 'A',
+      lastPredictions: predictions('A'),
+      debugImages: [{ label: 'old', src: '', kind: 'prediction' as const, value: 'A' }],
+      lastBoardImage: 'data:image/png;base64,board',
+      winningImage: 'cropped',
+      clearCount: 1,
+    }
+    const [next, cmds] = Draw.update(model, Draw.SetFreeMode({ value: true }))
+
+    expect(next.freeMode).toBe(true)
+    expect(next.success).toBe(false)
+    expect(next.lastGuess).toBe('')
+    expect(next.lastPredictions).toHaveLength(0)
+    expect(next.debugImages).toHaveLength(0)
+    expect(next.lastBoardImage).toBe('')
+    expect(next.winningImage).toBe('')
+    expect(next.clearCount).toBe(2)
+    expect(cmds).toHaveLength(0)
   })
 
   it('switching mode clears predictions and reprocesses the last board image', () => {
