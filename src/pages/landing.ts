@@ -13,7 +13,7 @@ type Message = ReturnType<typeof ClickedCounter>
   | ReturnType<typeof LandingDroppedOn>
   | ReturnType<typeof LandingDragEnded>
 
-const GAMES = [
+export const LANDING_GAMES = [
   { msg: ClickedCounter, title: 'counterTitle' as const, emoji: '🔢' },
   { msg: ClickedFindIt, title: 'findItTitle' as const, emoji: '🔎' },
   { msg: ClickedBubbles, title: 'bubblesTitle' as const, emoji: '🫧' },
@@ -21,10 +21,11 @@ const GAMES = [
   { msg: ClickedMusicBox, title: 'musicBoxTitle' as const, emoji: '🎵' },
 ]
 
-export const LANDING_GAME_COUNT = GAMES.length
+export const LANDING_GAME_COUNT = LANDING_GAMES.length
 
-export const view = (order: number[], language: string, dragIndex: number) => {
+export const view = (order: readonly number[], hiddenGames: readonly boolean[], language: string, dragIndex: number) => {
   const h = html<Message>()
+  const visibleOrder = order.filter(gameIdx => hiddenGames[gameIdx] !== true)
 
   return h.div(
     [h.Class('landing')],
@@ -50,21 +51,29 @@ export const view = (order: number[], language: string, dragIndex: number) => {
         h.p([h.Class('subtitle')], [t('pickGame', language)]),
       ]),
       h.div([h.Class('game-grid')], [
-        ...order.map((gameIdx, displayIdx) => {
-          const game = GAMES[gameIdx]
+        ...visibleOrder.map((gameIdx, displayIdx) => {
+          const game = LANDING_GAMES[gameIdx]
           if (!game) return null
           return h.div(
             [
               h.OnClick(game.msg()),
               h.Class('game-card' + (dragIndex === displayIdx ? ' game-card--dragging' : '')),
-              h.Attribute('draggable', 'true'),
-              h.OnDragStart(LandingDragStarted({ index: displayIdx })),
               h.AllowDrop(),
               h.OnDrop(LandingDroppedOn({ index: displayIdx })),
-              h.OnDragEnd(LandingDragEnded()),
               h.Key(gameIdx.toString()),
             ],
             [
+              h.span(
+                [
+                  h.Class('game-card-drag-handle'),
+                  h.Attribute('draggable', 'true'),
+                  h.Attribute('aria-label', 'Reorder game'),
+                  h.Title('Reorder game'),
+                  h.OnDragStart(LandingDragStarted({ index: displayIdx })),
+                  h.OnDragEnd(LandingDragEnded()),
+                ],
+                ['⠿'],
+              ),
               h.div([h.Class('game-emoji')], [game.emoji]),
               h.h2([h.Class('game-name')], [t(game.title, language)]),
             ],

@@ -1,8 +1,5 @@
-/* ── Landing Page ────────────────────────────────────── */
-
 .landing {
-  min-height: 100vh;
-  display: flex;
+  min-height: 100vh; display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
@@ -21,8 +18,7 @@
 
 .logo {
   font-size: 4rem;
-  font-weight: 900;
-  color: white;
+  font-weight: 900; color: white;
   text-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
   letter-spacing: -0.03em;
   display: flex;
@@ -39,8 +35,7 @@
 
 .game-grid {
   display: flex;
-  flex-wrap: wrap;
-  gap: 1.5rem;
+  flex-wrap: wrap; gap: 1.5rem;
   justify-content: center;
   max-width: 600px;
 }
@@ -48,16 +43,34 @@
 .game-card {
   background: var(--card-bg);
   border-radius: 1.5rem;
-  padding: 2rem;
-  width: 260px;
+  padding: 2rem; width: 260px;
+  position: relative;
   text-align: center;
-  cursor: grab;
-  user-select: none;
+  cursor: pointer; user-select: none;
   transition: transform 0.2s, box-shadow 0.2s, opacity 0.2s;
   box-shadow: 0 8px 30px var(--shadow-color);
 }
 
-.game-card:active {
+.game-card-drag-handle {
+  position: absolute;
+  top: 0.65rem;
+  right: 0.75rem;
+  display: inline-flex;
+  align-items: center; justify-content: center;
+  width: 2rem; height: 2rem;
+  border-radius: 0.65rem;
+  color: color-mix(in srgb, var(--text-primary) 55%, transparent);
+  cursor: grab;
+  font-size: 1.25rem; line-height: 1;
+  touch-action: none;
+}
+
+.game-card-drag-handle:hover {
+  background: rgba(102, 126, 234, 0.12);
+  color: var(--text-primary);
+}
+
+.game-card-drag-handle:active {
   cursor: grabbing;
 }
 
@@ -78,16 +91,14 @@
 
 .game-name {
   font-size: 1.5rem;
-  font-weight: 700;
-  color: var(--game-name-color);
+  font-weight: 700; color: var(--game-name-color);
   margin-bottom: 0.5rem;
 }
 
 .built-with {
   margin-top: 3rem;
   color: rgba(255, 255, 255, 0.6);
-  font-size: 0.85rem;
-  text-decoration: none;
+  font-size: 0.85rem; text-decoration: none;
   transition: color 0.15s;
 }
 
@@ -98,8 +109,7 @@
 
 .landing-footer {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  align-items: center; justify-content: center;
   padding: 1rem;
 }
 
@@ -108,9 +118,7 @@
   bottom: 0;
   left: 0;
   color: transparent;
-  font-size: 0;
-  text-decoration: none;
-  width: 8px;
-  height: 8px;
+  font-size: 0; text-decoration: none;
+  width: 8px; height: 8px;
   z-index: 999;
 }

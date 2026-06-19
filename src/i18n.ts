@@ -6,6 +6,7 @@ export const translations = {
     pickGame: 'Pick a game to play!',
     backToGames: '← Back to games',
     settings: 'Settings',
+    settingsGames: 'Games',
     sound: 'Sound',
 
     language: 'Language',
@@ -110,6 +111,7 @@ export const translations = {
     pickGame: '选个游戏来玩！',
     backToGames: '← 返回游戏',
     settings: '设置',
+    settingsGames: '游戏',
     sound: '声音',
 
     language: '语言',
@@ -213,6 +215,7 @@ export const translations = {
     pickGame: 'Choisis un jeu !',
     backToGames: '← Retour aux jeux',
     settings: 'Réglages',
+    settingsGames: 'Jeux',
     sound: 'Son',
 
     language: 'Langue',
@@ -316,6 +319,7 @@ export const translations = {
     pickGame: 'Wähl ein Spiel!',
     backToGames: '← Zurück zu den Spielen',
     settings: 'Einstellungen',
+    settingsGames: 'Spiele',
     sound: 'Ton',
 
     language: 'Sprache',
@@ -419,6 +423,7 @@ export const translations = {
     pickGame: 'یک بازی انتخاب کن!',
     backToGames: '← بازگشت به بازی‌ها',
     settings: 'تنظیمات',
+    settingsGames: 'بازی‌ها',
     sound: 'صدا',
 
     language: 'زبان',
@@ -522,6 +527,7 @@ export const translations = {
     pickGame: 'Pilih satu permainan!',
     backToGames: '← Kembali ke permainan',
     settings: 'Tetapan',
+    settingsGames: 'Permainan',
     sound: 'Bunyi',
 
     language: 'Bahasa',
@@ -625,6 +631,7 @@ export const translations = {
     pickGame: '揀個遊戲嚟玩！',
     backToGames: '← 返回遊戲',
     settings: '設定',
+    settingsGames: '遊戲',
     sound: '聲音',
 
     language: '語言',
@@ -728,6 +735,7 @@ export const translations = {
     pickGame: 'ゲームをえらぼう！',
     backToGames: '← ゲームにもどる',
     settings: 'せってい',
+    settingsGames: 'ゲーム',
     sound: 'おと',
 
     language: 'げんご',

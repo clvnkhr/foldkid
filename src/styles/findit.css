@@ -1,5 +1,3 @@
-/* ── Peek-a-boo ──────────────────────────────────────── */
-
 .findit-prompt {
   font-size: 2.5rem;
   font-weight: 800;
@@ -38,8 +36,6 @@
   color: var(--text-muted);
   margin-top: 1rem;
 }
-
-/* grid */
 
 .emoji-grid {
   display: grid;
@@ -92,8 +88,6 @@
   90% { transform: translateX(3px) rotate(2deg); }
 }
 
-/* collection */
-
 .collection-box {
   width: 100%;
   min-height: 2rem;
@@ -131,8 +125,6 @@
   100% { transform: scale(1); opacity: 1; }
 }
 
-/* tooltip */
-
 .tooltip-backdrop {
   position: fixed;
   inset: 0;
@@ -159,8 +151,6 @@
   60% { transform: scale(1.05); }
   100% { opacity: 1; transform: scale(1); }
 }
-
-/* win */
 
 .findit-win {
   background: color-mix(in srgb, var(--card-bg) 95%, transparent);

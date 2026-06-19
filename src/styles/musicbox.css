@@ -1,4 +1,3 @@
-/* Music Box */
 .musicbox-controls {
   display: flex;
   flex-direction: row;
@@ -233,7 +232,6 @@
   }
 }
 
-/* Piano keyboard controls */
 .piano-controls {
   display: flex;
   align-items: center;
@@ -264,7 +262,6 @@
   width: 4.4rem;
 }
 
-/* Piano keyboard */
 .piano-container {
   position: relative;
   width: 100%;

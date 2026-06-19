@@ -7,7 +7,7 @@ import * as FindIt from './games/findit'
 import * as Bubbles from './games/bubbles'
 import * as Draw from './games/draw'
 import * as MusicBox from './games/musicbox'
-import { ApplyImport, ClickedLanding, ClickedCounter, ClickedFindIt, ClickedBubbles, ClickedDarkMode, ConfirmResetSettings, ExportSettings, ImportedSettings, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsPersisted, ToggleMute } from './message'
+import { ApplyImport, ClickedLanding, ClickedCounter, ClickedFindIt, ClickedBubbles, ClickedDarkMode, ConfirmResetSettings, ExportSettings, ImportedSettings, LandingDragStarted, LandingDroppedOn, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsPersisted, ToggleMute } from './message'
 
 const resolveSettings = [{ name: 'PersistSettings' }, SettingsPersisted()] as const
 const resolveBubblesChime = [{ name: 'PlayChime' }, Bubbles.SoundPlayed()] as const
@@ -121,6 +121,8 @@ describe('settings persistence', () => {
     { label: 'MusicBoxSetDrumVolume', msg: MusicBox.SetDrumVolume({ value: 0.35 }) },
     { label: 'MusicBoxToggleSongVisibility', msg: MusicBox.ToggleSongVisibility({ index: 1 }) },
     { label: 'MusicBoxSongDroppedOn', msg: MusicBox.SongDroppedOn({ index: 1 }) },
+    { label: 'LandingSettingsDroppedOn', msg: LandingSettingsDroppedOn({ index: 1 }) },
+    { label: 'LandingToggleGameVisibility', msg: LandingToggleGameVisibility({ index: 1 }) },
   ]
 
   const nonSettingsMessages: Array<{ label: string; msg: Main.Message; resolves?: readonly [{ readonly name: string }, Main.Message] }> = [
@@ -329,6 +331,37 @@ describe('Main', () => {
       }),
       Story.Command.expectNone(),
     )
+  })
+
+  it('toggles landing game visibility while keeping at least one game visible', () => {
+    const base = createModel()
+    const hiddenExceptCounter = base.landingOrder.map(index => index !== 0)
+    const [hidden] = Main.update(base, LandingToggleGameVisibility({ index: 1 }))
+    const [unchanged] = Main.update(
+      { ...base, landingHiddenGames: hiddenExceptCounter },
+      LandingToggleGameVisibility({ index: 0 }),
+    )
+
+    expect(hidden.landingHiddenGames[1]).toBe(true)
+    expect(unchanged.landingHiddenGames).toEqual(hiddenExceptCounter)
+  })
+
+  it('reorders all landing games from settings', () => {
+    const [dragging] = Main.update(createModel(), LandingSettingsDragStarted({ index: 0 }))
+    const [dropped] = Main.update(dragging, LandingSettingsDroppedOn({ index: 2 }))
+
+    expect(dropped.landingOrder).toEqual([1, 2, 0, 3, 4])
+    expect(dropped.landingDragIndex).toBe(-1)
+  })
+
+  it('reorders only visible landing games from the landing page', () => {
+    const base = { ...createModel(), landingHiddenGames: [false, true, false, false, false] }
+    const [dragging] = Main.update(base, LandingDragStarted({ index: 0 }))
+    const [dropped] = Main.update(dragging, LandingDroppedOn({ index: 1 }))
+
+    expect(dropped.landingOrder).toEqual([1, 2, 0, 3, 4])
+    expect(dropped.landingHiddenGames[1]).toBe(true)
+    expect(dropped.landingDragIndex).toBe(-1)
   })
 
   it('ClickedBubbles sets page to bubbles', () => {
@@ -643,6 +676,7 @@ describe('Main', () => {
       const reorderedLanding = landingOrder.length > 1
         ? [landingOrder[1]!, landingOrder[0]!, ...landingOrder.slice(2)]
         : landingOrder
+      const landingHiddenGames = landingOrder.map(index => index === 2)
       const customized = {
         ...createModel(),
         language: 'ja' as const,
@@ -676,6 +710,7 @@ describe('Main', () => {
           hiddenSongs,
         },
         landingOrder: reorderedLanding,
+        landingHiddenGames,
       }
       const [exported] = Main.update(customized, ExportSettings())
       const [imported, cmds] = Main.update(
@@ -704,6 +739,7 @@ describe('Main', () => {
       expect(imported.musicBox.hiddenSongs).toEqual(customized.musicBox.hiddenSongs)
       expect(imported.musicBox.drumVolume).toBe(customized.musicBox.drumVolume)
       expect(imported.landingOrder).toEqual(customized.landingOrder)
+      expect(imported.landingHiddenGames).toEqual(customized.landingHiddenGames)
       expect(cmds[0]?.name).toBe('PersistSettings')
     })
 

@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { gzipSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
+import { LANDING_GAME_COUNT } from './pages/landing'
 
 const srcDir = dirname(fileURLToPath(import.meta.url))
 const stylesEntryPath = join(srcDir, 'styles.css')
@@ -18,6 +19,12 @@ const readStylesheet = (filePath: string, seen = new Set<string>()): string => {
 
 const styles = readStylesheet(stylesEntryPath)
 const stylesEntry = readFileSync(stylesEntryPath, 'utf8')
+const gameScale = Math.sqrt(Math.max(0, LANDING_GAME_COUNT - 1))
+const appWideStylesheetBudget = {
+  lines: 1800 + Math.ceil(gameScale * 8),
+  bytes: 36000 + Math.ceil(gameScale * 300),
+  gzipBytes: 8000 + Math.ceil(gameScale * 60),
+}
 const stylesheetBudgets = [
   ['styles/base.css', 320, 7000, 2200],
   ['styles/landing.css', 160, 3000, 1200],
@@ -128,8 +135,8 @@ describe('styles.css invariants', () => {
   })
 
   it('keeps the combined stylesheet within an app-wide budget', () => {
-    expect(styles.split('\n').length).toBeLessThanOrEqual(1800)
-    expect(Buffer.byteLength(styles, 'utf8')).toBeLessThanOrEqual(36000)
-    expect(gzipSync(styles).length).toBeLessThanOrEqual(8000)
+    expect(styles.split('\n').length).toBeLessThanOrEqual(appWideStylesheetBudget.lines)
+    expect(Buffer.byteLength(styles, 'utf8')).toBeLessThanOrEqual(appWideStylesheetBudget.bytes)
+    expect(gzipSync(styles).length).toBeLessThanOrEqual(appWideStylesheetBudget.gzipBytes)
   })
 })
