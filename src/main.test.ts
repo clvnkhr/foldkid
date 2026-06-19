@@ -6,8 +6,9 @@ import * as Counter from './games/counter'
 import * as FindIt from './games/findit'
 import * as Bubbles from './games/bubbles'
 import * as Draw from './games/draw'
+import * as Memory from './games/memory'
 import * as MusicBox from './games/musicbox'
-import { ApplyImport, ClickedLanding, ClickedCounter, ClickedFindIt, ClickedBubbles, ClickedDarkMode, ConfirmResetSettings, ExportSettings, ImportedSettings, LandingDragStarted, LandingDroppedOn, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsPersisted, ToggleMute } from './message'
+import { ApplyImport, ClickedLanding, ClickedCounter, ClickedFindIt, ClickedBubbles, ClickedDarkMode, ClickedMemory, ConfirmResetSettings, ExportSettings, ImportedSettings, LandingDragStarted, LandingDroppedOn, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsPersisted, ToggleMute } from './message'
 
 const resolveSettings = [{ name: 'PersistSettings' }, SettingsPersisted()] as const
 const resolveBubblesChime = [{ name: 'PlayChime' }, Bubbles.SoundPlayed()] as const
@@ -118,6 +119,7 @@ describe('settings persistence', () => {
     { label: 'DrawSetIncludePairs', msg: Draw.SetIncludePairs({ value: false }) },
     { label: 'DrawSetIncludeNumbers', msg: Draw.SetIncludeNumbers({ value: false }) },
     { label: 'DrawSetIncludeLetters', msg: Draw.SetIncludeLetters({ value: false }) },
+    { label: 'MemorySetEmojiPackEnabled', msg: Memory.SetEmojiPackEnabled({ key: 'numbers', value: false }) },
     { label: 'MusicBoxSetDrumVolume', msg: MusicBox.SetDrumVolume({ value: 0.35 }) },
     { label: 'MusicBoxToggleSongVisibility', msg: MusicBox.ToggleSongVisibility({ index: 1 }) },
     { label: 'MusicBoxSongDroppedOn', msg: MusicBox.SongDroppedOn({ index: 1 }) },
@@ -130,9 +132,11 @@ describe('settings persistence', () => {
     { label: 'ClickedCounter', msg: ClickedCounter() },
     { label: 'ClickedFindIt', msg: ClickedFindIt() },
     { label: 'ClickedBubbles', msg: ClickedBubbles() },
+    { label: 'ClickedMemory', msg: ClickedMemory() },
     { label: 'CounterPointerDown', msg: Counter.PointerDown({ timeStamp: 0, button: 'inc' }) },
     { label: 'FindItClickedCell', msg: FindIt.ClickedCell({ id: 0 }) },
     { label: 'BubblesClickedPop', msg: Bubbles.ClickedPop({ id: 0 }) },
+    { label: 'MemoryClickedCard', msg: Memory.ClickedCard({ id: 0 }) },
     { label: 'BubblesClickedColor', msg: Bubbles.ClickedColor({ color: 'rainbow', duration: 500 }), resolves: resolveBubblesChime },
     { label: 'BubblesSetRainbowMode', msg: Bubbles.SetRainbowMode({ value: true }) },
     { label: 'MusicBoxNoteOn', msg: MusicBox.NoteOn({ pitch: 'C4' }) },
@@ -350,16 +354,16 @@ describe('Main', () => {
     const [dragging] = Main.update(createModel(), LandingSettingsDragStarted({ index: 0 }))
     const [dropped] = Main.update(dragging, LandingSettingsDroppedOn({ index: 2 }))
 
-    expect(dropped.landingOrder).toEqual([1, 2, 0, 3, 4])
+    expect(dropped.landingOrder).toEqual([1, 2, 0, 3, 4, 5])
     expect(dropped.landingDragIndex).toBe(-1)
   })
 
   it('reorders only visible landing games from the landing page', () => {
-    const base = { ...createModel(), landingHiddenGames: [false, true, false, false, false] }
+    const base = { ...createModel(), landingHiddenGames: [false, true, false, false, false, false] }
     const [dragging] = Main.update(base, LandingDragStarted({ index: 0 }))
     const [dropped] = Main.update(dragging, LandingDroppedOn({ index: 1 }))
 
-    expect(dropped.landingOrder).toEqual([1, 2, 0, 3, 4])
+    expect(dropped.landingOrder).toEqual([1, 2, 0, 3, 4, 5])
     expect(dropped.landingHiddenGames[1]).toBe(true)
     expect(dropped.landingDragIndex).toBe(-1)
   })
@@ -702,6 +706,10 @@ describe('Main', () => {
           selectedColor: 'rainbow',
           rainbowMode: true,
         },
+        memory: {
+          ...createModel().memory,
+          enabledPacks: ['animals'] as FindIt.EmojiPackKey[],
+        },
         musicBox: {
           ...createModel().musicBox,
           selectedSong: 0,
@@ -735,6 +743,8 @@ describe('Main', () => {
       expect(imported.bubbles.sayColor).toBe(customized.bubbles.sayColor)
       expect(imported.bubbles.selectedColor).toBe('')
       expect(imported.bubbles.rainbowMode).toBe(false)
+      expect(imported.memory.enabledPacks).toEqual(customized.memory.enabledPacks)
+      expect(imported.memory.deck.every(card => FindIt.emojiPoolForPacks(customized.memory.enabledPacks).includes(card.value))).toBe(true)
       expect(imported.musicBox.songOrder).toEqual(customized.musicBox.songOrder)
       expect(imported.musicBox.hiddenSongs).toEqual(customized.musicBox.hiddenSongs)
       expect(imported.musicBox.drumVolume).toBe(customized.musicBox.drumVolume)

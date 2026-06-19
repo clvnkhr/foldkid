@@ -1,0 +1,62 @@
+.memory-card {
+  gap: 1rem;
+  padding: 2rem;
+}
+
+.memory-stats {
+  display: flex;
+  gap: 1rem;
+  color: var(--text-secondary);
+  font-weight: 700;
+}
+
+.memory-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(3.6rem, 1fr));
+  gap: 0.65rem;
+  width: min(100%, 23rem);
+}
+
+.memory-tile {
+  aspect-ratio: 1;
+  border: 3px solid var(--border-color);
+  border-radius: 0.7rem;
+  background: linear-gradient(135deg, #667eea, #4ecdc4);
+  color: white;
+  cursor: pointer;
+  font: 900 2rem/1 inherit;
+  box-shadow: 0 8px 18px var(--shadow-color);
+  transition: transform 0.15s, background 0.15s, opacity 0.15s;
+}
+
+.memory-tile:hover {
+  transform: translateY(-2px);
+}
+
+.memory-tile--flipped,
+.memory-tile--matched {
+  background: var(--cell-bg);
+  color: var(--text-primary);
+  font-size: 2.4rem;
+}
+
+.memory-tile--matched {
+  opacity: 0.75;
+  box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.45);
+}
+
+.memory-win {
+  color: var(--text-primary);
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+
+@media (max-width: 520px) {
+  .memory-card {
+    padding: 1.25rem;
+  }
+
+  .memory-grid {
+    grid-template-columns: repeat(3, minmax(3.4rem, 1fr));
+  }
+}

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import * as Bubbles from './games/bubbles'
 import * as Counter from './games/counter'
 import * as FindIt from './games/findit'
+import * as Memory from './games/memory'
 import * as MusicBox from './games/musicbox'
 import * as Main from './main'
 import { translations, t } from './i18n'
@@ -100,6 +101,7 @@ describe('codebase invariants', () => {
       ['Counter', Counter.Model, Counter.init],
       ['FindIt', FindIt.Model, FindIt.init()],
       ['Bubbles', Bubbles.Model, Bubbles.init()],
+      ['Memory', Memory.Model, Memory.init()],
       ['MusicBox', MusicBox.Model, MusicBox.init()],
       ['Main', Main.Model, Main.init()[0]],
     ] as const
@@ -114,6 +116,7 @@ describe('codebase invariants', () => {
       ['Counter display mode', Counter.Message, { _tag: 'CounterSetDisplayMode', value: 'huge' }],
       ['FindIt emoji pack', FindIt.Message, { _tag: 'FindItSetEmojiPackEnabled', key: 'space', value: true }],
       ['Bubbles color duration', Bubbles.Message, { _tag: 'BubblesClickedColor', color: '#fff', duration: 'fast' }],
+      ['Memory card id', Memory.Message, { _tag: 'MemoryClickedCard', id: '0' }],
       ['MusicBox song index', MusicBox.Message, { _tag: 'MusicBoxToggleSongVisibility', index: '1' }],
       ['Main nested FindIt message', Main.Message, { _tag: 'FindItSetEmojiPackEnabled', key: 'space', value: true }],
     ] as const

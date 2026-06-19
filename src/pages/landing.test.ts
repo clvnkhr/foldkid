@@ -26,6 +26,7 @@ describe('Landing', () => {
       Scene.expect(Scene.text('Bubbles!')).toExist(),
       Scene.expect(Scene.text('Draw')).toExist(),
       Scene.expect(Scene.text('Music Box')).toExist(),
+      Scene.expect(Scene.text('Memory Cards')).toExist(),
       Scene.Command.expectNone(),
     )
   })
@@ -42,7 +43,7 @@ describe('Landing', () => {
 
   it('renders cards in custom order', () => {
       Scene.scene(
-        { update: Main.update, view: () => view([2, 0, 1, 3, 4], visibleGames, 'en', -1) },
+        { update: Main.update, view: () => view([2, 0, 1, 3, 4, 5], visibleGames, 'en', -1) },
       Scene.with(Main.init()[0]),
       Scene.Command.expectNone(),
     )

@@ -2,15 +2,16 @@ import { Effect, Match as M, Option, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { Document, html } from 'foldkit/html'
 
-import { ApplyImport, CancelResetSettings, ClickedAudioTest, ClickedBubbles, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedLanding, ClickedDraw, ClickedMusicBox, ClickedSettings, ConfirmResetSettings, CopyExportData, DismissMessage, ExportSettings, ImportSettings, ImportedSettings, LandingDragEnded, LandingDragStarted, LandingDroppedOn, LandingSettingsDragEnded, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, ResetSettings, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsDragEnded, SettingsDragMoved, SettingsDragStarted, SettingsImportFailed, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
+import { ApplyImport, CancelResetSettings, ClickedAudioTest, ClickedBubbles, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedLanding, ClickedDraw, ClickedMemory, ClickedMusicBox, ClickedSettings, ConfirmResetSettings, CopyExportData, DismissMessage, ExportSettings, ImportSettings, ImportedSettings, LandingDragEnded, LandingDragStarted, LandingDroppedOn, LandingSettingsDragEnded, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, ResetSettings, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsDragEnded, SettingsDragMoved, SettingsDragStarted, SettingsImportFailed, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
 
-import { Page, PageAudioTest, PageBubbles, PageCounter, PageFindIt, PageLanding, PageDraw, PageMusicBox } from './route'
+import { Page, PageAudioTest, PageBubbles, PageCounter, PageFindIt, PageLanding, PageDraw, PageMemory, PageMusicBox } from './route'
 
 import * as FindIt from './games/findit'
 import * as MusicBox from './games/musicbox'
 import * as Counter from './games/counter'
 import * as Bubbles from './games/bubbles'
 import * as Draw from './games/draw'
+import * as Memory from './games/memory'
 import { LANDING_GAME_COUNT, LANDING_GAMES, view as landingView } from './pages/landing'
 import { view as audioTestView } from './pages/audiotest'
 import { Language, normalizeLanguage, t, tf } from './i18n'
@@ -55,6 +56,7 @@ const PersistedSettingsSchema = S.Struct({
   drawIncludePairs: S.optionalKey(S.Boolean),
   drawIncludeNumbers: S.optionalKey(S.Boolean),
   drawIncludeLetters: S.optionalKey(S.Boolean),
+  memoryEnabledPacks: S.optionalKey(S.Array(FindIt.EmojiPackKey)),
   musicBoxSongOrder: S.optionalKey(S.Array(S.Number)),
   musicBoxHiddenSongs: S.optionalKey(S.Array(S.Boolean)),
   musicBoxDrumVolume: S.optionalKey(S.Number),
@@ -152,6 +154,7 @@ const buildSettingsData = (model: Model): PersistedSettings => ({
   drawIncludePairs: model.draw.includePairs,
   drawIncludeNumbers: model.draw.includeNumbers,
   drawIncludeLetters: model.draw.includeLetters,
+  memoryEnabledPacks: model.memory.enabledPacks,
   musicBoxSongOrder: model.musicBox.songOrder,
   musicBoxHiddenSongs: model.musicBox.hiddenSongs,
   musicBoxDrumVolume: model.musicBox.drumVolume,
@@ -198,6 +201,7 @@ export const Model = S.Struct({
   findIt: FindIt.Model,
   bubbles: Bubbles.Model,
   draw: Draw.Model,
+  memory: Memory.Model,
   settingsPanelWidth: S.Number,
   isDraggingSettings: S.Boolean,
   settingsDragStartMouseX: S.Number,
@@ -228,6 +232,7 @@ export const Message = S.Union([
   ClickedBubbles,
   ClickedDraw,
   ClickedMusicBox,
+  ClickedMemory,
   ClickedAudioTest,
   LandingDragStarted,
   LandingDroppedOn,
@@ -283,6 +288,9 @@ export const Message = S.Union([
   Draw.SetInkColor,
   Draw.SetBrushSize,
   Draw.RecognitionFailed,
+  Memory.ClickedCard,
+  Memory.ClickedReset,
+  Memory.SetEmojiPackEnabled,
   MusicBox.Play,
   MusicBox.Stop,
   MusicBox.SetSong,
@@ -384,6 +392,7 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
         includeNumbers: saved.drawIncludeNumbers ?? true,
         includeLetters: saved.drawIncludeLetters ?? true,
       }),
+      memory: Memory.init(saved.memoryEnabledPacks),
       settingsPanelWidth: 150,
       isDraggingSettings: false,
       settingsDragStartMouseX: 0,
@@ -443,6 +452,14 @@ const updateDraw = (
   return [{ ...model, draw: next }, cmds]
 }
 
+const updateMemory = (
+  model: Model,
+  message: Memory.Message,
+): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
+  const [next, cmds] = Memory.update(model.memory, message)
+  return [{ ...model, memory: next }, cmds]
+}
+
 const cycleDarkMode = (current: DarkMode): DarkMode => {
   if (current === 'auto') return 'light'
   if (current === 'light') return 'dark'
@@ -500,6 +517,9 @@ const applyImportData = (model: Model, s: PersistedSettings): Model => {
       includeNumbers: s.drawIncludeNumbers ?? model.draw.includeNumbers,
       includeLetters: s.drawIncludeLetters ?? model.draw.includeLetters,
     }),
+    memory: s.memoryEnabledPacks === undefined
+      ? model.memory
+      : Memory.init(s.memoryEnabledPacks),
     musicBox: {
       ...model.musicBox,
       songOrder: normalizeSongOrder(s.musicBoxSongOrder, model.musicBox.songOrder),
@@ -581,6 +601,7 @@ const _update = (
       ClickedBubbles: () => [{ ...model, page: PageBubbles() }, []],
       ClickedDraw: () => [{ ...model, page: PageDraw() }, []],
       ClickedMusicBox: () => [{ ...model, page: PageMusicBox() }, []],
+      ClickedMemory: () => [{ ...model, page: PageMemory() }, []],
       ClickedAudioTest: () => [{ ...model, page: PageAudioTest() }, []],
       LandingDragStarted: (msg) => [{ ...model, landingDragIndex: msg.index }, []],
       LandingDroppedOn: (msg) => {
@@ -663,6 +684,9 @@ const _update = (
       DrawSetInkColor: (msg) => updateDraw(model, msg),
       DrawSetBrushSize: (msg) => updateDraw(model, msg),
       DrawRecognitionFailed: (msg) => updateDraw(model, msg),
+      MemoryClickedCard: (msg) => updateMemory(model, msg),
+      MemoryClickedReset: (msg) => updateMemory(model, msg),
+      MemorySetEmojiPackEnabled: (msg) => updateMemory(model, msg),
       MusicBoxPlay: (msg) => updateMusicBox(model, msg),
       MusicBoxStop: (msg) => updateMusicBox(model, msg),
       MusicBoxSetSong: (msg) => updateMusicBox(model, msg),
@@ -743,6 +767,7 @@ export const PERSISTED_SETTINGS_MESSAGE_TAGS = [
   'FindItSetAnyWins', 'FindItSetVoiceMode', 'FindItSetPairsMode', 'FindItSetEmojiPackEnabled',
   'BubblesSetPopLabel', 'BubblesSetSayColor',
   'DrawSetTopN', 'DrawSetRecognitionMode', 'DrawSetTargetOrderMode', 'DrawSetFreeMode', 'DrawSetIncludeSingle', 'DrawSetIncludePairs', 'DrawSetIncludeNumbers', 'DrawSetIncludeLetters',
+  'MemorySetEmojiPackEnabled',
   'MusicBoxSetDrumVolume', 'MusicBoxToggleSongVisibility', 'MusicBoxSongDroppedOn',
   'LandingSettingsDroppedOn', 'LandingToggleGameVisibility',
 ] as const satisfies ReadonlyArray<Message['_tag']>
@@ -778,6 +803,7 @@ const pageTitle = (model: Model): string =>
       PageBubbles: () => t('pageTitleBubbles', model.language),
       PageDraw: () => t('pageTitleDraw', model.language),
       PageMusicBox: () => t('pageTitleMusicBox', model.language),
+      PageMemory: () => t('pageTitleMemoryCards', model.language),
       PageAudioTest: () => t('pageTitleAudioTest', model.language),
     }),
   )
@@ -1125,40 +1151,31 @@ export const view = (model: Model): Document => {
               ]),
             ])
             : null,
-          h.div([h.Class('setting-section')], [
-            h.h3([], [t('settingsGames', model.language)]),
-            h.div([h.Class('settings-song-list')], [
-              ...model.landingOrder
-                .filter(gameIdx => gameIdx < LANDING_GAMES.length && LANDING_GAMES[gameIdx] !== undefined)
-                .map((gameIdx, displayIdx) => {
-                  const game = LANDING_GAMES[gameIdx]!
-                  const isHidden = model.landingHiddenGames[gameIdx] === true
-                  const isLastVisibleGame = !isHidden && model.landingOrder.filter(i => !model.landingHiddenGames[i]).length <= 1
-                  const isDragged = model.landingDragIndex === displayIdx
-                  return h.div(
-                    [
-                      h.Key(`game-${gameIdx}`),
-                      h.Class('settings-song-item' + (isHidden ? ' settings-song-item--hidden' : '') + (isDragged ? ' settings-song-item--dragging' : '')),
-                      h.Attribute('draggable', 'true'),
-                      h.OnDragStart(LandingSettingsDragStarted({ index: displayIdx })),
-                      h.AllowDrop(),
-                      settingsOnDrop(LandingSettingsDroppedOn({ index: displayIdx })),
-                      h.OnDragEnd(LandingSettingsDragEnded()),
-                    ],
-                    [
-                      h.span([h.Class('settings-song-drag')], ['⠿']),
-                      h.span([h.Class('settings-song-name')], [
-                        `${game.emoji} ${t(game.title, model.language)}`,
-                      ]),
-                      h.button(
-                        [h.Class('btn btn-tiny'), h.Disabled(isLastVisibleGame), settingsOnClick(LandingToggleGameVisibility({ index: gameIdx }))],
-                        [isHidden ? t('musicBoxShow', model.language) : t('musicBoxHide', model.language)],
-                      ),
-                    ],
-                  )
-                }),
-            ]),
-          ]),
+          model.page._tag === 'PageMemory'
+            ? h.div([h.Class('setting-section')], [
+              h.h3([], [t('memoryCardsTitle', model.language)]),
+              h.div([h.Class('setting-row')], [
+                h.label([], [t('findItEmojiPacks', model.language)]),
+                h.div([h.Class('emoji-pack-buttons')], [
+                  ...FindIt.EMOJI_PACKS.map((pack) => {
+                    const enabled = model.memory.enabledPacks.includes(pack.key)
+                    const isLastEnabled = enabled && model.memory.enabledPacks.length === 1
+                    return h.button(
+                      [
+                        h.Class(enabled ? 'btn btn-primary emoji-pack-btn' : 'btn btn-secondary emoji-pack-btn'),
+                        h.Disabled(isLastEnabled),
+                        settingsOnClick(Memory.SetEmojiPackEnabled({ key: pack.key, value: !enabled })),
+                      ],
+                      [
+                        h.span([h.Class('emoji-pack-sample')], [pack.sample]),
+                        h.span([], [t(pack.labelKey, model.language)]),
+                      ],
+                    )
+                  }),
+                ]),
+              ]),
+            ])
+            : null,
           model.page._tag === 'PageMusicBox'
             ? h.div([h.Class('setting-section')], [
               h.h3([], [t('musicBoxTitle', model.language)]),
@@ -1211,6 +1228,38 @@ export const view = (model: Model): Document => {
             ])
             : null,
           h.div([h.Class('setting-section settings-actions')], [
+            h.h3([], [t('settingsGames', model.language)]),
+            h.div([h.Class('settings-song-list')], [
+              ...model.landingOrder
+                .filter(gameIdx => gameIdx < LANDING_GAMES.length && LANDING_GAMES[gameIdx] !== undefined)
+                .map((gameIdx, displayIdx) => {
+                  const game = LANDING_GAMES[gameIdx]!
+                  const isHidden = model.landingHiddenGames[gameIdx] === true
+                  const isLastVisibleGame = !isHidden && model.landingOrder.filter(i => !model.landingHiddenGames[i]).length <= 1
+                  const isDragged = model.landingDragIndex === displayIdx
+                  return h.div(
+                    [
+                      h.Key(`game-${gameIdx}`),
+                      h.Class('settings-song-item' + (isHidden ? ' settings-song-item--hidden' : '') + (isDragged ? ' settings-song-item--dragging' : '')),
+                      h.Attribute('draggable', 'true'),
+                      h.OnDragStart(LandingSettingsDragStarted({ index: displayIdx })),
+                      h.AllowDrop(),
+                      settingsOnDrop(LandingSettingsDroppedOn({ index: displayIdx })),
+                      h.OnDragEnd(LandingSettingsDragEnded()),
+                    ],
+                    [
+                      h.span([h.Class('settings-song-drag')], ['⠿']),
+                      h.span([h.Class('settings-song-name')], [
+                        `${game.emoji} ${t(game.title, model.language)}`,
+                      ]),
+                      h.button(
+                        [h.Class('btn btn-tiny'), h.Disabled(isLastVisibleGame), settingsOnClick(LandingToggleGameVisibility({ index: gameIdx }))],
+                        [isHidden ? t('musicBoxShow', model.language) : t('musicBoxHide', model.language)],
+                      ),
+                    ],
+                  )
+                }),
+            ]),
             model.showResetConfirm
               ? h.div([h.Class('reset-confirm')], [
                 h.p([h.Class('reset-confirm-text')], [t('settingsReset', model.language)]),
@@ -1254,6 +1303,7 @@ export const view = (model: Model): Document => {
               PageBubbles: () => Bubbles.view(model.bubbles, model.language),
               PageDraw: () => Draw.view(model.draw),
               PageMusicBox: () => MusicBox.view(model.musicBox, model.language),
+              PageMemory: () => Memory.view(model.memory, model.language),
               PageAudioTest: () => audioTestView(model.language),
             }),
           ),
