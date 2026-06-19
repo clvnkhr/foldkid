@@ -52,6 +52,7 @@ export const Model = S.Struct({
   clearCount: S.Number,
   debugImages: S.Array(DebugImage),
   lastBoardImage: S.String,
+  winningImage: S.String,
 })
 export type Model = typeof Model.Type
 
@@ -87,27 +88,24 @@ export const init = (): Model => ({
   clearCount: 0,
   debugImages: [],
   lastBoardImage: '',
+  winningImage: '',
 })
 
 const nextRound = (model: Model): Model => {
   const round = model.round + 1
   return {
     ...model,
-    target: nextTarget(round),
+    target: randomTarget(model.target),
     round,
     success: false,
     lastGuess: '',
     lastConfidence: 0,
     lastPredictions: [],
-    clearCount: model.clearCount,
+    clearCount: model.clearCount + 1,
     lastBoardImage: '',
+    winningImage: '',
   }
 }
-
-const delayedNextRound = (): Command.Command<Message> => ({
-  name: 'DrawNextRoundDelay',
-  effect: Effect.sleep(700).pipe(Effect.as(NextRound())),
-})
 
 const isNearMatch = (a: string, b: string): boolean =>
   a === b || NEAR_MATCH_GROUPS.some(group => group.has(a) && group.has(b))
@@ -127,6 +125,7 @@ export const update = (
         if (msg.target !== model.target) return [model, []]
         if (msg.mode !== model.recognitionMode) return [model, []]
         const matched = msg.predictions.slice(0, model.topN).some(prediction => isNearMatch(prediction.value, msg.target))
+        const winningImage = matched ? msg.debugImages.find(image => image.label === 'cropped and centered')?.src ?? msg.boardImage : ''
         return [
           {
             ...model,
@@ -136,12 +135,13 @@ export const update = (
             lastPredictions: msg.predictions,
             debugImages: msg.debugImages,
             lastBoardImage: msg.boardImage,
+            winningImage,
             score: matched ? model.score + 1 : model.score,
           },
-          matched ? [delayedNextRound()] : [],
+          [],
         ]
       },
-      DrawSubmitBoard: () => [model, [recognizeCurrentBoardCmd(model.target, model.recognitionMode)]],
+      DrawSubmitBoard: () => [model, [RecognizeCurrentBoard({ target: model.target, mode: model.recognitionMode })]],
       DrawNextRound: () => [nextRound(model), []],
       DrawSkipTarget: () => [nextRound(model), []],
       DrawShuffleTarget: () => [
@@ -156,11 +156,12 @@ export const update = (
           clearCount: model.clearCount + 1,
           debugImages: [],
           lastBoardImage: '',
+          winningImage: '',
         },
         [],
       ],
       DrawClearBoard: () => [
-        { ...model, lastGuess: '', lastConfidence: 0, lastPredictions: [], clearCount: model.clearCount + 1, debugImages: [], lastBoardImage: '' },
+        { ...model, success: false, lastGuess: '', lastConfidence: 0, lastPredictions: [], clearCount: model.clearCount + 1, debugImages: [], lastBoardImage: '', winningImage: '' },
         [],
       ],
       DrawSetTopN: (msg) => [
@@ -169,7 +170,7 @@ export const update = (
       ],
       DrawSetRecognitionMode: (msg) => [
         { ...model, recognitionMode: msg.value, lastGuess: '', lastConfidence: 0, lastPredictions: [], debugImages: [] },
-        model.lastBoardImage ? [recognizeBoardImageCmd(model.target, msg.value, model.lastBoardImage)] : [],
+        model.lastBoardImage ? [RecognizeBoardImage({ target: model.target, mode: msg.value, boardImage: model.lastBoardImage })] : [],
       ],
       DrawRecognitionFailed: () => [model, []],
     }),
@@ -183,6 +184,7 @@ interface RecognitionResult {
   predictions: Prediction[]
   debugImages: DebugImage[]
 }
+type RecognitionMessage = ReturnType<typeof BoardRecognized> | ReturnType<typeof RecognitionFailed>
 
 interface TensorSpec {
   shape: number[]
@@ -221,6 +223,12 @@ let leNetModelPromise: Promise<LeNetModel> | null = null
 const tensor = (weights: Float32Array, spec: TensorSpec): Float32Array =>
   weights.subarray(spec.offset, spec.offset + spec.length)
 
+const tensorFor = (weights: Float32Array, tensors: Record<string, TensorSpec>, name: typeof REQUIRED_TENSORS[number]): Float32Array => {
+  const spec = tensors[name]
+  if (!spec) throw new Error(`Missing EMNIST tensor: ${name}`)
+  return tensor(weights, spec)
+}
+
 const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
   const bytes = new Uint8Array(buffer)
   let binary = ''
@@ -251,7 +259,12 @@ const cachedLeNetFiles = (): readonly [WeightsManifest, ArrayBuffer] | null => {
     const raw = localStorage.getItem(MODEL_CACHE_KEY)
     if (!raw) return null
     const cached = JSON.parse(raw) as Partial<CachedLeNetModel>
-    if (cached.version !== MODEL_CACHE_VERSION || !cached.manifest || !cached.weightsBase64) return null
+    if (
+      cached.version !== MODEL_CACHE_VERSION ||
+      !cached.manifest ||
+      !isWeightsManifest(cached.manifest) ||
+      typeof cached.weightsBase64 !== 'string'
+    ) return null
     return [cached.manifest, base64ToArrayBuffer(cached.weightsBase64)]
   } catch {
     clearLeNetCache()
@@ -271,13 +284,55 @@ const cacheLeNetFiles = (manifest: WeightsManifest, buffer: ArrayBuffer): void =
   }
 }
 
+const fetchOk = async (url: string): Promise<Response> => {
+  const response = await fetch(url)
+  if (!response.ok) throw new Error(`Unable to load ${url}: ${response.status}`)
+  return response
+}
+
 const fetchLeNetFiles = async (): Promise<readonly [WeightsManifest, ArrayBuffer]> => {
   const [manifest, buffer] = await Promise.all([
-    fetch(MODEL_MANIFEST_URL).then(response => response.json() as Promise<WeightsManifest>),
-    fetch(MODEL_WEIGHTS_URL).then(response => response.arrayBuffer()),
+    fetchOk(MODEL_MANIFEST_URL).then(async response => {
+      const manifest = await response.json() as unknown
+      if (!isWeightsManifest(manifest)) throw new Error('Bad EMNIST weights manifest')
+      return manifest
+    }),
+    fetchOk(MODEL_WEIGHTS_URL).then(response => response.arrayBuffer()),
   ])
   cacheLeNetFiles(manifest, buffer)
   return [manifest, buffer]
+}
+
+const REQUIRED_TENSORS = [
+  'conv1Kernel',
+  'conv1Bias',
+  'conv2Kernel',
+  'conv2Bias',
+  'dense1Kernel',
+  'dense1Bias',
+  'dense2Kernel',
+  'dense2Bias',
+  'dense3Kernel',
+  'dense3Bias',
+] as const
+
+const isTensorSpec = (value: unknown): value is TensorSpec =>
+  typeof value === 'object' &&
+  value !== null &&
+  Array.isArray((value as TensorSpec).shape) &&
+  (value as TensorSpec).shape.every(item => Number.isInteger(item)) &&
+  Number.isInteger((value as TensorSpec).offset) &&
+  Number.isInteger((value as TensorSpec).length)
+
+const isWeightsManifest = (value: unknown): value is WeightsManifest => {
+  if (typeof value !== 'object' || value === null) return false
+  const manifest = value as WeightsManifest
+  return Array.isArray(manifest.labels) &&
+    manifest.labels.every(label => typeof label === 'string') &&
+    Number.isInteger(manifest.floatCount) &&
+    typeof manifest.tensors === 'object' &&
+    manifest.tensors !== null &&
+    REQUIRED_TENSORS.every(name => isTensorSpec(manifest.tensors[name]))
 }
 
 const buildLeNetModel = (manifest: WeightsManifest, buffer: ArrayBuffer): LeNetModel => {
@@ -288,16 +343,16 @@ const buildLeNetModel = (manifest: WeightsManifest, buffer: ArrayBuffer): LeNetM
   const tensors = manifest.tensors
   return {
     labels: manifest.labels,
-    conv1Kernel: tensor(weights, tensors.conv1Kernel!),
-    conv1Bias: tensor(weights, tensors.conv1Bias!),
-    conv2Kernel: tensor(weights, tensors.conv2Kernel!),
-    conv2Bias: tensor(weights, tensors.conv2Bias!),
-    dense1Kernel: tensor(weights, tensors.dense1Kernel!),
-    dense1Bias: tensor(weights, tensors.dense1Bias!),
-    dense2Kernel: tensor(weights, tensors.dense2Kernel!),
-    dense2Bias: tensor(weights, tensors.dense2Bias!),
-    dense3Kernel: tensor(weights, tensors.dense3Kernel!),
-    dense3Bias: tensor(weights, tensors.dense3Bias!),
+    conv1Kernel: tensorFor(weights, tensors, 'conv1Kernel'),
+    conv1Bias: tensorFor(weights, tensors, 'conv1Bias'),
+    conv2Kernel: tensorFor(weights, tensors, 'conv2Kernel'),
+    conv2Bias: tensorFor(weights, tensors, 'conv2Bias'),
+    dense1Kernel: tensorFor(weights, tensors, 'dense1Kernel'),
+    dense1Bias: tensorFor(weights, tensors, 'dense1Bias'),
+    dense2Kernel: tensorFor(weights, tensors, 'dense2Kernel'),
+    dense2Bias: tensorFor(weights, tensors, 'dense2Bias'),
+    dense3Kernel: tensorFor(weights, tensors, 'dense3Kernel'),
+    dense3Bias: tensorFor(weights, tensors, 'dense3Bias'),
   }
 }
 
@@ -314,7 +369,10 @@ const loadLeNetModel = (): Promise<LeNetModel> => {
     }
     const [manifest, buffer] = await fetchLeNetFiles()
     return buildLeNetModel(manifest, buffer)
-  })()
+  })().catch(error => {
+    leNetModelPromise = null
+    throw error
+  })
   return leNetModelPromise
 }
 
@@ -686,32 +744,38 @@ const boardImageToCanvas = (src: string): Promise<HTMLCanvasElement> =>
     image.src = src
   })
 
-const recognizeBoardImageCmd = (target: string, mode: RecognitionMode, boardImage: string): Command.Command<Message> => ({
+const recognizeBoardImage = async (target: string, mode: RecognitionMode, boardImage: string): Promise<RecognitionMessage> => {
+  try {
+    const canvas = await boardImageToCanvas(boardImage)
+    const result = await recognizeFromBoard(canvas, mode)
+    return result ? BoardRecognized({ ...result, target, mode, boardImage }) : RecognitionFailed()
+  } catch {
+    return RecognitionFailed()
+  }
+}
+
+const recognizeCurrentBoard = async (target: string, mode: RecognitionMode): Promise<RecognitionMessage> => {
+  try {
+    const canvas = document.querySelector<HTMLCanvasElement>('#draw-board')
+    if (!canvas) return RecognitionFailed()
+    const boardImage = canvas.toDataURL('image/png')
+    const result = await recognizeFromBoard(canvas, mode)
+    return result ? BoardRecognized({ ...result, target, mode, boardImage }) : RecognitionFailed()
+  } catch {
+    return RecognitionFailed()
+  }
+}
+
+const RecognizeBoardImage = (args: { target: string; mode: RecognitionMode; boardImage: string }): Command.Command<Message> => ({
   name: 'DrawReprocessBoard',
-  effect: Effect.tryPromise(async () => {
-    try {
-      const canvas = await boardImageToCanvas(boardImage)
-      const result = await recognizeFromBoard(canvas, mode)
-      return result ? BoardRecognized({ ...result, target, mode, boardImage }) : RecognitionFailed()
-    } catch {
-      return RecognitionFailed()
-    }
-  }),
+  args,
+  effect: Effect.promise(() => recognizeBoardImage(args.target, args.mode, args.boardImage)),
 })
 
-const recognizeCurrentBoardCmd = (target: string, mode: RecognitionMode): Command.Command<Message> => ({
+const RecognizeCurrentBoard = (args: { target: string; mode: RecognitionMode }): Command.Command<Message> => ({
   name: 'DrawSubmitBoard',
-  effect: Effect.tryPromise(async () => {
-    try {
-      const canvas = document.querySelector<HTMLCanvasElement>('#draw-board')
-      if (!canvas) return RecognitionFailed()
-      const boardImage = canvas.toDataURL('image/png')
-      const result = await recognizeFromBoard(canvas, mode)
-      return result ? BoardRecognized({ ...result, target, mode, boardImage }) : RecognitionFailed()
-    } catch {
-      return RecognitionFailed()
-    }
-  }),
+  args,
+  effect: Effect.promise(() => recognizeCurrentBoard(args.target, args.mode)),
 })
 
 const mountWhiteboard = () => (element: Element): Stream.Stream<Message> =>
@@ -802,31 +866,38 @@ export const view = (model: Model) => {
         h.div([h.Class('draw-score')], [`${model.score}`]),
       ]),
       h.div([h.Class('draw-board-wrap')], [
-        h.canvas([
-          h.Class('draw-board'),
-          h.Id('draw-board'),
-          h.Width('640'),
-          h.Height('420'),
-          h.Key(`draw-board-${model.round}-${model.clearCount}`),
-          h.OnMount({ name: 'drawWhiteboard', args: {}, f: mountWhiteboard() }),
-          h.Attribute('data-model-url', MODEL_URL),
-          h.Attribute('data-recognition-mode', model.recognitionMode),
-        ], []),
         model.success
-          ? h.div([h.Class('draw-success')], ['✓'])
-          : null,
+          ? h.div([h.Class('draw-win-card')], [
+            h.img([h.Class('draw-win-img'), h.Src(model.winningImage), h.Alt('Winning drawing')]),
+            h.div([h.Class('draw-win-mark')], ['✓']),
+            h.div([h.Class('draw-win-confidence')], [confidence]),
+            h.button([h.Class('btn btn-primary draw-win-next'), h.OnClick(NextRound())], ['Next']),
+          ])
+          : h.canvas([
+            h.Class('draw-board'),
+            h.Id('draw-board'),
+            h.Width('640'),
+            h.Height('420'),
+            h.Key(`draw-board-${model.round}-${model.clearCount}`),
+            h.OnMount({ name: 'drawWhiteboard', args: {}, f: mountWhiteboard() }),
+            h.Attribute('data-model-url', MODEL_URL),
+            h.Attribute('data-recognition-mode', model.recognitionMode),
+          ], []),
       ]),
       h.div([h.Class('draw-bottom')], [
-        h.div([h.Class('draw-actions')], [
-          h.button([h.Class('btn btn-primary'), h.OnClick(SubmitBoard())], ['Submit']),
-          h.button([h.Class('btn btn-secondary'), h.OnClick(SkipTarget())], ['Skip']),
-          h.button([h.Class('btn btn-secondary'), h.OnClick(ShuffleTarget())], ['Shuffle']),
-          h.button([h.Class('btn btn-secondary'), h.OnClick(ClearBoard())], ['Clear']),
-        ]),
-        model.lastGuess && !model.success
-          ? h.span([h.Class('draw-guess')], [`I saw ${model.lastGuess} (${confidence}); target ${model.target} ${topNHasTarget ? 'is' : 'is not'} in top ${model.topN}: ${topPredictions}`])
-          : h.span([h.Class('draw-model')], [modeLabel]),
-        h.div([h.Class('draw-bottom-spacer')], []),
+        model.success
+          ? null
+          : h.div([h.Class('draw-actions')], [
+            h.button([h.Class('btn btn-primary'), h.OnClick(SubmitBoard())], ['Submit']),
+            h.button([h.Class('btn btn-secondary'), h.OnClick(SkipTarget())], ['Skip']),
+            h.button([h.Class('btn btn-secondary'), h.OnClick(ShuffleTarget())], ['Shuffle']),
+            h.button([h.Class('btn btn-secondary'), h.OnClick(ClearBoard())], ['Clear']),
+          ]),
+        model.success
+          ? null
+          : model.lastGuess
+            ? h.span([h.Class('draw-guess')], [`I saw ${model.lastGuess} (${confidence}); target ${model.target} ${topNHasTarget ? 'is' : 'is not'} in top ${model.topN}: ${topPredictions}`])
+            : h.span([h.Class('draw-model')], [modeLabel]),
       ]),
       model.debugImages.length > 0
         ? h.div([h.Class('draw-debug')], [

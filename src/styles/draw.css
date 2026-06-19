@@ -1,138 +1,23 @@
-.draw-page {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1rem;
-  padding: 5rem 1.25rem 1.5rem;
-  background: linear-gradient(135deg, #5d7df7 0%, #7d4bb4 100%);
-  transition: background 0.18s ease;
-}
-
-.draw-page--success {
-  background: linear-gradient(135deg, #13b46b 0%, #55d989 100%);
-}
-
-.draw-top {
-  width: min(900px, 100%);
-  display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: center;
-  gap: 1rem;
-}
-
-.draw-question {
-  color: #fff;
-  font-size: clamp(2rem, 7vw, 4.25rem);
-  line-height: 1;
-  text-shadow: 0 3px 14px rgba(0, 0, 0, 0.28);
-}
-
-.draw-score {
-  min-width: 3.25rem;
-  height: 3.25rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.94);
-  color: #1f2a44;
-  font-size: 1.35rem;
-  font-weight: 800;
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
-}
-
-.draw-board-wrap {
-  width: min(900px, 100%);
-  position: relative;
-}
-
-.draw-board {
-  display: block;
-  width: 100%;
-  height: min(62vh, 520px);
-  min-height: 320px;
-  border: 10px solid rgba(255, 255, 255, 0.65);
-  border-radius: 0.5rem;
-  background: #fff;
-  box-shadow: 0 24px 64px rgba(20, 20, 40, 0.32);
-  touch-action: none;
-  cursor: crosshair;
-}
-
-.draw-success {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-size: clamp(8rem, 32vw, 18rem);
-  font-weight: 900;
-  text-shadow: 0 8px 30px rgba(0, 0, 0, 0.22);
-  pointer-events: none;
-}
-
-.draw-bottom {
-  width: min(900px, 100%);
-  min-height: 3rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.6rem;
-}
-
-.draw-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 0.65rem;
-}
-
-.draw-guess,
-.draw-model {
-  color: rgba(255, 255, 255, 0.9);
-  font-size: 1rem;
-  font-weight: 700;
-  text-align: center;
-  overflow-wrap: anywhere;
-}
-
-.draw-bottom-spacer { min-width: 0; }
-.draw-debug { width: min(900px, 100%); max-height: 14rem; display: grid; grid-template-columns: repeat(auto-fill, minmax(5.25rem, 1fr)); gap: 0.55rem; overflow: auto; padding: 0.45rem; border-radius: 0.5rem; background: rgba(255, 255, 255, 0.2); }
-.draw-debug-item { min-width: 0; padding: 0.35rem; border-radius: 0.35rem; background: rgba(255, 255, 255, 0.9); }
-.draw-debug-item--stage { grid-column: span 2; }
-.draw-debug-img { width: 100%; aspect-ratio: 1; object-fit: contain; image-rendering: pixelated; background: #fff; border: 1px solid rgba(0, 0, 0, 0.12); }
-.draw-debug-label { margin-top: 0.25rem; color: #1f2a44; font-size: 0.7rem; font-weight: 700; text-align: center; overflow-wrap: anywhere; }
+.draw-page{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;padding:5rem 1.25rem 1.5rem;background:linear-gradient(135deg,#5d7df7 0%,#7d4bb4 100%);transition:background .18s ease}
+.draw-page--success{background:linear-gradient(135deg,#13b46b 0%,#55d989 100%)}
+.draw-top{width:min(900px,100%);display:grid;grid-template-columns:1fr auto;align-items:center;gap:1rem}
+.draw-question{color:#fff;font-size:clamp(2rem,7vw,4.25rem);line-height:1;text-shadow:0 3px 14px rgba(0,0,0,.28)}
+.draw-score{min-width:3.25rem;height:3.25rem;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;background:rgba(255,255,255,.94);color:#1f2a44;font-size:1.35rem;font-weight:800;box-shadow:0 10px 24px rgba(0,0,0,.18)}
+.draw-board-wrap,.draw-bottom,.draw-debug{width:min(900px,100%)}
+.draw-board-wrap{position:relative}
+.draw-board{display:block;width:100%;height:min(62vh,520px);min-height:320px;border:10px solid rgba(255,255,255,.65);border-radius:.5rem;background:#fff;box-shadow:0 24px 64px rgba(20,20,40,.32);touch-action:none;cursor:crosshair}
+.draw-win-card{min-height:min(62vh,520px);display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:1rem;padding:1.25rem;border:10px solid rgba(255,255,255,.65);border-radius:.5rem;background:rgba(255,255,255,.94);box-shadow:0 24px 64px rgba(20,20,40,.32)}
+.draw-win-img{width:100%;max-height:min(48vh,360px);object-fit:contain;background:#fff;border:1px solid rgba(0,0,0,.12);border-radius:.35rem}
+.draw-win-mark{color:#13a966;font-size:clamp(4.5rem,14vw,9rem);font-weight:900;line-height:1}
+.draw-win-confidence{color:#1f2a44;font-size:clamp(2rem,7vw,4rem);font-weight:900}
+.draw-win-next{grid-column:1/-1;justify-self:center;min-width:8rem}
+.draw-bottom{min-height:3rem;display:flex;flex-direction:column;align-items:center;gap:.6rem}
+.draw-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:.65rem}
+.draw-guess,.draw-model{color:rgba(255,255,255,.9);font-size:1rem;font-weight:700;text-align:center;overflow-wrap:anywhere}
+.draw-debug{max-height:14rem;display:grid;grid-template-columns:repeat(auto-fill,minmax(5.25rem,1fr));gap:.55rem;overflow:auto;padding:.45rem;border-radius:.5rem;background:rgba(255,255,255,.2)}
+.draw-debug-item{min-width:0;padding:.35rem;border-radius:.35rem;background:rgba(255,255,255,.9)}
+.draw-debug-item--stage{grid-column:span 2}
+.draw-debug-img{width:100%;aspect-ratio:1;object-fit:contain;image-rendering:pixelated;background:#fff;border:1px solid rgba(0,0,0,.12)}
+.draw-debug-label{margin-top:.25rem;color:#1f2a44;font-size:.7rem;font-weight:700;text-align:center;overflow-wrap:anywhere}
 .draw-debug-prediction{color:#1f2a44;font-size:5.4rem;font-weight:800;text-align:center}
-@media (max-width: 560px) {
-  .draw-page {
-    padding-top: 4.5rem;
-  }
-
-  .draw-top {
-    grid-template-columns: 1fr;
-    gap: 0.5rem;
-  }
-
-  .draw-score {
-    position: absolute;
-    top: 4.5rem;
-    right: 1rem;
-  }
-
-  .draw-board {
-    height: 58vh;
-    min-height: 300px;
-    border-width: 7px;
-  }
-
-  .draw-debug { max-height: 30vh; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.4rem; padding: 0.35rem; }
-  .draw-debug-item { padding: 0.25rem; }
-  .draw-debug-item--stage { grid-column: span 2; }
-  .draw-debug-label { font-size: 0.62rem; }
-  .draw-debug-prediction { font-size: 3.4rem; line-height: 1; }
-  .draw-bottom-spacer { display: none; }
-}
+@media (max-width:560px){.draw-page{padding-top:4.5rem}.draw-top{grid-template-columns:1fr;gap:.5rem}.draw-score{position:absolute;top:4.5rem;right:1rem}.draw-board{height:58vh;min-height:300px;border-width:7px}.draw-win-card{min-height:18rem;grid-template-columns:1fr auto;gap:.7rem;padding:.8rem;border-width:7px}.draw-win-img{grid-row:span 2;max-height:12rem}.draw-win-mark{font-size:4.5rem}.draw-win-confidence{font-size:2rem}.draw-debug{max-height:30vh;grid-template-columns:repeat(4,minmax(0,1fr));gap:.4rem;padding:.35rem}.draw-debug-item{padding:.25rem}.draw-debug-item--stage{grid-column:span 2}.draw-debug-label{font-size:.62rem}.draw-debug-prediction{font-size:3.4rem;line-height:1}}
