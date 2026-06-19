@@ -21,6 +21,7 @@ const MODEL_WEIGHTS_URL = `${MODEL_DIR_URL}weights.bin`
 const MODEL_LABEL = 'LeNet-5 EMNIST model stored locally'
 const MODEL_CACHE_KEY = 'foldkid-draw-lenet-cache-v1'
 const MODEL_CACHE_VERSION = `${MODEL_MANIFEST_URL}|${MODEL_WEIGHTS_URL}|${MODEL_LABELS.join('')}`
+const INK_ALPHA_THRESHOLD = 18
 export const RecognitionMode = S.Union([S.Literal('model'), S.Literal('template')])
 export type RecognitionMode = typeof RecognitionMode.Type
 export const DEFAULT_RECOGNITION_MODE: RecognitionMode = 'model'
@@ -668,9 +669,19 @@ interface Bounds {
   maxY: number
 }
 
+interface SplitSide {
+  bounds: Bounds
+  separator?: {
+    slope: number
+    centerY: number
+    limit: number
+    side: 'left' | 'right'
+  }
+}
+
 interface SplitBounds {
-  left: Bounds
-  right: Bounds
+  left: SplitSide
+  right: SplitSide
 }
 
 const findInkBounds = (data: Uint8ClampedArray, width: number, height: number): Bounds | null => {
@@ -682,7 +693,7 @@ const findInkBounds = (data: Uint8ClampedArray, width: number, height: number): 
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const alpha = data[(y * width + x) * 4 + 3] ?? 0
-      if (alpha > 18) {
+      if (alpha > INK_ALPHA_THRESHOLD) {
         minX = Math.min(minX, x)
         minY = Math.min(minY, y)
         maxX = Math.max(maxX, x)
@@ -703,7 +714,7 @@ const findInkBoundsInColumns = (data: Uint8ClampedArray, width: number, height: 
   for (let y = 0; y < height; y++) {
     for (let x = minCol; x <= maxCol; x++) {
       const alpha = data[(y * width + x) * 4 + 3] ?? 0
-      if (alpha > 18) {
+      if (alpha > INK_ALPHA_THRESHOLD) {
         minX = Math.min(minX, x)
         minY = Math.min(minY, y)
         maxX = Math.max(maxX, x)
@@ -715,7 +726,7 @@ const findInkBoundsInColumns = (data: Uint8ClampedArray, width: number, height: 
   return { minX, minY, maxX, maxY }
 }
 
-const findLeftRightSplit = (data: Uint8ClampedArray, width: number, height: number): SplitBounds | null => {
+const findLeftRightSplit = (data: Uint8ClampedArray, width: number, height: number, allowAngled = false): SplitBounds | null => {
   const bounds = findInkBounds(data, width, height)
   if (!bounds) return null
   const inkWidth = bounds.maxX - bounds.minX + 1
@@ -725,7 +736,7 @@ const findLeftRightSplit = (data: Uint8ClampedArray, width: number, height: numb
   for (let x = bounds.minX; x <= bounds.maxX; x++) {
     let count = 0
     for (let y = bounds.minY; y <= bounds.maxY; y++) {
-      if ((data[(y * width + x) * 4 + 3] ?? 0) > 18) count++
+      if ((data[(y * width + x) * 4 + 3] ?? 0) > INK_ALPHA_THRESHOLD) count++
     }
     columns[x] = count
   }
@@ -748,19 +759,140 @@ const findLeftRightSplit = (data: Uint8ClampedArray, width: number, height: numb
     bestStart = runStart
     bestEnd = bounds.maxX
   }
-  if (bestStart < 0) return null
-
   const gapWidth = bestEnd - bestStart + 1
   const leftWidth = bestStart - bounds.minX
   const rightWidth = bounds.maxX - bestEnd
   const minSide = Math.max(24, inkWidth * 0.18)
   const minGap = Math.max(18, inkWidth * 0.08)
-  if (gapWidth < minGap || leftWidth < minSide || rightWidth < minSide) return null
+  if (bestStart < 0 || gapWidth < minGap || leftWidth < minSide || rightWidth < minSide) {
+    return allowAngled ? findAngledLeftRightSplit(data, width, height, bounds, minSide) : null
+  }
 
-  const left = findInkBoundsInColumns(data, width, height, bounds.minX, bestStart - 1)
-  const right = findInkBoundsInColumns(data, width, height, bestEnd + 1, bounds.maxX)
-  return left && right ? { left, right } : null
+  return splitBoundsInColumns(data, width, height, bounds.minX, bestStart - 1, bestEnd + 1, bounds.maxX)
 }
+
+const splitBoundsInColumns = (
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  leftMinCol: number,
+  leftMaxCol: number,
+  rightMinCol: number,
+  rightMaxCol: number,
+): SplitBounds | null => {
+  const left = findInkBoundsInColumns(data, width, height, leftMinCol, leftMaxCol)
+  const right = findInkBoundsInColumns(data, width, height, rightMinCol, rightMaxCol)
+  return left && right ? { left: { bounds: left }, right: { bounds: right } } : null
+}
+
+const ANGLED_SPLIT_DEGREES = [-20, -10, 10, 20] as const
+
+const projectedX = (x: number, y: number, slope: number, centerY: number): number =>
+  Math.round(x - slope * (y - centerY))
+
+const findInkBoundsBySplitSide = (
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  bounds: Bounds,
+  slope: number,
+  centerY: number,
+  limit: number,
+  side: 'left' | 'right',
+): Bounds | null => {
+  let minX = width
+  let minY = height
+  let maxX = -1
+  let maxY = -1
+  for (let y = bounds.minY; y <= bounds.maxY; y++) {
+    for (let x = bounds.minX; x <= bounds.maxX; x++) {
+      const u = projectedX(x, y, slope, centerY)
+      const onSide = side === 'left' ? u <= limit : u >= limit
+      if (!onSide || (data[(y * width + x) * 4 + 3] ?? 0) <= INK_ALPHA_THRESHOLD) continue
+      minX = Math.min(minX, x)
+      minY = Math.min(minY, y)
+      maxX = Math.max(maxX, x)
+      maxY = Math.max(maxY, y)
+    }
+  }
+  if (maxX < minX || maxY < minY) return null
+  return { minX, minY, maxX, maxY }
+}
+
+const findAngledSplitForSlope = (
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  bounds: Bounds,
+  minSide: number,
+  slope: number,
+): SplitBounds | null => {
+  const centerY = (bounds.minY + bounds.maxY) / 2
+  const columns = new Set<number>()
+  let minU = Number.POSITIVE_INFINITY
+  let maxU = Number.NEGATIVE_INFINITY
+  for (let y = bounds.minY; y <= bounds.maxY; y++) {
+    for (let x = bounds.minX; x <= bounds.maxX; x++) {
+      if ((data[(y * width + x) * 4 + 3] ?? 0) > INK_ALPHA_THRESHOLD) {
+        const u = projectedX(x, y, slope, centerY)
+        columns.add(u)
+        minU = Math.min(minU, u)
+        maxU = Math.max(maxU, u)
+      }
+    }
+  }
+  if (!Number.isFinite(minU) || !Number.isFinite(maxU)) return null
+
+  let bestStart = -1
+  let bestEnd = -1
+  let runStart = -1
+  for (let u = minU; u <= maxU; u++) {
+    if (!columns.has(u)) {
+      if (runStart < 0) runStart = u
+    } else if (runStart >= 0) {
+      if (u - runStart > bestEnd - bestStart + 1) {
+        bestStart = runStart
+        bestEnd = u - 1
+      }
+      runStart = -1
+    }
+  }
+  if (runStart >= 0 && maxU + 1 - runStart > bestEnd - bestStart + 1) {
+    bestStart = runStart
+    bestEnd = maxU
+  }
+  if (bestStart < 0) return null
+
+  const gapWidth = bestEnd - bestStart + 1
+  const minGap = Math.max(8, (bounds.maxX - bounds.minX + 1) * 0.035)
+  if (gapWidth < minGap || bestStart - minU < minSide || maxU - bestEnd < minSide) return null
+
+  const leftLimit = bestStart - 1
+  const rightLimit = bestEnd + 1
+  const leftBounds = findInkBoundsBySplitSide(data, width, height, bounds, slope, centerY, leftLimit, 'left')
+  const rightBounds = findInkBoundsBySplitSide(data, width, height, bounds, slope, centerY, rightLimit, 'right')
+  if (!leftBounds || !rightBounds) return null
+  return {
+    left: { bounds: leftBounds, separator: { slope, centerY, limit: leftLimit, side: 'left' } },
+    right: { bounds: rightBounds, separator: { slope, centerY, limit: rightLimit, side: 'right' } },
+  }
+}
+
+const findAngledLeftRightSplit = (
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  bounds: Bounds,
+  minSide: number,
+): SplitBounds | null => {
+  for (const degrees of ANGLED_SPLIT_DEGREES) {
+    const split = findAngledSplitForSlope(data, width, height, bounds, minSide, Math.tan(degrees * Math.PI / 180))
+    if (split) return split
+  }
+  return null
+}
+
+export const __drawTest = { findLeftRightSplit }
 
 const normalizeGrid = (data: Uint8ClampedArray, width: number, height: number): Grid | null => {
   const bounds = findInkBounds(data, width, height)
@@ -978,6 +1110,30 @@ const cropAndCenterBounds = (canvas: HTMLCanvasElement, bounds: Bounds): HTMLCan
   return output
 }
 
+const cropAndCenterSplitSide = (canvas: HTMLCanvasElement, side: SplitSide): HTMLCanvasElement | null => {
+  if (!side.separator) return cropAndCenterBounds(canvas, side.bounds)
+
+  const inputContext = canvas.getContext('2d')
+  if (!inputContext) return null
+  const image = inputContext.getImageData(0, 0, canvas.width, canvas.height)
+  const masked = document.createElement('canvas')
+  masked.width = canvas.width
+  masked.height = canvas.height
+  const maskedContext = masked.getContext('2d')
+  if (!maskedContext) return null
+
+  for (let y = side.bounds.minY; y <= side.bounds.maxY; y++) {
+    for (let x = side.bounds.minX; x <= side.bounds.maxX; x++) {
+      const u = projectedX(x, y, side.separator.slope, side.separator.centerY)
+      const keep = side.separator.side === 'left' ? u <= side.separator.limit : u >= side.separator.limit
+      if (keep) continue
+      image.data[(y * canvas.width + x) * 4 + 3] = 0
+    }
+  }
+  maskedContext.putImageData(image, 0, 0)
+  return cropAndCenterBounds(masked, side.bounds)
+}
+
 const cropAndCenterCanvas = (canvas: HTMLCanvasElement): HTMLCanvasElement | null => {
   const context = canvas.getContext('2d')
   if (!context) return null
@@ -1012,15 +1168,15 @@ const combineSplitResults = (left: RecognitionResult, right: RecognitionResult, 
   ],
 })
 
-const recognizeFromBoard = async (canvas: HTMLCanvasElement, mode: RecognitionMode): Promise<RecognitionResult | null> => {
+const recognizeFromBoard = async (canvas: HTMLCanvasElement, mode: RecognitionMode, expectedGlyphs = 1): Promise<RecognitionResult | null> => {
   const debugImages = [snapshotCanvas(canvas, 'raw board')]
   const context = canvas.getContext('2d')
   if (!context) return null
   const image = context.getImageData(0, 0, canvas.width, canvas.height)
-  const split = findLeftRightSplit(image.data, image.width, image.height)
+  const split = findLeftRightSplit(image.data, image.width, image.height, expectedGlyphs === 2)
   if (split) {
-    const leftCanvas = cropAndCenterBounds(canvas, split.left)
-    const rightCanvas = cropAndCenterBounds(canvas, split.right)
+    const leftCanvas = cropAndCenterSplitSide(canvas, split.left)
+    const rightCanvas = cropAndCenterSplitSide(canvas, split.right)
     if (leftCanvas && rightCanvas) {
       const [left, right] = await Promise.all([
         recognizeCenteredCanvas(leftCanvas, mode, [snapshotCanvas(leftCanvas, 'left cropped and centered')]),
@@ -1056,7 +1212,7 @@ const boardImageToCanvas = (src: string): Promise<HTMLCanvasElement> =>
 const recognizeBoardImage = async (target: string, mode: RecognitionMode, boardImage: string): Promise<RecognitionMessage> => {
   try {
     const canvas = await boardImageToCanvas(boardImage)
-    const result = await recognizeFromBoard(canvas, mode)
+    const result = await recognizeFromBoard(canvas, mode, target.length)
     return result ? BoardRecognized({ ...result, target, mode, boardImage }) : RecognitionFailed()
   } catch {
     return RecognitionFailed()
@@ -1068,7 +1224,7 @@ const recognizeCurrentBoard = async (target: string, mode: RecognitionMode): Pro
     const canvas = document.querySelector<HTMLCanvasElement>('#draw-board')
     if (!canvas) return RecognitionFailed()
     const boardImage = canvas.toDataURL('image/png')
-    const result = await recognizeFromBoard(canvas, mode)
+    const result = await recognizeFromBoard(canvas, mode, target.length)
     return result ? BoardRecognized({ ...result, target, mode, boardImage }) : RecognitionFailed()
   } catch {
     return RecognitionFailed()
@@ -1148,7 +1304,7 @@ const mountWhiteboard = (target: string) => (element: Element): Stream.Stream<Me
             if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId)
             if (canvas.dataset.freeMode !== 'true') return
             const mode = modeFromCanvas(canvas)
-            void recognizeFromBoard(canvas, mode).then(result => {
+            void recognizeFromBoard(canvas, mode, target.length).then(result => {
               if (result) Queue.offerUnsafe(queue, BoardRecognized({ ...result, target, mode, boardImage: canvas.toDataURL('image/png') }))
             })
           }

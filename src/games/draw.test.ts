@@ -4,6 +4,31 @@ import * as Draw from './draw'
 const predictions = (...values: string[]) =>
   values.map((value, index) => ({ value, score: 1 - index * 0.1 }))
 
+const inkImage = (width: number, height: number, rects: ReadonlyArray<readonly [number, number, number, number]>): Uint8ClampedArray => {
+  const data = new Uint8ClampedArray(width * height * 4)
+  for (const [minX, minY, maxX, maxY] of rects) {
+    for (let y = minY; y <= maxY; y++) {
+      for (let x = minX; x <= maxX; x++) {
+        data[(y * width + x) * 4 + 3] = 255
+      }
+    }
+  }
+  return data
+}
+
+const inkWhere = (width: number, height: number, predicate: (x: number, y: number) => boolean): Uint8ClampedArray => {
+  const data = new Uint8ClampedArray(width * height * 4)
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (predicate(x, y)) data[(y * width + x) * 4 + 3] = 255
+    }
+  }
+  return data
+}
+
+const slantedProjection = (x: number, y: number, degrees: number, centerY: number): number =>
+  Math.round(x - Math.tan(degrees * Math.PI / 180) * (y - centerY))
+
 const recognized = (
   model: Draw.Model,
   values: string[],
@@ -275,6 +300,28 @@ describe('Draw', () => {
     expect(next.lastPredictions.map(prediction => prediction.value)).toEqual(['AB', 'A8'])
     expect(next.success).toBe(false)
     expect(next.score).toBe(0)
+  })
+
+  it('can split a two-glyph drawing along an angled blank separator', () => {
+    const data = inkWhere(120, 80, (x, y) => {
+      if (y < 16 || y > 64) return false
+      const projected = slantedProjection(x, y, 20, 40)
+      return (projected >= 18 && projected <= 46) || (projected >= 56 && projected <= 84)
+    })
+
+    expect(Draw.__drawTest.findLeftRightSplit(data, 120, 80)).toBeNull()
+    const split = Draw.__drawTest.findLeftRightSplit(data, 120, 80, true)
+
+    expect(split).not.toBeNull()
+    expect(split?.left.bounds.minX).toBeLessThan(split?.right.bounds.minX ?? 0)
+    expect(split?.left.separator?.side).toBe('left')
+    expect(split?.right.separator?.side).toBe('right')
+  })
+
+  it('does not split a solid single glyph shape with angled separators', () => {
+    const data = inkImage(120, 80, [[20, 15, 80, 65]])
+
+    expect(Draw.__drawTest.findLeftRightSplit(data, 120, 80, true)).toBeNull()
   })
 
   it('toggling free mode clears the current board state', () => {
