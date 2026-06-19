@@ -31,6 +31,8 @@ describe('Draw', () => {
     expect(model.topN).toBe(Draw.DEFAULT_TOP_N)
     expect(model.recognitionMode).toBe(Draw.DEFAULT_RECOGNITION_MODE)
     expect(model.freeMode).toBe(false)
+    expect(model.inkColor).toBe(Draw.INK_COLORS[0])
+    expect(model.brushSize).toBe(Draw.DEFAULT_BRUSH_SIZE)
   })
 
   it('normalizes top N into the supported range', () => {
@@ -38,6 +40,24 @@ describe('Draw', () => {
     expect(Draw.normalizeTopN(-10)).toBe(Draw.MIN_TOP_N)
     expect(Draw.normalizeTopN(99)).toBe(Draw.MAX_TOP_N)
     expect(Draw.normalizeTopN(2.6)).toBe(3)
+  })
+
+  it('sets ink color from the palette and falls back for invalid colors', () => {
+    const [colored] = Draw.update(Draw.init(), Draw.SetInkColor({ value: Draw.INK_COLORS[3] }))
+    const [fallback] = Draw.update(colored, Draw.SetInkColor({ value: '#ffffff' }))
+
+    expect(colored.inkColor).toBe(Draw.INK_COLORS[3])
+    expect(fallback.inkColor).toBe(Draw.INK_COLORS[0])
+  })
+
+  it('sets brush thickness within the supported range', () => {
+    const [thick] = Draw.update(Draw.init(), Draw.SetBrushSize({ value: 31.4 }))
+    const [tooSmall] = Draw.update(thick, Draw.SetBrushSize({ value: -1 }))
+    const [tooLarge] = Draw.update(tooSmall, Draw.SetBrushSize({ value: 99 }))
+
+    expect(thick.brushSize).toBe(31)
+    expect(tooSmall.brushSize).toBe(Draw.MIN_BRUSH_SIZE)
+    expect(tooLarge.brushSize).toBe(Draw.MAX_BRUSH_SIZE)
   })
 
   it('submit creates a recognizer command for the current target and mode', () => {
@@ -114,6 +134,16 @@ describe('Draw', () => {
     expect(next.lastPredictions.map(prediction => prediction.value)).toEqual(['B', 'C'])
     expect(next.lastBoardImage).toBe('data:image/png;base64,board')
     expect(cmds).toHaveLength(0)
+  })
+
+  it('free mode can report a split multi-character guess', () => {
+    const model = { ...Draw.init(), freeMode: true }
+    const [next] = Draw.update(model, recognized(model, ['AB', 'A8']))
+
+    expect(next.lastGuess).toBe('AB')
+    expect(next.lastPredictions.map(prediction => prediction.value)).toEqual(['AB', 'A8'])
+    expect(next.success).toBe(false)
+    expect(next.score).toBe(0)
   })
 
   it('toggling free mode clears the current board state', () => {

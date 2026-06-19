@@ -19,6 +19,11 @@ export const DEFAULT_RECOGNITION_MODE: RecognitionMode = 'model'
 export const MIN_TOP_N = 1
 export const MAX_TOP_N = 10
 export const DEFAULT_TOP_N = 5
+export const MIN_BRUSH_SIZE = 8
+export const MAX_BRUSH_SIZE = 38
+export const DEFAULT_BRUSH_SIZE = 22
+export const INK_COLORS = ['#161616', '#e03131', '#f08c00', '#2f9e44', '#1971c2', '#9c36b5'] as const
+const DEFAULT_INK_COLOR = INK_COLORS[0]
 const OCR_CANDIDATES = [...MODEL_LABELS, '+', '-', '=', '?', '!', '@', '$', '%']
 const ALLOWED_TARGETS = new Set(TARGETS)
 const NEAR_MATCH_GROUPS = [
@@ -50,6 +55,8 @@ export const Model = S.Struct({
   topN: S.Number,
   recognitionMode: RecognitionMode,
   freeMode: S.Boolean,
+  inkColor: S.String,
+  brushSize: S.Number,
   clearCount: S.Number,
   debugImages: S.Array(DebugImage),
   lastBoardImage: S.String,
@@ -66,9 +73,11 @@ export const ClearBoard = m('DrawClearBoard')
 export const SetTopN = m('DrawSetTopN', { value: S.Number })
 export const SetRecognitionMode = m('DrawSetRecognitionMode', { value: RecognitionMode })
 export const SetFreeMode = m('DrawSetFreeMode', { value: S.Boolean })
+export const SetInkColor = m('DrawSetInkColor', { value: S.String })
+export const SetBrushSize = m('DrawSetBrushSize', { value: S.Number })
 export const RecognitionFailed = m('DrawRecognitionFailed')
 
-export const Message = S.Union([BoardRecognized, SubmitBoard, NextRound, SkipTarget, ShuffleTarget, ClearBoard, SetTopN, SetRecognitionMode, SetFreeMode, RecognitionFailed])
+export const Message = S.Union([BoardRecognized, SubmitBoard, NextRound, SkipTarget, ShuffleTarget, ClearBoard, SetTopN, SetRecognitionMode, SetFreeMode, SetInkColor, SetBrushSize, RecognitionFailed])
 export type Message = typeof Message.Type
 
 const nextTarget = (round: number): string => TARGETS[round % TARGETS.length] ?? 'A'
@@ -88,6 +97,8 @@ export const init = (): Model => ({
   topN: DEFAULT_TOP_N,
   recognitionMode: DEFAULT_RECOGNITION_MODE,
   freeMode: false,
+  inkColor: DEFAULT_INK_COLOR,
+  brushSize: DEFAULT_BRUSH_SIZE,
   clearCount: 0,
   debugImages: [],
   lastBoardImage: '',
@@ -115,6 +126,9 @@ const isNearMatch = (a: string, b: string): boolean =>
 
 export const normalizeTopN = (value: number | undefined): number =>
   value !== undefined && Number.isFinite(value) ? Math.min(MAX_TOP_N, Math.max(MIN_TOP_N, Math.round(value))) : DEFAULT_TOP_N
+
+export const normalizeBrushSize = (value: number | undefined): number =>
+  value !== undefined && Number.isFinite(value) ? Math.min(MAX_BRUSH_SIZE, Math.max(MIN_BRUSH_SIZE, Math.round(value))) : DEFAULT_BRUSH_SIZE
 
 export const update = (
   model: Model,
@@ -192,6 +206,14 @@ export const update = (
       ],
       DrawSetFreeMode: (msg) => [
         { ...model, freeMode: msg.value, success: false, lastGuess: '', lastConfidence: 0, lastPredictions: [], clearCount: model.clearCount + 1, debugImages: [], lastBoardImage: '', winningImage: '' },
+        [],
+      ],
+      DrawSetInkColor: (msg) => [
+        { ...model, inkColor: INK_COLORS.includes(msg.value as typeof INK_COLORS[number]) ? msg.value : DEFAULT_INK_COLOR },
+        [],
+      ],
+      DrawSetBrushSize: (msg) => [
+        { ...model, brushSize: normalizeBrushSize(msg.value) },
         [],
       ],
       DrawRecognitionFailed: () => [model, []],
@@ -515,6 +537,11 @@ interface Bounds {
   maxY: number
 }
 
+interface SplitBounds {
+  left: Bounds
+  right: Bounds
+}
+
 const findInkBounds = (data: Uint8ClampedArray, width: number, height: number): Bounds | null => {
   let minX = width
   let minY = height
@@ -535,6 +562,73 @@ const findInkBounds = (data: Uint8ClampedArray, width: number, height: number): 
 
   if (maxX < minX || maxY < minY) return null
   return { minX, minY, maxX, maxY }
+}
+
+const findInkBoundsInColumns = (data: Uint8ClampedArray, width: number, height: number, minCol: number, maxCol: number): Bounds | null => {
+  let minX = width
+  let minY = height
+  let maxX = -1
+  let maxY = -1
+  for (let y = 0; y < height; y++) {
+    for (let x = minCol; x <= maxCol; x++) {
+      const alpha = data[(y * width + x) * 4 + 3] ?? 0
+      if (alpha > 18) {
+        minX = Math.min(minX, x)
+        minY = Math.min(minY, y)
+        maxX = Math.max(maxX, x)
+        maxY = Math.max(maxY, y)
+      }
+    }
+  }
+  if (maxX < minX || maxY < minY) return null
+  return { minX, minY, maxX, maxY }
+}
+
+const findLeftRightSplit = (data: Uint8ClampedArray, width: number, height: number): SplitBounds | null => {
+  const bounds = findInkBounds(data, width, height)
+  if (!bounds) return null
+  const inkWidth = bounds.maxX - bounds.minX + 1
+  if (inkWidth < width * 0.22) return null
+
+  const columns: number[] = []
+  for (let x = bounds.minX; x <= bounds.maxX; x++) {
+    let count = 0
+    for (let y = bounds.minY; y <= bounds.maxY; y++) {
+      if ((data[(y * width + x) * 4 + 3] ?? 0) > 18) count++
+    }
+    columns[x] = count
+  }
+
+  let bestStart = -1
+  let bestEnd = -1
+  let runStart = -1
+  for (let x = bounds.minX; x <= bounds.maxX; x++) {
+    if ((columns[x] ?? 0) === 0) {
+      if (runStart < 0) runStart = x
+    } else if (runStart >= 0) {
+      if (x - runStart > bestEnd - bestStart + 1) {
+        bestStart = runStart
+        bestEnd = x - 1
+      }
+      runStart = -1
+    }
+  }
+  if (runStart >= 0 && bounds.maxX + 1 - runStart > bestEnd - bestStart + 1) {
+    bestStart = runStart
+    bestEnd = bounds.maxX
+  }
+  if (bestStart < 0) return null
+
+  const gapWidth = bestEnd - bestStart + 1
+  const leftWidth = bestStart - bounds.minX
+  const rightWidth = bounds.maxX - bestEnd
+  const minSide = Math.max(24, inkWidth * 0.18)
+  const minGap = Math.max(18, inkWidth * 0.08)
+  if (gapWidth < minGap || leftWidth < minSide || rightWidth < minSide) return null
+
+  const left = findInkBoundsInColumns(data, width, height, bounds.minX, bestStart - 1)
+  const right = findInkBoundsInColumns(data, width, height, bestEnd + 1, bounds.maxX)
+  return left && right ? { left, right } : null
 }
 
 const normalizeGrid = (data: Uint8ClampedArray, width: number, height: number): Grid | null => {
@@ -596,6 +690,25 @@ const gridToDebugImage = (grid: Grid, label: string): DebugImage => {
     }
   }
   return { label, src: output.toDataURL('image/png'), kind: 'image' }
+}
+
+const blackInkCanvas = (canvas: HTMLCanvasElement): HTMLCanvasElement => {
+  const output = document.createElement('canvas')
+  output.width = canvas.width
+  output.height = canvas.height
+  const outputContext = output.getContext('2d')
+  const inputContext = canvas.getContext('2d')
+  if (!outputContext || !inputContext) return canvas
+  const image = inputContext.getImageData(0, 0, canvas.width, canvas.height)
+  for (let i = 0; i < image.data.length; i += 4) {
+    const alpha = image.data[i + 3] ?? 0
+    image.data[i] = 0
+    image.data[i + 1] = 0
+    image.data[i + 2] = 0
+    image.data[i + 3] = alpha
+  }
+  outputContext.putImageData(image, 0, 0)
+  return output
 }
 
 const predictionDebugItem = (prediction: Prediction, index: number): DebugImage => ({
@@ -716,13 +829,7 @@ const RECOGNIZERS = {
   },
 } as const
 
-const cropAndCenterCanvas = (canvas: HTMLCanvasElement): HTMLCanvasElement | null => {
-  const context = canvas.getContext('2d')
-  if (!context) return null
-  const image = context.getImageData(0, 0, canvas.width, canvas.height)
-  const bounds = findInkBounds(image.data, image.width, image.height)
-  if (!bounds) return null
-
+const cropAndCenterBounds = (canvas: HTMLCanvasElement, bounds: Bounds): HTMLCanvasElement | null => {
   const cropW = Math.max(1, bounds.maxX - bounds.minX + 1)
   const cropH = Math.max(1, bounds.maxY - bounds.minY + 1)
   const output = document.createElement('canvas')
@@ -740,11 +847,59 @@ const cropAndCenterCanvas = (canvas: HTMLCanvasElement): HTMLCanvasElement | nul
   return output
 }
 
+const cropAndCenterCanvas = (canvas: HTMLCanvasElement): HTMLCanvasElement | null => {
+  const context = canvas.getContext('2d')
+  if (!context) return null
+  const image = context.getImageData(0, 0, canvas.width, canvas.height)
+  const bounds = findInkBounds(image.data, image.width, image.height)
+  return bounds ? cropAndCenterBounds(canvas, bounds) : null
+}
+
+const recognizeCenteredCanvas = (
+  centered: HTMLCanvasElement,
+  mode: RecognitionMode,
+  debugImages: DebugImage[],
+): Promise<RecognitionResult | null> =>
+  RECOGNIZERS[mode](blackInkCanvas(centered), [...debugImages, snapshotCanvas(centered, 'cropped and centered')])
+
+const combineSplitResults = (left: RecognitionResult, right: RecognitionResult, debugImages: DebugImage[]): RecognitionResult => ({
+  value: `${left.value}${right.value}`,
+  score: (left.score + right.score) / 2,
+  predictions: [{
+    value: `${left.value}${right.value}`,
+    score: (left.score + right.score) / 2,
+  }, ...left.predictions.slice(1, 6).flatMap((leftPrediction, index) => {
+    const rightPrediction = right.predictions[index + 1]
+    return rightPrediction ? [{ value: `${leftPrediction.value}${rightPrediction.value}`, score: (leftPrediction.score + rightPrediction.score) / 2 }] : []
+  })],
+  debugImages: [
+    ...debugImages,
+    textDebugItem(`split result ${left.value}${right.value}`),
+    ...left.debugImages.slice(1).map(image => ({ ...image, label: `left ${image.label}` })),
+    ...right.debugImages.slice(1).map(image => ({ ...image, label: `right ${image.label}` })),
+  ],
+})
+
 const recognizeFromBoard = async (canvas: HTMLCanvasElement, mode: RecognitionMode): Promise<RecognitionResult | null> => {
   const debugImages = [snapshotCanvas(canvas, 'raw board')]
+  const context = canvas.getContext('2d')
+  if (!context) return null
+  const image = context.getImageData(0, 0, canvas.width, canvas.height)
+  const split = findLeftRightSplit(image.data, image.width, image.height)
+  if (split) {
+    const leftCanvas = cropAndCenterBounds(canvas, split.left)
+    const rightCanvas = cropAndCenterBounds(canvas, split.right)
+    if (leftCanvas && rightCanvas) {
+      const [left, right] = await Promise.all([
+        recognizeCenteredCanvas(leftCanvas, mode, [snapshotCanvas(leftCanvas, 'left cropped and centered')]),
+        recognizeCenteredCanvas(rightCanvas, mode, [snapshotCanvas(rightCanvas, 'right cropped and centered')]),
+      ])
+      if (left && right) return combineSplitResults(left, right, debugImages)
+    }
+  }
   const centered = cropAndCenterCanvas(canvas)
   if (!centered) return null
-  return RECOGNIZERS[mode](centered, [...debugImages, snapshotCanvas(centered, 'cropped and centered')])
+  return recognizeCenteredCanvas(centered, mode, debugImages)
 }
 
 const boardImageToCanvas = (src: string): Promise<HTMLCanvasElement> =>
@@ -803,6 +958,9 @@ const RecognizeCurrentBoard = (args: { target: string; mode: RecognitionMode }):
 const modeFromCanvas = (canvas: HTMLCanvasElement): RecognitionMode =>
   canvas.dataset.recognitionMode === 'template' ? 'template' : 'model'
 
+const brushSizeFromCanvas = (canvas: HTMLCanvasElement): number =>
+  normalizeBrushSize(Number.parseFloat(canvas.dataset.brushSize ?? ''))
+
 const mountWhiteboard = (target: string) => (element: Element): Stream.Stream<Message> =>
   Stream.callback<Message>(queue =>
     Effect.gen(function* () {
@@ -815,8 +973,8 @@ const mountWhiteboard = (target: string) => (element: Element): Stream.Stream<Me
           if (context) {
             context.lineCap = 'round'
             context.lineJoin = 'round'
-            context.strokeStyle = '#161616'
-            context.lineWidth = 22
+            context.strokeStyle = canvas.dataset.inkColor ?? DEFAULT_INK_COLOR
+            context.lineWidth = brushSizeFromCanvas(canvas)
           }
 
           const point = (event: PointerEvent): readonly [number, number] => {
@@ -830,6 +988,8 @@ const mountWhiteboard = (target: string) => (element: Element): Stream.Stream<Me
           const drawTo = (event: PointerEvent): void => {
             if (!context || !activePointers.has(event.pointerId)) return
             event.preventDefault()
+            context.strokeStyle = canvas.dataset.inkColor ?? DEFAULT_INK_COLOR
+            context.lineWidth = brushSizeFromCanvas(canvas)
             const [x, y] = point(event)
             context.lineTo(x, y)
             context.stroke()
@@ -840,6 +1000,8 @@ const mountWhiteboard = (target: string) => (element: Element): Stream.Stream<Me
             event.preventDefault()
             canvas.setPointerCapture(event.pointerId)
             activePointers.add(event.pointerId)
+            context.strokeStyle = canvas.dataset.inkColor ?? DEFAULT_INK_COLOR
+            context.lineWidth = brushSizeFromCanvas(canvas)
             const [x, y] = point(event)
             context.beginPath()
             context.moveTo(x, y)
@@ -915,6 +1077,8 @@ export const view = (model: Model) => {
             h.Attribute('data-model-url', MODEL_URL),
             h.Attribute('data-recognition-mode', model.recognitionMode),
             h.Attribute('data-free-mode', model.freeMode ? 'true' : 'false'),
+            h.Attribute('data-ink-color', model.inkColor),
+            h.Attribute('data-brush-size', model.brushSize.toString()),
           ], []),
       ]),
       h.div([h.Class('draw-bottom')], [
@@ -922,9 +1086,41 @@ export const view = (model: Model) => {
           ? null
           : model.freeMode
             ? h.div([h.Class('draw-actions')], [
+              ...INK_COLORS.map(color =>
+                h.button([
+                  h.Class(color === model.inkColor ? 'draw-swatch draw-swatch--active' : 'draw-swatch'),
+                  h.Style({ background: color }),
+                  h.AriaLabel(`Draw in ${color}`),
+                  h.OnClick(SetInkColor({ value: color })),
+                ], [])),
+              h.input([
+                h.Type('range'),
+                h.Min(MIN_BRUSH_SIZE.toString()),
+                h.Max(MAX_BRUSH_SIZE.toString()),
+                h.Step('1'),
+                h.Value(model.brushSize.toString()),
+                h.AriaLabel('Brush thickness'),
+                h.OnInput((value) => SetBrushSize({ value: parseFloat(value) })),
+              ]),
               h.button([h.Class('btn btn-secondary'), h.OnClick(ClearBoard())], ['Clear']),
             ])
             : h.div([h.Class('draw-actions')], [
+              ...INK_COLORS.map(color =>
+                h.button([
+                  h.Class(color === model.inkColor ? 'draw-swatch draw-swatch--active' : 'draw-swatch'),
+                  h.Style({ background: color }),
+                  h.AriaLabel(`Draw in ${color}`),
+                  h.OnClick(SetInkColor({ value: color })),
+                ], [])),
+              h.input([
+                h.Type('range'),
+                h.Min(MIN_BRUSH_SIZE.toString()),
+                h.Max(MAX_BRUSH_SIZE.toString()),
+                h.Step('1'),
+                h.Value(model.brushSize.toString()),
+                h.AriaLabel('Brush thickness'),
+                h.OnInput((value) => SetBrushSize({ value: parseFloat(value) })),
+              ]),
               h.button([h.Class('btn btn-primary'), h.OnClick(SubmitBoard())], ['Submit']),
               h.button([h.Class('btn btn-secondary'), h.OnClick(SkipTarget())], ['Skip']),
               h.button([h.Class('btn btn-secondary'), h.OnClick(ShuffleTarget())], ['Shuffle']),
