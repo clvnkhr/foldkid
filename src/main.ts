@@ -48,7 +48,12 @@ const PersistedSettingsSchema = S.Struct({
   bubblesSayColor: S.optionalKey(S.Boolean),
   drawTopN: S.optionalKey(S.Number),
   drawRecognitionMode: S.optionalKey(Draw.RecognitionMode),
+  drawTargetOrderMode: S.optionalKey(Draw.TargetOrderMode),
   drawFreeMode: S.optionalKey(S.Boolean),
+  drawIncludeSingle: S.optionalKey(S.Boolean),
+  drawIncludePairs: S.optionalKey(S.Boolean),
+  drawIncludeNumbers: S.optionalKey(S.Boolean),
+  drawIncludeLetters: S.optionalKey(S.Boolean),
   musicBoxSongOrder: S.optionalKey(S.Array(S.Number)),
   musicBoxHiddenSongs: S.optionalKey(S.Array(S.Boolean)),
   musicBoxDrumVolume: S.optionalKey(S.Number),
@@ -127,7 +132,12 @@ const buildSettingsData = (model: Model): PersistedSettings => ({
   bubblesSayColor: model.bubbles.sayColor,
   drawTopN: model.draw.topN,
   drawRecognitionMode: model.draw.recognitionMode,
+  drawTargetOrderMode: model.draw.targetOrderMode,
   drawFreeMode: model.draw.freeMode,
+  drawIncludeSingle: model.draw.includeSingle,
+  drawIncludePairs: model.draw.includePairs,
+  drawIncludeNumbers: model.draw.includeNumbers,
+  drawIncludeLetters: model.draw.includeLetters,
   musicBoxSongOrder: model.musicBox.songOrder,
   musicBoxHiddenSongs: model.musicBox.hiddenSongs,
   musicBoxDrumVolume: model.musicBox.drumVolume,
@@ -244,7 +254,12 @@ export const Message = S.Union([
   Draw.ClearBoard,
   Draw.SetTopN,
   Draw.SetRecognitionMode,
+  Draw.SetTargetOrderMode,
   Draw.SetFreeMode,
+  Draw.SetIncludeSingle,
+  Draw.SetIncludePairs,
+  Draw.SetIncludeNumbers,
+  Draw.SetIncludeLetters,
   Draw.SetInkColor,
   Draw.SetBrushSize,
   Draw.RecognitionFailed,
@@ -338,12 +353,17 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
         popLabel: saved.bubblesPopLabel ?? false,
         sayColor: saved.bubblesSayColor ?? false,
       },
-      draw: {
+      draw: Draw.normalizeTargetForPool({
         ...Draw.init(),
         topN: Draw.normalizeTopN(saved.drawTopN),
         recognitionMode: saved.drawRecognitionMode ?? Draw.DEFAULT_RECOGNITION_MODE,
+        targetOrderMode: saved.drawTargetOrderMode ?? Draw.DEFAULT_TARGET_ORDER_MODE,
         freeMode: saved.drawFreeMode ?? false,
-      },
+        includeSingle: saved.drawIncludeSingle ?? true,
+        includePairs: saved.drawIncludePairs ?? true,
+        includeNumbers: saved.drawIncludeNumbers ?? true,
+        includeLetters: saved.drawIncludeLetters ?? true,
+      }),
       settingsPanelWidth: 150,
       isDraggingSettings: false,
       settingsDragStartMouseX: 0,
@@ -448,12 +468,17 @@ const applyImportData = (model: Model, s: PersistedSettings): Model => {
       popLabel: s.bubblesPopLabel ?? model.bubbles.popLabel,
       sayColor: s.bubblesSayColor ?? model.bubbles.sayColor,
     },
-    draw: {
+    draw: Draw.normalizeTargetForPool({
       ...model.draw,
       topN: Draw.normalizeTopN(s.drawTopN ?? model.draw.topN),
       recognitionMode: s.drawRecognitionMode ?? model.draw.recognitionMode,
+      targetOrderMode: s.drawTargetOrderMode ?? model.draw.targetOrderMode,
       freeMode: s.drawFreeMode ?? model.draw.freeMode,
-    },
+      includeSingle: s.drawIncludeSingle ?? model.draw.includeSingle,
+      includePairs: s.drawIncludePairs ?? model.draw.includePairs,
+      includeNumbers: s.drawIncludeNumbers ?? model.draw.includeNumbers,
+      includeLetters: s.drawIncludeLetters ?? model.draw.includeLetters,
+    }),
     musicBox: {
       ...model.musicBox,
       songOrder: normalizeSongOrder(s.musicBoxSongOrder, model.musicBox.songOrder),
@@ -584,7 +609,12 @@ const _update = (
       DrawClearBoard: (msg) => updateDraw(model, msg),
       DrawSetTopN: (msg) => updateDraw(model, msg),
       DrawSetRecognitionMode: (msg) => updateDraw(model, msg),
+      DrawSetTargetOrderMode: (msg) => updateDraw(model, msg),
       DrawSetFreeMode: (msg) => updateDraw(model, msg),
+      DrawSetIncludeSingle: (msg) => updateDraw(model, msg),
+      DrawSetIncludePairs: (msg) => updateDraw(model, msg),
+      DrawSetIncludeNumbers: (msg) => updateDraw(model, msg),
+      DrawSetIncludeLetters: (msg) => updateDraw(model, msg),
       DrawSetInkColor: (msg) => updateDraw(model, msg),
       DrawSetBrushSize: (msg) => updateDraw(model, msg),
       DrawRecognitionFailed: (msg) => updateDraw(model, msg),
@@ -667,7 +697,7 @@ export const PERSISTED_SETTINGS_MESSAGE_TAGS = [
   'CounterSetDisplayMode',
   'FindItSetAnyWins', 'FindItSetVoiceMode', 'FindItSetPairsMode', 'FindItSetEmojiPackEnabled',
   'BubblesSetPopLabel', 'BubblesSetSayColor',
-  'DrawSetTopN', 'DrawSetRecognitionMode', 'DrawSetFreeMode',
+  'DrawSetTopN', 'DrawSetRecognitionMode', 'DrawSetTargetOrderMode', 'DrawSetFreeMode', 'DrawSetIncludeSingle', 'DrawSetIncludePairs', 'DrawSetIncludeNumbers', 'DrawSetIncludeLetters',
   'MusicBoxSetDrumVolume', 'MusicBoxToggleSongVisibility', 'MusicBoxSongDroppedOn',
 ] as const satisfies ReadonlyArray<Message['_tag']>
 
@@ -968,25 +998,70 @@ export const view = (model: Model): Document => {
           model.page._tag === 'PageDraw'
             ? h.div([h.Class('setting-section')], [
               h.h3([], [t('drawTitle', model.language)]),
-              h.div([h.Class('lang-buttons')], [
-                h.button(
-                  [h.Class(model.draw.recognitionMode === 'model' ? 'btn btn-primary' : 'btn btn-secondary'), settingsOnClick(Draw.SetRecognitionMode({ value: 'model' }))],
-                  ['Model'],
-                ),
-                h.button(
-                  [h.Class(model.draw.recognitionMode === 'template' ? 'btn btn-primary' : 'btn btn-secondary'), settingsOnClick(Draw.SetRecognitionMode({ value: 'template' }))],
-                  ['Template'],
-                ),
+              h.div([h.Class('setting-row')], [
+                h.label([], ['Recognizer']),
+                h.div([h.Class('lang-buttons')], [
+                  h.button(
+                    [h.Class(model.draw.recognitionMode === 'model' ? 'btn btn-primary' : 'btn btn-secondary'), settingsOnClick(Draw.SetRecognitionMode({ value: 'model' }))],
+                    ['Model'],
+                  ),
+                  h.button(
+                    [h.Class(model.draw.recognitionMode === 'template' ? 'btn btn-primary' : 'btn btn-secondary'), settingsOnClick(Draw.SetRecognitionMode({ value: 'template' }))],
+                    ['Template'],
+                  ),
+                ]),
               ]),
-              h.div([h.Class('lang-buttons')], [
-                h.button(
-                  [h.Class(!model.draw.freeMode ? 'btn btn-primary' : 'btn btn-secondary'), settingsOnClick(Draw.SetFreeMode({ value: false }))],
-                  ['Prompt'],
-                ),
-                h.button(
-                  [h.Class(model.draw.freeMode ? 'btn btn-primary' : 'btn btn-secondary'), settingsOnClick(Draw.SetFreeMode({ value: true }))],
-                  ['Free mode'],
-                ),
+              h.div([h.Class('setting-row')], [
+                h.label([], ['Play mode']),
+                h.div([h.Class('lang-buttons')], [
+                  h.button(
+                    [h.Class(!model.draw.freeMode ? 'btn btn-primary' : 'btn btn-secondary'), settingsOnClick(Draw.SetFreeMode({ value: false }))],
+                    ['Prompt'],
+                  ),
+                  h.button(
+                    [h.Class(model.draw.freeMode ? 'btn btn-primary' : 'btn btn-secondary'), settingsOnClick(Draw.SetFreeMode({ value: true }))],
+                    ['Free mode'],
+                  ),
+                ]),
+              ]),
+              h.div([h.Class('setting-row')], [
+                h.label([], ['Question order']),
+                h.div([h.Class('lang-buttons')], [
+                  h.button(
+                    [h.Class(model.draw.targetOrderMode === 'shuffle' ? 'btn btn-primary' : 'btn btn-secondary'), settingsOnClick(Draw.SetTargetOrderMode({ value: 'shuffle' }))],
+                    ['Shuffle'],
+                  ),
+                  h.button(
+                    [h.Class(model.draw.targetOrderMode === 'ordered' ? 'btn btn-primary' : 'btn btn-secondary'), settingsOnClick(Draw.SetTargetOrderMode({ value: 'ordered' }))],
+                    ['In order'],
+                  ),
+                ]),
+              ]),
+              h.div([h.Class('setting-row')], [
+                h.label([], ['Question length']),
+                h.div([h.Class('lang-buttons')], [
+                  h.button(
+                    [h.Class(model.draw.includeSingle ? 'btn btn-primary' : 'btn btn-secondary'), settingsOnClick(Draw.SetIncludeSingle({ value: !model.draw.includeSingle }))],
+                    ['Singles'],
+                  ),
+                  h.button(
+                    [h.Class(model.draw.includePairs ? 'btn btn-primary' : 'btn btn-secondary'), settingsOnClick(Draw.SetIncludePairs({ value: !model.draw.includePairs }))],
+                    ['Pairs'],
+                  ),
+                ]),
+              ]),
+              h.div([h.Class('setting-row')], [
+                h.label([], ['Question pool']),
+                h.div([h.Class('lang-buttons')], [
+                  h.button(
+                    [h.Class(model.draw.includeNumbers ? 'btn btn-primary' : 'btn btn-secondary'), settingsOnClick(Draw.SetIncludeNumbers({ value: !model.draw.includeNumbers }))],
+                    ['Numbers'],
+                  ),
+                  h.button(
+                    [h.Class(model.draw.includeLetters ? 'btn btn-primary' : 'btn btn-secondary'), settingsOnClick(Draw.SetIncludeLetters({ value: !model.draw.includeLetters }))],
+                    ['Letters'],
+                  ),
+                ]),
               ]),
               h.div([h.Class('setting-row')], [
                 h.label([], ['Top predictions']),

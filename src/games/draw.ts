@@ -4,7 +4,15 @@ import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
 
 const MODEL_LABELS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabdefghnqrt'.split('')
-export const TARGETS = MODEL_LABELS
+const NUMBER_TARGETS = MODEL_LABELS.filter(char => /\d/.test(char))
+const LETTER_TARGETS = MODEL_LABELS.filter(char => /[A-Za-z]/.test(char))
+const UPPERCASE_TARGETS = MODEL_LABELS.filter(char => /[A-Z]/.test(char))
+const pairsFor = (targets: readonly string[]): string[] => targets.flatMap(left => targets.map(right => `${left}${right}`))
+const NUMBER_PAIR_TARGETS = pairsFor(NUMBER_TARGETS)
+const LETTER_PAIR_TARGETS = pairsFor(LETTER_TARGETS)
+const ORDERED_NUMBER_PAIR_TARGETS = NUMBER_TARGETS.slice(1).flatMap(left => NUMBER_TARGETS.map(right => `${left}${right}`))
+const UPPERCASE_PAIR_TARGETS = pairsFor(UPPERCASE_TARGETS)
+export const TARGETS = [...MODEL_LABELS, ...NUMBER_PAIR_TARGETS, ...LETTER_PAIR_TARGETS]
 const GRID_SIZE = 28
 const MODEL_DIR_URL = 'models/lenet-5-emnist-balanced/'
 const MODEL_URL = `${MODEL_DIR_URL}model.keras`
@@ -16,16 +24,23 @@ const MODEL_CACHE_VERSION = `${MODEL_MANIFEST_URL}|${MODEL_WEIGHTS_URL}|${MODEL_
 export const RecognitionMode = S.Union([S.Literal('model'), S.Literal('template')])
 export type RecognitionMode = typeof RecognitionMode.Type
 export const DEFAULT_RECOGNITION_MODE: RecognitionMode = 'model'
+export const TargetOrderMode = S.Union([S.Literal('shuffle'), S.Literal('ordered')])
+export type TargetOrderMode = typeof TargetOrderMode.Type
+export const DEFAULT_TARGET_ORDER_MODE: TargetOrderMode = 'shuffle'
 export const MIN_TOP_N = 1
 export const MAX_TOP_N = 10
 export const DEFAULT_TOP_N = 5
 export const MIN_BRUSH_SIZE = 8
 export const MAX_BRUSH_SIZE = 38
 export const DEFAULT_BRUSH_SIZE = 22
+const DEFAULT_INCLUDE_SINGLE = true
+const DEFAULT_INCLUDE_PAIRS = true
+const DEFAULT_INCLUDE_NUMBERS = true
+const DEFAULT_INCLUDE_LETTERS = true
 export const INK_COLORS = ['#161616', '#e03131', '#f08c00', '#2f9e44', '#1971c2', '#9c36b5'] as const
 const DEFAULT_INK_COLOR = INK_COLORS[0]
 const OCR_CANDIDATES = [...MODEL_LABELS, '+', '-', '=', '?', '!', '@', '$', '%']
-const ALLOWED_TARGETS = new Set(TARGETS)
+const ALLOWED_TARGETS = new Set(MODEL_LABELS)
 const NEAR_MATCH_GROUPS = [
   new Set(['l', 'I', '1']),
   new Set(['o', 'O', '0']),
@@ -54,7 +69,12 @@ export const Model = S.Struct({
   lastPredictions: S.Array(Prediction),
   topN: S.Number,
   recognitionMode: RecognitionMode,
+  targetOrderMode: TargetOrderMode,
   freeMode: S.Boolean,
+  includeSingle: S.Boolean,
+  includePairs: S.Boolean,
+  includeNumbers: S.Boolean,
+  includeLetters: S.Boolean,
   inkColor: S.String,
   brushSize: S.Number,
   clearCount: S.Number,
@@ -64,7 +84,8 @@ export const Model = S.Struct({
 })
 export type Model = typeof Model.Type
 
-export const BoardRecognized = m('DrawBoardRecognized', { target: S.String, mode: RecognitionMode, value: S.String, score: S.Number, predictions: S.Array(Prediction), debugImages: S.Array(DebugImage), boardImage: S.String })
+const PredictionComponents = S.Array(S.Array(Prediction))
+export const BoardRecognized = m('DrawBoardRecognized', { target: S.String, mode: RecognitionMode, value: S.String, score: S.Number, predictions: S.Array(Prediction), components: S.optionalKey(PredictionComponents), debugImages: S.Array(DebugImage), boardImage: S.String })
 export const SubmitBoard = m('DrawSubmitBoard')
 export const NextRound = m('DrawNextRound')
 export const SkipTarget = m('DrawSkipTarget')
@@ -72,22 +93,84 @@ export const ShuffleTarget = m('DrawShuffleTarget')
 export const ClearBoard = m('DrawClearBoard')
 export const SetTopN = m('DrawSetTopN', { value: S.Number })
 export const SetRecognitionMode = m('DrawSetRecognitionMode', { value: RecognitionMode })
+export const SetTargetOrderMode = m('DrawSetTargetOrderMode', { value: TargetOrderMode })
 export const SetFreeMode = m('DrawSetFreeMode', { value: S.Boolean })
+export const SetIncludeSingle = m('DrawSetIncludeSingle', { value: S.Boolean })
+export const SetIncludePairs = m('DrawSetIncludePairs', { value: S.Boolean })
+export const SetIncludeNumbers = m('DrawSetIncludeNumbers', { value: S.Boolean })
+export const SetIncludeLetters = m('DrawSetIncludeLetters', { value: S.Boolean })
 export const SetInkColor = m('DrawSetInkColor', { value: S.String })
 export const SetBrushSize = m('DrawSetBrushSize', { value: S.Number })
 export const RecognitionFailed = m('DrawRecognitionFailed')
 
-export const Message = S.Union([BoardRecognized, SubmitBoard, NextRound, SkipTarget, ShuffleTarget, ClearBoard, SetTopN, SetRecognitionMode, SetFreeMode, SetInkColor, SetBrushSize, RecognitionFailed])
+export const Message = S.Union([BoardRecognized, SubmitBoard, NextRound, SkipTarget, ShuffleTarget, ClearBoard, SetTopN, SetRecognitionMode, SetTargetOrderMode, SetFreeMode, SetIncludeSingle, SetIncludePairs, SetIncludeNumbers, SetIncludeLetters, SetInkColor, SetBrushSize, RecognitionFailed])
 export type Message = typeof Message.Type
 
-const nextTarget = (round: number): string => TARGETS[round % TARGETS.length] ?? 'A'
-const randomTarget = (current: string, random = Math.random): string => {
-  const pool = TARGETS.filter(target => target !== current)
-  return pool[Math.floor(random() * pool.length)] ?? nextTarget(0)
+interface TargetPoolSettings {
+  includeSingle: boolean
+  includePairs: boolean
+  includeNumbers: boolean
+  includeLetters: boolean
+  targetOrderMode?: TargetOrderMode
 }
 
+const unorderedTargetPoolFor = (settings: TargetPoolSettings): string[] => [
+  ...(settings.includeSingle && settings.includeNumbers ? NUMBER_TARGETS : []),
+  ...(settings.includeSingle && settings.includeLetters ? LETTER_TARGETS : []),
+  ...(settings.includePairs && settings.includeNumbers ? NUMBER_PAIR_TARGETS : []),
+  ...(settings.includePairs && settings.includeLetters ? LETTER_PAIR_TARGETS : []),
+]
+
+const orderedTargetPoolFor = (settings: TargetPoolSettings): string[] => {
+  const activePool = unorderedTargetPoolFor(settings)
+  const active = new Set(activePool)
+  const preferred = [
+    ...(settings.includeSingle && settings.includeNumbers ? NUMBER_TARGETS : []),
+    ...(settings.includePairs && settings.includeNumbers ? ORDERED_NUMBER_PAIR_TARGETS : []),
+    ...(settings.includeSingle && settings.includeLetters ? UPPERCASE_TARGETS : []),
+    ...(settings.includePairs && settings.includeLetters ? UPPERCASE_PAIR_TARGETS : []),
+  ].filter(target => active.has(target))
+  const seen = new Set(preferred)
+  return [...preferred, ...activePool.filter(target => !seen.has(target))]
+}
+
+export const targetPoolFor = (settings: TargetPoolSettings): string[] => {
+  const pool = settings.targetOrderMode === 'ordered'
+    ? orderedTargetPoolFor(settings)
+    : unorderedTargetPoolFor(settings)
+  return pool.length ? pool : TARGETS
+}
+
+const nextTarget = (round: number, settings: TargetPoolSettings): string => {
+  const pool = targetPoolFor(settings)
+  return pool[round % pool.length] ?? 'A'
+}
+
+const randomTarget = (current: string, settings: TargetPoolSettings, random = Math.random): string => {
+  const fullPool = targetPoolFor(settings)
+  const pool = fullPool.filter(target => target !== current)
+  return pool[Math.floor(random() * pool.length)] ?? fullPool[0] ?? 'A'
+}
+
+const followingTarget = (current: string, settings: TargetPoolSettings): string => {
+  const pool = targetPoolFor(settings)
+  const index = pool.indexOf(current)
+  return pool[(index + 1) % pool.length] ?? pool[0] ?? 'A'
+}
+
+const advanceTarget = (model: Model): string =>
+  model.targetOrderMode === 'ordered'
+    ? followingTarget(model.target, model)
+    : randomTarget(model.target, model)
+
 export const init = (): Model => ({
-  target: nextTarget(0),
+  target: nextTarget(0, {
+    includeSingle: DEFAULT_INCLUDE_SINGLE,
+    includePairs: DEFAULT_INCLUDE_PAIRS,
+    includeNumbers: DEFAULT_INCLUDE_NUMBERS,
+    includeLetters: DEFAULT_INCLUDE_LETTERS,
+    targetOrderMode: DEFAULT_TARGET_ORDER_MODE,
+  }),
   round: 0,
   score: 0,
   success: false,
@@ -96,7 +179,12 @@ export const init = (): Model => ({
   lastPredictions: [],
   topN: DEFAULT_TOP_N,
   recognitionMode: DEFAULT_RECOGNITION_MODE,
+  targetOrderMode: DEFAULT_TARGET_ORDER_MODE,
   freeMode: false,
+  includeSingle: DEFAULT_INCLUDE_SINGLE,
+  includePairs: DEFAULT_INCLUDE_PAIRS,
+  includeNumbers: DEFAULT_INCLUDE_NUMBERS,
+  includeLetters: DEFAULT_INCLUDE_LETTERS,
   inkColor: DEFAULT_INK_COLOR,
   brushSize: DEFAULT_BRUSH_SIZE,
   clearCount: 0,
@@ -109,7 +197,7 @@ const nextRound = (model: Model): Model => {
   const round = model.round + 1
   return {
     ...model,
-    target: randomTarget(model.target),
+    target: advanceTarget(model),
     round,
     success: false,
     lastGuess: '',
@@ -124,11 +212,31 @@ const nextRound = (model: Model): Model => {
 const isNearMatch = (a: string, b: string): boolean =>
   a === b || NEAR_MATCH_GROUPS.some(group => group.has(a) && group.has(b))
 
+const isTargetMatch = (prediction: string, target: string): boolean => {
+  if (prediction.length !== target.length) return false
+  return [...target].every((char, index) => isNearMatch(prediction[index] ?? '', char))
+}
+
+const componentsMatchTarget = (components: readonly (readonly Prediction[])[] | undefined, target: string, topN: number): boolean =>
+  components?.length === target.length &&
+  [...target].every((char, index) =>
+    (components[index] ?? []).slice(0, topN).some(prediction => isNearMatch(prediction.value, char)))
+
 export const normalizeTopN = (value: number | undefined): number =>
   value !== undefined && Number.isFinite(value) ? Math.min(MAX_TOP_N, Math.max(MIN_TOP_N, Math.round(value))) : DEFAULT_TOP_N
 
 export const normalizeBrushSize = (value: number | undefined): number =>
   value !== undefined && Number.isFinite(value) ? Math.min(MAX_BRUSH_SIZE, Math.max(MIN_BRUSH_SIZE, Math.round(value))) : DEFAULT_BRUSH_SIZE
+
+export const normalizeTargetForPool = (model: Model): Model =>
+  targetPoolFor(model).includes(model.target) ? model : { ...model, target: targetPoolFor(model)[0] ?? 'A' }
+
+const withTargetPoolSetting = (model: Model, patch: Partial<TargetPoolSettings>): Model => {
+  const next = { ...model, ...patch, success: false, lastGuess: '', lastConfidence: 0, lastPredictions: [], debugImages: [], lastBoardImage: '', winningImage: '' }
+  return targetPoolFor(next).includes(next.target)
+    ? next
+    : { ...next, target: next.targetOrderMode === 'ordered' ? targetPoolFor(next)[0] ?? 'A' : randomTarget(next.target, next), round: next.round + 1, clearCount: next.clearCount + 1 }
+}
 
 export const update = (
   model: Model,
@@ -156,7 +264,9 @@ export const update = (
         }
         if (model.success) return [model, []]
         if (msg.target !== model.target) return [model, []]
-        const matched = msg.predictions.slice(0, model.topN).some(prediction => isNearMatch(prediction.value, msg.target))
+        const matched = msg.components?.length === msg.target.length
+          ? componentsMatchTarget(msg.components, msg.target, model.topN)
+          : msg.predictions.slice(0, model.topN).some(prediction => isTargetMatch(prediction.value, msg.target))
         const winningImage = matched ? msg.debugImages.find(image => image.label === 'cropped and centered')?.src ?? msg.boardImage : ''
         return [
           {
@@ -179,7 +289,7 @@ export const update = (
       DrawShuffleTarget: () => [
         {
           ...model,
-          target: randomTarget(model.target),
+          target: advanceTarget(model),
           round: model.round + 1,
           success: false,
           lastGuess: '',
@@ -204,8 +314,28 @@ export const update = (
         { ...model, recognitionMode: msg.value, lastGuess: '', lastConfidence: 0, lastPredictions: [], debugImages: [] },
         model.lastBoardImage ? [RecognizeBoardImage({ target: model.target, mode: msg.value, boardImage: model.lastBoardImage })] : [],
       ],
+      DrawSetTargetOrderMode: (msg) => [
+        { ...model, targetOrderMode: msg.value },
+        [],
+      ],
       DrawSetFreeMode: (msg) => [
         { ...model, freeMode: msg.value, success: false, lastGuess: '', lastConfidence: 0, lastPredictions: [], clearCount: model.clearCount + 1, debugImages: [], lastBoardImage: '', winningImage: '' },
+        [],
+      ],
+      DrawSetIncludeSingle: (msg) => [
+        withTargetPoolSetting(model, { includeSingle: msg.value }),
+        [],
+      ],
+      DrawSetIncludePairs: (msg) => [
+        withTargetPoolSetting(model, { includePairs: msg.value }),
+        [],
+      ],
+      DrawSetIncludeNumbers: (msg) => [
+        withTargetPoolSetting(model, { includeNumbers: msg.value }),
+        [],
+      ],
+      DrawSetIncludeLetters: (msg) => [
+        withTargetPoolSetting(model, { includeLetters: msg.value }),
         [],
       ],
       DrawSetInkColor: (msg) => [
@@ -226,6 +356,7 @@ interface RecognitionResult {
   value: string
   score: number
   predictions: Prediction[]
+  components?: Prediction[][]
   debugImages: DebugImage[]
 }
 type RecognitionMessage = ReturnType<typeof BoardRecognized> | ReturnType<typeof RecognitionFailed>
@@ -865,6 +996,7 @@ const recognizeCenteredCanvas = (
 const combineSplitResults = (left: RecognitionResult, right: RecognitionResult, debugImages: DebugImage[]): RecognitionResult => ({
   value: `${left.value}${right.value}`,
   score: (left.score + right.score) / 2,
+  components: [left.predictions, right.predictions],
   predictions: [{
     value: `${left.value}${right.value}`,
     score: (left.score + right.score) / 2,
@@ -1045,10 +1177,14 @@ export const view = (model: Model) => {
   const modeLabel = model.recognitionMode === 'model' ? MODEL_LABEL : 'Template recognizer'
   const topN = model.lastPredictions.slice(0, model.topN)
   const topPredictions = topN.map(prediction => prediction.value).join(', ')
-  const topNHasTarget = topN.some(prediction => isNearMatch(prediction.value, model.target))
+  const topNHasTarget = topN.some(prediction => isTargetMatch(prediction.value, model.target))
   const prompt = model.freeMode
     ? 'Draw anything'
-    : model.target.match(/[A-Za-z]/)
+    : model.target.length > 1 && model.target.match(/^\d+$/)
+      ? `Write the number ${model.target}`
+      : model.target.length > 1
+        ? `Write the letters ${model.target}`
+        : model.target.match(/[A-Za-z]/)
     ? `Write the letter ${model.target}`
     : `Write the number ${model.target}`
 
@@ -1123,7 +1259,7 @@ export const view = (model: Model) => {
               ]),
               h.button([h.Class('btn btn-primary'), h.OnClick(SubmitBoard())], ['Submit']),
               h.button([h.Class('btn btn-secondary'), h.OnClick(SkipTarget())], ['Skip']),
-              h.button([h.Class('btn btn-secondary'), h.OnClick(ShuffleTarget())], ['Shuffle']),
+              h.button([h.Class('btn btn-secondary'), h.OnClick(ShuffleTarget())], [model.targetOrderMode === 'ordered' ? 'Next' : 'Shuffle']),
               h.button([h.Class('btn btn-secondary'), h.OnClick(ClearBoard())], ['Clear']),
             ]),
         model.success && !model.freeMode
