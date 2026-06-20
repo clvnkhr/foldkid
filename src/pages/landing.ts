@@ -2,6 +2,7 @@ import { html } from 'foldkit/html'
 
 import { ClickedAudioTest, ClickedBubbles, ClickedCounter, ClickedFindIt, ClickedDraw, ClickedMusicBox, ClickedMemory, LandingDragEnded, LandingDragStarted, LandingDroppedOn } from '../message'
 import { t } from '../i18n'
+import { pointerReorder } from '../pointerReorder'
 
 type Message = ReturnType<typeof ClickedCounter>
   | ReturnType<typeof ClickedFindIt>
@@ -52,7 +53,17 @@ export const view = (order: readonly number[], hiddenGames: readonly boolean[], 
         ]),
         h.p([h.Class('subtitle')], [t('pickGame', language)]),
       ]),
-      h.div([h.Class('game-grid')], [
+      h.div([
+        h.Class('game-grid'),
+        h.OnMount(pointerReorder<Message>({
+          name: 'landingGamePointerReorder',
+          itemSelector: '.game-card',
+          handleSelector: '.game-card-drag-handle',
+          start: index => LandingDragStarted({ index }),
+          drop: index => LandingDroppedOn({ index }),
+          end: () => LandingDragEnded(),
+        })),
+      ], [
         ...visibleOrder.map((gameIdx, displayIdx) => {
           const game = LANDING_GAMES[gameIdx]
           if (!game) return null
@@ -60,6 +71,7 @@ export const view = (order: readonly number[], hiddenGames: readonly boolean[], 
             [
               h.OnClick(game.msg()),
               h.Class('game-card' + (dragIndex === displayIdx ? ' game-card--dragging' : '')),
+              h.DataAttribute('drag-index', displayIdx.toString()),
               h.AllowDrop(),
               h.OnDrop(LandingDroppedOn({ index: displayIdx })),
               h.Key(gameIdx.toString()),

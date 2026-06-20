@@ -16,6 +16,7 @@ import { LANDING_GAME_COUNT, LANDING_GAMES, view as landingView } from './pages/
 import { view as audioTestView } from './pages/audiotest'
 import { Language, normalizeLanguage, t, tf } from './i18n'
 import { DEFAULT_SPEECH_PITCH, DEFAULT_SPEECH_RATE, speak } from './speech'
+import { pointerReorder } from './pointerReorder'
 
 const ICON_UNMUTED = '🔊'
 const ICON_MUTED = '🔇'
@@ -1193,7 +1194,17 @@ export const view = (model: Model): Document => {
                   h.span([], [`${Math.round(model.musicBox.drumVolume * 100)}%`]),
                 ]),
               ]),
-              h.div([h.Class('settings-song-list')], [
+              h.div([
+                h.Class('settings-song-list'),
+                h.OnMount(pointerReorder<Message>({
+                  name: 'musicBoxSongPointerReorder',
+                  itemSelector: '.settings-song-item',
+                  handleSelector: '.settings-song-drag',
+                  start: index => MusicBox.SongDragStarted({ index }),
+                  drop: index => MusicBox.SongDroppedOn({ index }),
+                  end: () => MusicBox.SongDragEnded(),
+                })),
+              ], [
                 ...model.musicBox.songOrder
                   .filter(songIdx => songIdx < MusicBox.SONGS.length && MusicBox.SONGS[songIdx] !== undefined)
                   .map((songIdx, displayIdx) => {
@@ -1206,6 +1217,7 @@ export const view = (model: Model): Document => {
                       [
                         h.Key(songIdx.toString()),
                         h.Class('settings-song-item' + (isHidden ? ' settings-song-item--hidden' : '') + (isDragged ? ' settings-song-item--dragging' : '')),
+                        h.DataAttribute('drag-index', displayIdx.toString()),
                         h.Attribute('draggable', 'true'),
                         h.OnDragStart(MusicBox.SongDragStarted({ index: displayIdx })),
                         h.AllowDrop(),
@@ -1229,7 +1241,17 @@ export const view = (model: Model): Document => {
             : null,
           h.div([h.Class('setting-section settings-actions')], [
             h.h3([], [t('settingsGames', model.language)]),
-            h.div([h.Class('settings-song-list')], [
+            h.div([
+              h.Class('settings-song-list'),
+              h.OnMount(pointerReorder<Message>({
+                name: 'landingSettingsPointerReorder',
+                itemSelector: '.settings-song-item',
+                handleSelector: '.settings-song-drag',
+                start: index => LandingSettingsDragStarted({ index }),
+                drop: index => LandingSettingsDroppedOn({ index }),
+                end: () => LandingSettingsDragEnded(),
+              })),
+            ], [
               ...model.landingOrder
                 .filter(gameIdx => gameIdx < LANDING_GAMES.length && LANDING_GAMES[gameIdx] !== undefined)
                 .map((gameIdx, displayIdx) => {
@@ -1241,6 +1263,7 @@ export const view = (model: Model): Document => {
                     [
                       h.Key(`game-${gameIdx}`),
                       h.Class('settings-song-item' + (isHidden ? ' settings-song-item--hidden' : '') + (isDragged ? ' settings-song-item--dragging' : '')),
+                      h.DataAttribute('drag-index', displayIdx.toString()),
                       h.Attribute('draggable', 'true'),
                       h.OnDragStart(LandingSettingsDragStarted({ index: displayIdx })),
                       h.AllowDrop(),
