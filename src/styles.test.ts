@@ -116,12 +116,15 @@ describe('styles.css invariants', () => {
     expect(dragHandle).toContain('touch-action: none')
   })
 
-  it('keeps Find It single and pair cards the same size', () => {
+  it('keeps Find It card boxes stable while sizing single and pair emoji separately', () => {
     const emojiCell = cssRule('.emoji-cell')
     const pairsCell = cssRule('.emoji-cell--pairs')
 
-    expect(emojiCell).toContain('--findit-emoji-size: clamp(1.3rem, 6vw, 3rem)')
+    expect(emojiCell).toContain('width: 100%')
+    expect(emojiCell).toContain('aspect-ratio: 1')
+    expect(emojiCell).toContain('--findit-emoji-size: clamp(2.2rem, 9vw, 4.5rem)')
     expect(emojiCell).toContain('font-size: var(--findit-emoji-size)')
+    expect(pairsCell).toContain('--findit-emoji-size: clamp(1.3rem, 6vw, 3rem)')
     expect(pairsCell).toContain('font-size: var(--findit-emoji-size)')
   })
 

@@ -45,7 +45,7 @@
 }
 
 .emoji-cell {
-  --findit-emoji-size: clamp(1.3rem, 6vw, 3rem);
+  --findit-emoji-size: clamp(2.2rem, 9vw, 4.5rem);
   font-size: var(--findit-emoji-size);
   width: 100%;
   aspect-ratio: 1;
@@ -59,6 +59,7 @@
 }
 
 .emoji-cell--pairs {
+  --findit-emoji-size: clamp(1.3rem, 6vw, 3rem);
   font-size: var(--findit-emoji-size);
 }
 
