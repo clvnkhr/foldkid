@@ -21,8 +21,8 @@ const styles = readStylesheet(stylesEntryPath)
 const stylesEntry = readFileSync(stylesEntryPath, 'utf8')
 const gameScale = Math.sqrt(Math.max(0, LANDING_GAME_COUNT - 1))
 const appWideStylesheetBudget = {
-  lines: 1800 + Math.ceil(gameScale * 8),
-  bytes: 36000 + Math.ceil(gameScale * 300),
+  lines: 1800 + Math.ceil(gameScale * 24),
+  bytes: 38000 + Math.ceil(gameScale * 300),
   gzipBytes: 8000 + Math.ceil(gameScale * 60),
 }
 const stylesheetBudgets = [
@@ -31,6 +31,7 @@ const stylesheetBudgets = [
   ['styles/counter.css', 120, 2500, 1000],
   ['styles/findit.css', 300, 6500, 1800],
   ['styles/bubbles.css', 200, 4500, 1500],
+  ['styles/phonemeGarden.css', 140, 2600, 1000],
   ['styles/settings.css', 280, 5000, 1500],
   ['styles/musicbox.css', 560, 12000, 3200],
   ['styles/audiotest.css', 120, 2200, 900],

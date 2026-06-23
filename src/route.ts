@@ -8,7 +8,8 @@ export const PageBubbles = ts('PageBubbles')
 export const PageDraw = ts('PageDraw')
 export const PageMusicBox = ts('PageMusicBox')
 export const PageMemory = ts('PageMemory')
+export const PagePhonemeGarden = ts('PagePhonemeGarden')
 export const PageAudioTest = ts('PageAudioTest')
 
-export const Page = S.Union([PageLanding, PageCounter, PageFindIt, PageBubbles, PageDraw, PageMusicBox, PageMemory, PageAudioTest])
+export const Page = S.Union([PageLanding, PageCounter, PageFindIt, PageBubbles, PageDraw, PageMusicBox, PageMemory, PagePhonemeGarden, PageAudioTest])
 export type Page = typeof Page.Type

@@ -80,3 +80,27 @@ export const swoosh = <Msg>(msg: Msg) => ({
   name: 'PlaySwoosh' as const,
   effect: playTone(300, 0.12, 'triangle').pipe(Effect.as(msg)),
 })
+
+export const playAudioFile = <Msg>(src: string, msg: Msg) => ({
+  name: 'PlayAudioFile' as const,
+  args: { src },
+  effect: Effect.callback<Msg>((resume) => {
+    if (typeof globalThis.Audio === 'undefined') {
+      resume(Effect.succeed(msg))
+      return Effect.void
+    }
+    const audio = new Audio(src)
+    const cleanup = (): void => {
+      audio.removeEventListener('ended', onDone)
+      audio.removeEventListener('error', onDone)
+    }
+    const onDone = (): void => {
+      cleanup()
+      resume(Effect.succeed(msg))
+    }
+    audio.addEventListener('ended', onDone)
+    audio.addEventListener('error', onDone)
+    audio.play().catch(onDone)
+    return Effect.sync(cleanup)
+  }),
+})

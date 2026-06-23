@@ -8,6 +8,7 @@ import * as Bubbles from './games/bubbles'
 import * as Draw from './games/draw'
 import * as Memory from './games/memory'
 import * as MusicBox from './games/musicbox'
+import { LANDING_GAME_COUNT, LANDING_GAMES } from './pages/landing'
 import { ApplyImport, ClickedLanding, ClickedCounter, ClickedFindIt, ClickedBubbles, ClickedDarkMode, ClickedMemory, ConfirmResetSettings, ExportSettings, ImportedSettings, LandingDragStarted, LandingDroppedOn, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsPersisted, ToggleMute } from './message'
 
 const resolveSettings = [{ name: 'PersistSettings' }, SettingsPersisted()] as const
@@ -350,20 +351,29 @@ describe('Main', () => {
     expect(unchanged.landingHiddenGames).toEqual(hiddenExceptCounter)
   })
 
+  it('hides Phoneme Garden by default while keeping it available in settings', () => {
+    const model = createModel()
+    const phonemeGardenIndex = LANDING_GAMES.findIndex(game => game.title === 'phonemeGardenTitle')
+
+    expect(phonemeGardenIndex).toBeGreaterThanOrEqual(0)
+    expect(model.landingHiddenGames[phonemeGardenIndex]).toBe(true)
+    expect(model.landingOrder).toContain(phonemeGardenIndex)
+  })
+
   it('reorders all landing games from settings', () => {
     const [dragging] = Main.update(createModel(), LandingSettingsDragStarted({ index: 0 }))
     const [dropped] = Main.update(dragging, LandingSettingsDroppedOn({ index: 2 }))
 
-    expect(dropped.landingOrder).toEqual([1, 2, 0, 3, 4, 5])
+    expect(dropped.landingOrder).toEqual([1, 2, 0, ...Array.from({ length: LANDING_GAME_COUNT - 3 }, (_, i) => i + 3)])
     expect(dropped.landingDragIndex).toBe(-1)
   })
 
   it('reorders only visible landing games from the landing page', () => {
-    const base = { ...createModel(), landingHiddenGames: [false, true, false, false, false, false] }
+    const base = { ...createModel(), landingHiddenGames: Array.from({ length: LANDING_GAME_COUNT }, (_, index) => index === 1) }
     const [dragging] = Main.update(base, LandingDragStarted({ index: 0 }))
     const [dropped] = Main.update(dragging, LandingDroppedOn({ index: 1 }))
 
-    expect(dropped.landingOrder).toEqual([1, 2, 0, 3, 4, 5])
+    expect(dropped.landingOrder).toEqual([1, 2, 0, ...Array.from({ length: LANDING_GAME_COUNT - 3 }, (_, i) => i + 3)])
     expect(dropped.landingHiddenGames[1]).toBe(true)
     expect(dropped.landingDragIndex).toBe(-1)
   })

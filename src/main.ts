@@ -2,9 +2,9 @@ import { Effect, Match as M, Option, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { Document, html } from 'foldkit/html'
 
-import { ApplyImport, CancelResetSettings, ClickedAudioTest, ClickedBubbles, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedLanding, ClickedDraw, ClickedMemory, ClickedMusicBox, ClickedSettings, ConfirmResetSettings, CopyExportData, DismissMessage, ExportSettings, ImportSettings, ImportedSettings, LandingDragEnded, LandingDragStarted, LandingDroppedOn, LandingSettingsDragEnded, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, ResetSettings, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsDragEnded, SettingsDragMoved, SettingsDragStarted, SettingsImportFailed, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
+import { ApplyImport, CancelResetSettings, ClickedAudioTest, ClickedBubbles, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedLanding, ClickedDraw, ClickedMemory, ClickedMusicBox, ClickedPhonemeGarden, ClickedSettings, ConfirmResetSettings, CopyExportData, DismissMessage, ExportSettings, ImportSettings, ImportedSettings, LandingDragEnded, LandingDragStarted, LandingDroppedOn, LandingSettingsDragEnded, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, ResetSettings, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsDragEnded, SettingsDragMoved, SettingsDragStarted, SettingsImportFailed, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
 
-import { Page, PageAudioTest, PageBubbles, PageCounter, PageFindIt, PageLanding, PageDraw, PageMemory, PageMusicBox } from './route'
+import { Page, PageAudioTest, PageBubbles, PageCounter, PageFindIt, PageLanding, PageDraw, PageMemory, PageMusicBox, PagePhonemeGarden } from './route'
 
 import * as FindIt from './games/findit'
 import * as MusicBox from './games/musicbox'
@@ -12,6 +12,7 @@ import * as Counter from './games/counter'
 import * as Bubbles from './games/bubbles'
 import * as Draw from './games/draw'
 import * as Memory from './games/memory'
+import * as PhonemeGarden from './games/phonemeGarden'
 import { LANDING_GAME_COUNT, LANDING_GAMES, view as landingView } from './pages/landing'
 import { view as audioTestView } from './pages/audiotest'
 import { Language, normalizeLanguage, t, tf } from './i18n'
@@ -28,7 +29,7 @@ const ICON_VOICE_MODE = '🔊'
 const STORAGE_KEY = 'foldkid-settings'
 const SETTINGS_VERSION = 1
 const DEFAULT_LANDING_ORDER = Array.from({ length: LANDING_GAME_COUNT }, (_, i) => i)
-const DEFAULT_LANDING_HIDDEN_GAMES = Array.from({ length: LANDING_GAME_COUNT }, () => false)
+const DEFAULT_LANDING_HIDDEN_GAMES = LANDING_GAMES.map(game => game.title === 'phonemeGardenTitle')
 
 const DarkModeValues = ['auto', 'light', 'dark'] as const
 type DarkMode = typeof DarkModeValues[number]
@@ -102,6 +103,7 @@ const isLandingOrder = (value: readonly number[] | undefined): value is number[]
   value.every(index => Number.isInteger(index) && index >= 0 && index < LANDING_GAME_COUNT)
 
 const normalizeLandingHiddenGames = (value: readonly boolean[] | undefined): boolean[] => {
+  if (!Array.isArray(value)) return [...DEFAULT_LANDING_HIDDEN_GAMES]
   const hidden = DEFAULT_LANDING_HIDDEN_GAMES.map((_, index) => value?.[index] === true)
   return hidden.every(Boolean) ? [...DEFAULT_LANDING_HIDDEN_GAMES] : hidden
 }
@@ -203,6 +205,7 @@ export const Model = S.Struct({
   bubbles: Bubbles.Model,
   draw: Draw.Model,
   memory: Memory.Model,
+  phonemeGarden: PhonemeGarden.Model,
   settingsPanelWidth: S.Number,
   isDraggingSettings: S.Boolean,
   settingsDragStartMouseX: S.Number,
@@ -234,6 +237,7 @@ export const Message = S.Union([
   ClickedDraw,
   ClickedMusicBox,
   ClickedMemory,
+  ClickedPhonemeGarden,
   ClickedAudioTest,
   LandingDragStarted,
   LandingDroppedOn,
@@ -292,6 +296,9 @@ export const Message = S.Union([
   Memory.ClickedCard,
   Memory.ClickedReset,
   Memory.SetEmojiPackEnabled,
+  PhonemeGarden.ClickedCard,
+  PhonemeGarden.ClickedExample,
+  PhonemeGarden.SoundPlayed,
   MusicBox.Play,
   MusicBox.Stop,
   MusicBox.SetSong,
@@ -394,6 +401,7 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
         includeLetters: saved.drawIncludeLetters ?? true,
       }),
       memory: Memory.init(saved.memoryEnabledPacks),
+      phonemeGarden: PhonemeGarden.init(),
       settingsPanelWidth: 150,
       isDraggingSettings: false,
       settingsDragStartMouseX: 0,
@@ -461,6 +469,14 @@ const updateMemory = (
   return [{ ...model, memory: next }, cmds]
 }
 
+const updatePhonemeGarden = (
+  model: Model,
+  message: PhonemeGarden.Message,
+): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
+  const [next, cmds] = PhonemeGarden.update(model.phonemeGarden, message, model.muted, { rate: model.speechRate, pitch: model.speechPitch })
+  return [{ ...model, phonemeGarden: next }, cmds]
+}
+
 const cycleDarkMode = (current: DarkMode): DarkMode => {
   if (current === 'auto') return 'light'
   if (current === 'light') return 'dark'
@@ -521,6 +537,7 @@ const applyImportData = (model: Model, s: PersistedSettings): Model => {
     memory: s.memoryEnabledPacks === undefined
       ? model.memory
       : Memory.init(s.memoryEnabledPacks),
+    phonemeGarden: model.phonemeGarden,
     musicBox: {
       ...model.musicBox,
       songOrder: normalizeSongOrder(s.musicBoxSongOrder, model.musicBox.songOrder),
@@ -603,6 +620,7 @@ const _update = (
       ClickedDraw: () => [{ ...model, page: PageDraw() }, []],
       ClickedMusicBox: () => [{ ...model, page: PageMusicBox() }, []],
       ClickedMemory: () => [{ ...model, page: PageMemory() }, []],
+      ClickedPhonemeGarden: () => [{ ...model, page: PagePhonemeGarden() }, []],
       ClickedAudioTest: () => [{ ...model, page: PageAudioTest() }, []],
       LandingDragStarted: (msg) => [{ ...model, landingDragIndex: msg.index }, []],
       LandingDroppedOn: (msg) => {
@@ -688,6 +706,9 @@ const _update = (
       MemoryClickedCard: (msg) => updateMemory(model, msg),
       MemoryClickedReset: (msg) => updateMemory(model, msg),
       MemorySetEmojiPackEnabled: (msg) => updateMemory(model, msg),
+      PhonemeGardenClickedCard: (msg) => updatePhonemeGarden(model, msg),
+      PhonemeGardenClickedExample: (msg) => updatePhonemeGarden(model, msg),
+      PhonemeGardenSoundPlayed: (msg) => updatePhonemeGarden(model, msg),
       MusicBoxPlay: (msg) => updateMusicBox(model, msg),
       MusicBoxStop: (msg) => updateMusicBox(model, msg),
       MusicBoxSetSong: (msg) => updateMusicBox(model, msg),
@@ -805,6 +826,7 @@ const pageTitle = (model: Model): string =>
       PageDraw: () => t('pageTitleDraw', model.language),
       PageMusicBox: () => t('pageTitleMusicBox', model.language),
       PageMemory: () => t('pageTitleMemoryCards', model.language),
+      PagePhonemeGarden: () => t('pageTitlePhonemeGarden', model.language),
       PageAudioTest: () => t('pageTitleAudioTest', model.language),
     }),
   )
@@ -1327,6 +1349,7 @@ export const view = (model: Model): Document => {
               PageDraw: () => Draw.view(model.draw),
               PageMusicBox: () => MusicBox.view(model.musicBox, model.language),
               PageMemory: () => Memory.view(model.memory, model.language),
+              PagePhonemeGarden: () => PhonemeGarden.view(model.phonemeGarden, model.language),
               PageAudioTest: () => audioTestView(model.language),
             }),
           ),

@@ -1,6 +1,6 @@
 import { html } from 'foldkit/html'
 
-import { ClickedAudioTest, ClickedBubbles, ClickedCounter, ClickedFindIt, ClickedDraw, ClickedMusicBox, ClickedMemory, LandingDragEnded, LandingDragStarted, LandingDroppedOn } from '../message'
+import { ClickedAudioTest, ClickedBubbles, ClickedCounter, ClickedFindIt, ClickedDraw, ClickedMusicBox, ClickedMemory, ClickedPhonemeGarden, LandingDragEnded, LandingDragStarted, LandingDroppedOn } from '../message'
 import { t } from '../i18n'
 import { pointerReorder } from '../pointerReorder'
 
@@ -10,6 +10,7 @@ type Message = ReturnType<typeof ClickedCounter>
   | ReturnType<typeof ClickedDraw>
   | ReturnType<typeof ClickedMusicBox>
   | ReturnType<typeof ClickedMemory>
+  | ReturnType<typeof ClickedPhonemeGarden>
   | ReturnType<typeof ClickedAudioTest>
   | ReturnType<typeof LandingDragStarted>
   | ReturnType<typeof LandingDroppedOn>
@@ -22,6 +23,7 @@ export const LANDING_GAMES = [
   { msg: ClickedDraw, title: 'drawTitle' as const, emoji: '✍️' },
   { msg: ClickedMusicBox, title: 'musicBoxTitle' as const, emoji: '🎵' },
   { msg: ClickedMemory, title: 'memoryCardsTitle' as const, emoji: '🃏' },
+  { msg: ClickedPhonemeGarden, title: 'phonemeGardenTitle' as const, emoji: '🌱' },
 ]
 
 export const LANDING_GAME_COUNT = LANDING_GAMES.length
