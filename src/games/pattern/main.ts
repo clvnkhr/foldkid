@@ -116,21 +116,18 @@ export const update = (
     M.tagsExhaustive({
       PatStartGame: () => {
         const seq = genSeq(3)
-        return [
-          { ...init, sequence: seq, gameState: 'showing', highScore: model.highScore } as Model,
-          [...(muted ? [] : [ascend(SoundPlayed())]), ...buildShowCommands(seq, muted)],
-        ]
+        const next: Model = { ...init, sequence: seq, gameState: 'showing', highScore: model.highScore }
+        return [next, [...(muted ? [] : [ascend(SoundPlayed())]), ...buildShowCommands(seq, muted)]]
       },
       PatShowTile: (msg) => {
         if (model.gameState !== 'showing') return [model, []]
-        return [{ ...model, showIndex: msg.idx } as Model, []]
+        const next: Model = { ...model, showIndex: msg.idx }
+        return [next, []]
       },
       PatStartPlaying: () => {
         if (model.gameState !== 'showing') return [model, []]
-        return [
-          { ...model, gameState: 'playing', showIndex: -1, playerIndex: 0, wrongTile: -1 } as Model,
-          [],
-        ]
+        const next: Model = { ...model, gameState: 'playing', showIndex: -1, playerIndex: 0, wrongTile: -1 }
+        return [next, []]
       },
       PatClickedTile: (msg) => {
         if (model.gameState !== 'playing') return [model, []]
@@ -139,37 +136,18 @@ export const update = (
         const expected = model.sequence[model.playerIndex]
         if (expected === undefined) return [model, []]
         if (i !== expected) {
-          return [
-            {
-              ...model,
-              gameState: 'ended',
-              wrongTile: i,
-              highScore: Math.max(model.highScore, model.score),
-            } as Model,
-            muted ? [] : [descend(SoundPlayed())],
-          ]
+          const next: Model = { ...model, gameState: 'ended', wrongTile: i, highScore: Math.max(model.highScore, model.score) }
+          return [next, muted ? [] : [descend(SoundPlayed())]]
         }
         const nextIdx = model.playerIndex + 1
         if (nextIdx >= model.sequence.length) {
           const newSeq = [...model.sequence, rng(TILE_COUNT)]
           const newScore = model.score + 1
-          return [
-            {
-              ...model,
-              score: newScore,
-              highScore: Math.max(model.highScore, newScore),
-              sequence: newSeq,
-              gameState: 'showing',
-              playerIndex: 0,
-              wrongTile: -1,
-            } as Model,
-            [...(muted ? [] : [correct(SoundPlayed())]), ...buildShowCommands(newSeq, muted)],
-          ]
+          const next: Model = { ...model, score: newScore, highScore: Math.max(model.highScore, newScore), sequence: newSeq, gameState: 'showing', playerIndex: 0, wrongTile: -1 }
+          return [next, [...(muted ? [] : [correct(SoundPlayed())]), ...buildShowCommands(newSeq, muted)]]
         }
-        return [
-          { ...model, playerIndex: nextIdx, wrongTile: -1 } as Model,
-          muted ? [] : [tileSound(i, SoundPlayed())],
-        ]
+        const playNext: Model = { ...model, playerIndex: nextIdx, wrongTile: -1 }
+        return [playNext, muted ? [] : [tileSound(i, SoundPlayed())]]
       },
       PatSoundPlayed: () => [model, []],
     }),

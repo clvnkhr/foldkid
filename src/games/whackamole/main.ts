@@ -99,28 +99,19 @@ export const update = (
   M.value(message).pipe(
     M.withReturnType<readonly [Model, ReadonlyArray<Command.Command<Message>>]>(),
     M.tagsExhaustive({
-      WhackStartGame: () => [
-        { ...model, score: 0, timeLeft: 30, holes: randomHoles(), gameState: 'playing' } as Model,
-        muted ? [] : [ascend(SoundPlayed())],
-      ],
+      WhackStartGame: () => {
+        const next: Model = { ...model, score: 0, timeLeft: 30, holes: randomHoles(), gameState: 'playing' }
+        return [next, muted ? [] : [ascend(SoundPlayed())]]
+      },
       WhackTick: () => {
         const nextTime = model.timeLeft - 1
         if (nextTime <= 0) {
-          return [
-            {
-              ...model,
-              timeLeft: 0,
-              holes: new Array(HOLE_COUNT).fill(0) as number[],
-              gameState: 'ended',
-              highScore: Math.max(model.highScore, model.score),
-            } as Model,
-            muted ? [] : [descend(SoundPlayed())],
-          ]
+          const holes: number[] = new Array(HOLE_COUNT).fill(0)
+          const next: Model = { ...model, timeLeft: 0, holes, gameState: 'ended', highScore: Math.max(model.highScore, model.score) }
+          return [next, muted ? [] : [descend(SoundPlayed())]]
         }
-        return [
-          { ...model, timeLeft: nextTime, holes: randomHoles() } as Model,
-          [],
-        ]
+        const next: Model = { ...model, timeLeft: nextTime, holes: randomHoles() }
+        return [next, []]
       },
       WhackClickedHole: (msg) => {
         if (model.gameState !== 'playing') return [model, []]
@@ -132,10 +123,8 @@ export const update = (
         newHoles[index] = 0
         const scoreChange = MOLE_SCORES[moleType] ?? 1
         const sound = MOLE_SOUNDS[moleType]?.(SoundPlayed())
-        return [
-          { ...model, score: model.score + scoreChange, holes: newHoles } as Model,
-          !muted && sound ? [sound] : [],
-        ]
+        const next: Model = { ...model, score: model.score + scoreChange, holes: newHoles }
+        return [next, !muted && sound ? [sound] : []]
       },
       WhackSoundPlayed: () => [model, []],
     }),
