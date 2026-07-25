@@ -27,7 +27,7 @@ export const getContext = (): AudioContext | undefined => {
   return ctx
 }
 
-const playTone = (
+export const playTone = (
   frequency: number,
   duration: number,
   type: OscillatorType,

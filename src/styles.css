@@ -1,6 +1,7 @@
 @import './styles/base.css';
 @import './styles/landing.css';
 @import './styles/counter.css';
+@import './styles/calculator.css';
 @import './styles/findit.css';
 @import './styles/bubbles.css';
 @import './styles/draw.css';
@@ -9,3 +10,5 @@
 @import './styles/settings.css';
 @import './styles/musicbox.css';
 @import './styles/audiotest.css';
+@import './styles/whackamole.css';
+@import './styles/pattern.css';

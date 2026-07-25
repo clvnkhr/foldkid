@@ -1,0 +1,218 @@
+.pat-grid {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(10px, 2.5vmin, 20px);
+  width: 100%;
+  padding: clamp(8px, 2vmin, 16px);
+}
+
+.pat-header {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  max-width: 320px;
+  padding: 0 4px;
+  font-size: clamp(1.1rem, 4.5vmin, 1.6rem);
+  font-weight: 700;
+}
+
+.pat-round {
+  color: #7c3aed;
+}
+
+.pat-score {
+  color: #16a34a;
+}
+
+.dark .pat-round {
+  color: #a78bfa;
+}
+
+.dark .pat-score {
+  color: #4ade80;
+}
+
+.pat-tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: clamp(8px, 2vmin, 14px);
+  width: 100%;
+  max-width: 320px;
+}
+
+.pat-tile {
+  aspect-ratio: 1;
+  border-radius: clamp(12px, 3vmin, 20px);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: filter 0.1s, transform 0.1s, box-shadow 0.12s;
+  position: relative;
+  overflow: hidden;
+}
+
+.pat-tile::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(circle at 50% 0%, rgba(255,255,255,0.2) 0%, transparent 60%);
+  pointer-events: none;
+}
+
+.pat-tile--0 {
+  background: linear-gradient(135deg, #ff6b6b 0%, #e74c3c 100%);
+  box-shadow: 0 4px 12px rgba(231,76,60,0.35);
+}
+
+.pat-tile--1 {
+  background: linear-gradient(135deg, #51cf66 0%, #2ecc71 100%);
+  box-shadow: 0 4px 12px rgba(46,204,113,0.35);
+}
+
+.pat-tile--2 {
+  background: linear-gradient(135deg, #5c7cfa 0%, #3498db 100%);
+  box-shadow: 0 4px 12px rgba(52,152,219,0.35);
+}
+
+.pat-tile--3 {
+  background: linear-gradient(135deg, #fcc419 0%, #f39c12 100%);
+  box-shadow: 0 4px 12px rgba(243,156,18,0.35);
+}
+
+.pat-tile--active {
+  filter: brightness(1.6);
+  transform: scale(1.08);
+  animation: patFlash 0.5s ease-out;
+}
+
+.pat-tile--0.pat-tile--active {
+  box-shadow: 0 0 30px rgba(255,100,100,0.8), 0 0 60px rgba(231,76,60,0.4);
+}
+
+.pat-tile--1.pat-tile--active {
+  box-shadow: 0 0 30px rgba(80,200,100,0.8), 0 0 60px rgba(46,204,113,0.4);
+}
+
+.pat-tile--2.pat-tile--active {
+  box-shadow: 0 0 30px rgba(80,130,255,0.8), 0 0 60px rgba(52,152,219,0.4);
+}
+
+.pat-tile--3.pat-tile--active {
+  box-shadow: 0 0 30px rgba(255,200,50,0.8), 0 0 60px rgba(243,156,18,0.4);
+}
+
+@keyframes patFlash {
+  0% { filter: brightness(2); transform: scale(1.12); }
+  30% { filter: brightness(1.6); transform: scale(1.08); }
+  100% { filter: brightness(1); transform: scale(1); }
+}
+
+.pat-tile:active {
+  filter: brightness(1.8);
+  transform: scale(1.05);
+}
+
+.dark .pat-tile--active {
+  filter: brightness(1.7);
+}
+
+.dark .pat-tile--0.pat-tile--active {
+  box-shadow: 0 0 40px rgba(255,80,80,0.7), 0 0 80px rgba(231,76,60,0.35);
+}
+
+.dark .pat-tile--1.pat-tile--active {
+  box-shadow: 0 0 40px rgba(60,200,80,0.7), 0 0 80px rgba(46,204,113,0.35);
+}
+
+.dark .pat-tile--2.pat-tile--active {
+  box-shadow: 0 0 40px rgba(60,120,255,0.7), 0 0 80px rgba(52,152,219,0.35);
+}
+
+.dark .pat-tile--3.pat-tile--active {
+  box-shadow: 0 0 40px rgba(255,200,30,0.7), 0 0 80px rgba(243,156,18,0.35);
+}
+
+.pat-progress {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  flex-wrap: wrap;
+  padding: 4px;
+  max-width: 320px;
+}
+
+.pat-dot {
+  width: clamp(8px, 2.5vmin, 12px);
+  height: clamp(8px, 2.5vmin, 12px);
+  border-radius: 50%;
+  background: #d1d5db;
+  transition: background 0.2s, transform 0.2s;
+}
+
+.pat-dot--filled {
+  background: #16a34a;
+  transform: scale(1.3);
+}
+
+.dark .pat-dot {
+  background: #4b5563;
+}
+
+.dark .pat-dot--filled {
+  background: #4ade80;
+}
+
+.pat-start {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(10px, 2.5vmin, 24px);
+  padding: clamp(16px, 4vmin, 40px);
+  text-align: center;
+}
+
+.pat-gameover {
+  font-size: clamp(2rem, 8vmin, 3.5rem);
+  font-weight: 800;
+  color: #dc2626;
+  margin: 0;
+  animation: patBounce 0.5s ease-out;
+}
+
+@keyframes patBounce {
+  0% { transform: scale(0.3); opacity: 0; }
+  50% { transform: scale(1.15); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.dark .pat-gameover {
+  color: #f87171;
+}
+
+.pat-tapstart {
+  font-size: clamp(1.2rem, 4.5vmin, 1.8rem);
+  color: #64748b;
+  margin: 0;
+}
+
+.dark .pat-tapstart {
+  color: #94a3b8;
+}
+
+.pat-final-score {
+  font-size: clamp(1.5rem, 6vmin, 2.4rem);
+  font-weight: 700;
+  color: #475569;
+  margin: 0;
+}
+
+.dark .pat-final-score {
+  color: #cbd5e1;
+}
+
+.pat-start-btn {
+  font-size: clamp(1.3rem, 5vmin, 1.8rem);
+  padding: clamp(10px, 2.5vmin, 20px) clamp(32px, 8vmin, 64px);
+  border-radius: 1.2rem;
+}

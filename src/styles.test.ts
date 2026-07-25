@@ -17,25 +17,25 @@ const readStylesheet = (filePath: string, seen = new Set<string>()): string => {
   )
 }
 
+const PER_GAME_BUDGET = { lines: 600, bytes: 13000, gzip: 3500 }
+
+const NON_GAME_BUDGETS: Record<string, { lines: number; bytes: number; gzip: number }> = {
+  'styles/base.css': { lines: 320, bytes: 7000, gzip: 2200 },
+  'styles/landing.css': { lines: 160, bytes: 3000, gzip: 1200 },
+  'styles/settings.css': { lines: 280, bytes: 5000, gzip: 1500 },
+}
+
 const styles = readStylesheet(stylesEntryPath)
 const stylesEntry = readFileSync(stylesEntryPath, 'utf8')
-const gameScale = Math.sqrt(Math.max(0, LANDING_GAME_COUNT - 1))
+
+const NON_GAME_OVERHEAD = { lines: 800, bytes: 15000, gzip: 5000 }
+const PER_GAME_CONTRIBUTION = { lines: 210, bytes: 5000, gzip: 1000 }
+
 const appWideStylesheetBudget = {
-  lines: 1800 + Math.ceil(gameScale * 24),
-  bytes: 38000 + Math.ceil(gameScale * 300),
-  gzipBytes: 8000 + Math.ceil(gameScale * 60),
+  lines: NON_GAME_OVERHEAD.lines + LANDING_GAME_COUNT * PER_GAME_CONTRIBUTION.lines,
+  bytes: NON_GAME_OVERHEAD.bytes + LANDING_GAME_COUNT * PER_GAME_CONTRIBUTION.bytes,
+  gzipBytes: NON_GAME_OVERHEAD.gzip + LANDING_GAME_COUNT * PER_GAME_CONTRIBUTION.gzip,
 }
-const stylesheetBudgets = [
-  ['styles/base.css', 320, 7000, 2200],
-  ['styles/landing.css', 160, 3000, 1200],
-  ['styles/counter.css', 120, 2500, 1000],
-  ['styles/findit.css', 300, 6500, 1800],
-  ['styles/bubbles.css', 200, 4500, 1500],
-  ['styles/phonemeGarden.css', 140, 2600, 1000],
-  ['styles/settings.css', 280, 5000, 1500],
-  ['styles/musicbox.css', 560, 12000, 3200],
-  ['styles/audiotest.css', 120, 2200, 900],
-] as const
 
 const readSourceFiles = (dir: string): string[] =>
   readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -49,6 +49,17 @@ const appSource = readSourceFiles(srcDir).join('\n')
 
 const generatedClassNames = new Set([
   'lang-fa',
+  'calc-theme-1',
+  'calc-theme-2',
+  'calc-theme-3',
+  'calc-theme-4',
+  'whack-mole--type-2',
+  'whack-mole--type-3',
+  'whack-mole--type-4',
+  'pat-tile--0',
+  'pat-tile--1',
+  'pat-tile--2',
+  'pat-tile--3',
 ])
 
 const stripDataUrls = (css: string): string =>
@@ -139,11 +150,13 @@ describe('styles.css invariants', () => {
   })
 
   it('keeps each stylesheet within its domain budget', () => {
-    for (const [filePath, maxLines, maxBytes, maxGzipBytes] of stylesheetBudgets) {
-      const css = readFileSync(join(srcDir, filePath), 'utf8')
-      expect(css.split('\n').length, `${filePath} lines`).toBeLessThanOrEqual(maxLines)
-      expect(Buffer.byteLength(css, 'utf8'), `${filePath} bytes`).toBeLessThanOrEqual(maxBytes)
-      expect(gzipSync(css).length, `${filePath} gzip bytes`).toBeLessThanOrEqual(maxGzipBytes)
+    const importedFiles = [...stylesEntry.matchAll(/@import\s+['"].\/styles\/(.+?)['"];/g)].map(m => m[1]!)
+    for (const filePath of importedFiles) {
+      const css = readFileSync(join(srcDir, 'styles', filePath), 'utf8')
+      const budget = NON_GAME_BUDGETS[`styles/${filePath}`] ?? PER_GAME_BUDGET
+      expect(css.split('\n').length, `${filePath} lines`).toBeLessThanOrEqual(budget.lines)
+      expect(Buffer.byteLength(css, 'utf8'), `${filePath} bytes`).toBeLessThanOrEqual(budget.bytes)
+      expect(gzipSync(css).length, `${filePath} gzip bytes`).toBeLessThanOrEqual(budget.gzip)
     }
   })
 

@@ -2,9 +2,9 @@ import { Effect, Match as M, Option, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { Document, html } from 'foldkit/html'
 
-import { ApplyImport, CancelResetSettings, ClickedAudioTest, ClickedBubbles, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedLanding, ClickedDraw, ClickedMemory, ClickedMusicBox, ClickedPhonemeGarden, ClickedSettings, ConfirmResetSettings, CopyExportData, DismissMessage, ExportSettings, ImportSettings, ImportedSettings, LandingDragEnded, LandingDragStarted, LandingDroppedOn, LandingSettingsDragEnded, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, ResetSettings, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsDragEnded, SettingsDragMoved, SettingsDragStarted, SettingsImportFailed, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
+import { ApplyImport, CancelResetSettings, ClickedAudioTest, ClickedBubbles, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedLanding, ClickedDraw, ClickedMemory, ClickedMusicBox, ClickedPhonemeGarden, ClickedSpeakerCalculator, ClickedSettings, ClickedWhackamole, ClickedPattern, ConfirmResetSettings, CopyExportData, DismissMessage, ExportSettings, ImportSettings, ImportedSettings, LandingDragEnded, LandingDragStarted, LandingDroppedOn, LandingSettingsDragEnded, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, ResetSettings, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsDragEnded, SettingsDragMoved, SettingsDragStarted, SettingsImportFailed, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
 
-import { Page, PageAudioTest, PageBubbles, PageCounter, PageFindIt, PageLanding, PageDraw, PageMemory, PageMusicBox, PagePhonemeGarden } from './route'
+import { Page, PageAudioTest, PageBubbles, PageCounter, PageFindIt, PageLanding, PageDraw, PageMemory, PageMusicBox, PagePhonemeGarden, PageSpeakerCalculator, PageWhackamole, PagePattern } from './route'
 
 import * as FindIt from './games/findit'
 import * as MusicBox from './games/musicbox'
@@ -13,6 +13,9 @@ import * as Bubbles from './games/bubbles'
 import * as Draw from './games/draw'
 import * as Memory from './games/memory'
 import * as PhonemeGarden from './games/phonemeGarden'
+import * as SpeakerCalculator from './games/speakerCalculator/main'
+import * as Whackamole from './games/whackamole/main'
+import * as Pattern from './games/pattern/main'
 import { LANDING_GAME_COUNT, LANDING_GAMES, view as landingView } from './pages/landing'
 import { view as audioTestView } from './pages/audiotest'
 import { Language, normalizeLanguage, t, tf } from './i18n'
@@ -206,6 +209,9 @@ export const Model = S.Struct({
   draw: Draw.Model,
   memory: Memory.Model,
   phonemeGarden: PhonemeGarden.Model,
+  speakerCalculator: SpeakerCalculator.Model,
+  whackamole: Whackamole.Model,
+  pattern: Pattern.Model,
   settingsPanelWidth: S.Number,
   isDraggingSettings: S.Boolean,
   settingsDragStartMouseX: S.Number,
@@ -239,6 +245,9 @@ export const Message = S.Union([
   ClickedMemory,
   ClickedPhonemeGarden,
   ClickedAudioTest,
+  ClickedSpeakerCalculator,
+  ClickedWhackamole,
+  ClickedPattern,
   LandingDragStarted,
   LandingDroppedOn,
   LandingDragEnded,
@@ -299,6 +308,27 @@ export const Message = S.Union([
   PhonemeGarden.ClickedCard,
   PhonemeGarden.ClickedExample,
   PhonemeGarden.SoundPlayed,
+  SpeakerCalculator.ClickedClear,
+  SpeakerCalculator.ClickedClearEntry,
+  SpeakerCalculator.ClickedDelete,
+  SpeakerCalculator.ClickedDigit,
+  SpeakerCalculator.ClickedOperator,
+  SpeakerCalculator.ClickedDecimal,
+  SpeakerCalculator.ClickedEquals,
+  SpeakerCalculator.ClickedNegate,
+  SpeakerCalculator.ClickedPercent,
+  SpeakerCalculator.ClickedRandom,
+  SpeakerCalculator.ClickedSay,
+  SpeakerCalculator.ClickedTheme,
+  SpeakerCalculator.SpeakCompleted,
+  Whackamole.ClickedHole,
+  Whackamole.Tick,
+  Whackamole.StartGame,
+  Whackamole.SoundPlayed,
+  Pattern.ClickedTile,
+  Pattern.Tick,
+  Pattern.StartGame,
+  Pattern.SoundPlayed,
   MusicBox.Play,
   MusicBox.Stop,
   MusicBox.SetSong,
@@ -402,6 +432,9 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
       }),
       memory: Memory.init(saved.memoryEnabledPacks),
       phonemeGarden: PhonemeGarden.init(),
+      speakerCalculator: SpeakerCalculator.init,
+      whackamole: Whackamole.init,
+      pattern: Pattern.init,
       settingsPanelWidth: 150,
       isDraggingSettings: false,
       settingsDragStartMouseX: 0,
@@ -475,6 +508,30 @@ const updatePhonemeGarden = (
 ): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
   const [next, cmds] = PhonemeGarden.update(model.phonemeGarden, message, model.muted, { rate: model.speechRate, pitch: model.speechPitch })
   return [{ ...model, phonemeGarden: next }, cmds]
+}
+
+const updateWhackamole = (
+  model: Model,
+  message: Whackamole.Message,
+): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
+  const [next, cmds] = Whackamole.update(model.whackamole, message, model.muted)
+  return [{ ...model, whackamole: next }, cmds]
+}
+
+const updatePattern = (
+  model: Model,
+  message: Pattern.Message,
+): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
+  const [next, cmds] = Pattern.update(model.pattern, message, model.muted)
+  return [{ ...model, pattern: next }, cmds]
+}
+
+const updateSpeakerCalculator = (
+  model: Model,
+  message: SpeakerCalculator.Message,
+): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
+  const [next, cmds] = SpeakerCalculator.update(model.speakerCalculator, message, model.language, model.muted, { rate: model.speechRate, pitch: model.speechPitch })
+  return [{ ...model, speakerCalculator: next }, cmds]
 }
 
 const cycleDarkMode = (current: DarkMode): DarkMode => {
@@ -622,6 +679,9 @@ const _update = (
       ClickedMemory: () => [{ ...model, page: PageMemory() }, []],
       ClickedPhonemeGarden: () => [{ ...model, page: PagePhonemeGarden() }, []],
       ClickedAudioTest: () => [{ ...model, page: PageAudioTest() }, []],
+      ClickedSpeakerCalculator: () => [{ ...model, page: PageSpeakerCalculator() }, []],
+      ClickedWhackamole: () => [{ ...model, page: PageWhackamole() }, []],
+      ClickedPattern: () => [{ ...model, page: PagePattern() }, []],
       LandingDragStarted: (msg) => [{ ...model, landingDragIndex: msg.index }, []],
       LandingDroppedOn: (msg) => {
         if (model.landingDragIndex < 0 || model.landingDragIndex === msg.index) return [{ ...model, landingDragIndex: -1 }, []]
@@ -709,6 +769,27 @@ const _update = (
       PhonemeGardenClickedCard: (msg) => updatePhonemeGarden(model, msg),
       PhonemeGardenClickedExample: (msg) => updatePhonemeGarden(model, msg),
       PhonemeGardenSoundPlayed: (msg) => updatePhonemeGarden(model, msg),
+      ClickedClear: (msg) => updateSpeakerCalculator(model, msg),
+      ClickedClearEntry: (msg) => updateSpeakerCalculator(model, msg),
+      ClickedDelete: (msg) => updateSpeakerCalculator(model, msg),
+      ClickedDigit: (msg) => updateSpeakerCalculator(model, msg),
+      ClickedOperator: (msg) => updateSpeakerCalculator(model, msg),
+      ClickedDecimal: (msg) => updateSpeakerCalculator(model, msg),
+      ClickedEquals: (msg) => updateSpeakerCalculator(model, msg),
+      ClickedNegate: (msg) => updateSpeakerCalculator(model, msg),
+      ClickedPercent: (msg) => updateSpeakerCalculator(model, msg),
+      ClickedRandom: (msg) => updateSpeakerCalculator(model, msg),
+      ClickedSay: (msg) => updateSpeakerCalculator(model, msg),
+      ClickedTheme: (msg) => updateSpeakerCalculator(model, msg),
+      SpeakCompleted: (msg) => updateSpeakerCalculator(model, msg),
+      WhackClickedHole: (msg) => updateWhackamole(model, msg),
+      WhackTick: (msg) => updateWhackamole(model, msg),
+      WhackStartGame: (msg) => updateWhackamole(model, msg),
+      WhackSoundPlayed: (msg) => updateWhackamole(model, msg),
+      PatClickedTile: (msg) => updatePattern(model, msg),
+      PatTick: (msg) => updatePattern(model, msg),
+      PatStartGame: (msg) => updatePattern(model, msg),
+      PatSoundPlayed: (msg) => updatePattern(model, msg),
       MusicBoxPlay: (msg) => updateMusicBox(model, msg),
       MusicBoxStop: (msg) => updateMusicBox(model, msg),
       MusicBoxSetSong: (msg) => updateMusicBox(model, msg),
@@ -828,6 +909,9 @@ const pageTitle = (model: Model): string =>
       PageMemory: () => t('pageTitleMemoryCards', model.language),
       PagePhonemeGarden: () => t('pageTitlePhonemeGarden', model.language),
       PageAudioTest: () => t('pageTitleAudioTest', model.language),
+      PageSpeakerCalculator: () => t('calculatorTitle', model.language),
+      PageWhackamole: () => t('pageTitleWhackamole', model.language),
+      PagePattern: () => t('pageTitlePattern', model.language),
     }),
   )
 
@@ -1351,6 +1435,9 @@ export const view = (model: Model): Document => {
               PageMemory: () => Memory.view(model.memory, model.language),
               PagePhonemeGarden: () => PhonemeGarden.view(model.phonemeGarden, model.language),
               PageAudioTest: () => audioTestView(model.language),
+              PageSpeakerCalculator: () => SpeakerCalculator.view(model.speakerCalculator, model.language),
+              PageWhackamole: () => Whackamole.view(model.whackamole, model.language),
+              PagePattern: () => Pattern.view(model.pattern, model.language),
             }),
           ),
           model.settingsOverlay

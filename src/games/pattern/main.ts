@@ -1,0 +1,231 @@
+import { Effect, Match as M, Schema as S, Stream } from 'effect'
+import { Command } from 'foldkit'
+import { Html, html } from 'foldkit/html'
+import { m } from 'foldkit/message'
+import { getContext, playTone } from '../../audio'
+import { t } from '../../i18n'
+
+const TILE_COUNT = 4
+
+export const Model = S.Struct({
+  score: S.Number,
+  highScore: S.Number,
+  sequence: S.Array(S.Number),
+  showIndex: S.Number,
+  waitTicks: S.Number,
+  gameState: S.Union([S.Literal('idle'), S.Literal('showing'), S.Literal('playing'), S.Literal('ended')]),
+  playerIndex: S.Number,
+  wrongTile: S.Number,
+})
+export type Model = typeof Model.Type
+
+export const init: Model = {
+  score: 0,
+  highScore: 0,
+  sequence: [],
+  showIndex: -1,
+  waitTicks: 0,
+  gameState: 'idle',
+  playerIndex: 0,
+  wrongTile: -1,
+}
+
+export const ClickedTile = m('PatClickedTile', { index: S.Number })
+export const Tick = m('PatTick')
+export const StartGame = m('PatStartGame')
+export const SoundPlayed = m('PatSoundPlayed')
+
+export const Message = S.Union([ClickedTile, Tick, StartGame, SoundPlayed])
+export type Message = typeof Message.Type
+
+const rng = (n: number): number => Math.floor(Math.random() * n)
+
+const genSeq = (len: number): number[] =>
+  Array.from({ length: len }, () => rng(TILE_COUNT))
+
+const TILE_FREQUENCIES = [523, 659, 784, 1047]
+
+const tileSound = <Msg>(tile: number, msg: Msg) => ({
+  name: `PlayTile${tile}` as const,
+  effect: playTone(TILE_FREQUENCIES[tile]!, 0.15, 'sine').pipe(Effect.as(msg)),
+})
+
+const ascend = <Msg>(msg: Msg) => ({
+  name: 'PlayAscend' as const,
+  effect: playTone(660, 0.15, 'sine').pipe(Effect.as(msg)),
+})
+
+const descend = <Msg>(msg: Msg) => ({
+  name: 'PlayDescend' as const,
+  effect: playTone(220, 0.4, 'triangle').pipe(Effect.as(msg)),
+})
+
+const correct = <Msg>(msg: Msg) => ({
+  name: 'PlayCorrect' as const,
+  effect: Effect.sync(() => {
+    const ctx = getContext()
+    if (!ctx) return
+    const now = ctx.currentTime
+    const t = (freq: number, start: number, dur: number, type: OscillatorType = 'sine') => {
+      const o = ctx.createOscillator()
+      const g = ctx.createGain()
+      o.type = type
+      o.frequency.value = freq
+      g.gain.setValueAtTime(0.15, start)
+      g.gain.exponentialRampToValueAtTime(0.0001, start + dur)
+      o.connect(g).connect(ctx.destination)
+      o.start(start)
+      o.stop(start + dur)
+    }
+    t(523, now, 0.07, 'triangle')
+    t(659, now + 0.07, 0.07, 'triangle')
+    t(784, now + 0.14, 0.15, 'triangle')
+  }).pipe(Effect.as(msg)),
+})
+
+export const update = (
+  model: Model,
+  message: Message,
+  muted: boolean = false,
+): readonly [Model, ReadonlyArray<Command.Command<Message>>] =>
+  M.value(message).pipe(
+    M.withReturnType<readonly [Model, ReadonlyArray<Command.Command<Message>>]>(),
+    M.tagsExhaustive({
+      PatStartGame: () => [
+        {
+          ...init,
+          sequence: genSeq(3),
+          showIndex: 0,
+          waitTicks: 1,
+          gameState: 'showing',
+          highScore: model.highScore,
+        } as Model,
+        muted ? [] : [ascend(SoundPlayed())],
+      ],
+      PatTick: () => {
+        if (model.gameState === 'showing') {
+          if (model.waitTicks > 0) {
+            return [{ ...model, waitTicks: model.waitTicks - 1 } as Model, []]
+          }
+          if (model.showIndex >= model.sequence.length) {
+            return [
+              { ...model, gameState: 'playing', showIndex: -1, playerIndex: 0, wrongTile: -1 } as Model,
+              [],
+            ]
+          }
+          const tile = model.sequence[model.showIndex] as number
+          return [
+            { ...model, showIndex: model.showIndex + 1 } as Model,
+            muted ? [] : [tileSound(tile, SoundPlayed())],
+          ]
+        }
+        return [model, []]
+      },
+      PatClickedTile: (msg) => {
+        if (model.gameState !== 'playing') return [model, []]
+        const i = msg.index
+        if (i < 0 || i >= TILE_COUNT) return [model, []]
+        const expected = model.sequence[model.playerIndex]
+        if (expected === undefined) return [model, []]
+        if (i !== expected) {
+          return [
+            {
+              ...model,
+              gameState: 'ended',
+              wrongTile: i,
+              highScore: Math.max(model.highScore, model.score),
+            } as Model,
+            muted ? [] : [descend(SoundPlayed())],
+          ]
+        }
+        const nextIdx = model.playerIndex + 1
+        if (nextIdx >= model.sequence.length) {
+          const newSeq = [...model.sequence, rng(TILE_COUNT)]
+          const newScore = model.score + 1
+          return [
+            {
+              ...model,
+              score: newScore,
+              highScore: Math.max(model.highScore, newScore),
+              sequence: newSeq,
+              showIndex: 0,
+              waitTicks: 1,
+              gameState: 'showing',
+              playerIndex: 0,
+              wrongTile: -1,
+            } as Model,
+            muted ? [] : [correct(SoundPlayed())],
+          ]
+        }
+        return [
+          { ...model, playerIndex: nextIdx, wrongTile: -1 } as Model,
+          muted ? [] : [tileSound(i, SoundPlayed())],
+        ]
+      },
+      PatSoundPlayed: () => [model, []],
+    }),
+  )
+
+const tileClasses = (model: Model, i: number): string => {
+  const base = `pat-tile pat-tile--${i}`
+  if (model.gameState === 'showing' && model.waitTicks === 0 && model.showIndex > 0) {
+    const showing = model.sequence[model.showIndex - 1]
+    if (showing === i) return `${base} pat-tile--active`
+  }
+  return base
+}
+
+const timerMount = {
+  name: 'patternTimer' as const,
+  f: () => Stream.sync(() => Tick()).pipe(
+    Stream.concat(Stream.tick(500).pipe(Stream.map(() => Tick()))),
+  ),
+}
+
+export const view = (model: Model, language: string = 'en'): Html => {
+  const h = html<Message>()
+
+  return h.div([h.Class('page')], [
+    h.div([h.Class('card'), h.OnMount(timerMount)], [
+      h.h1([h.Class('title')], [t('patternTitle', language)]),
+      model.gameState === 'idle' || model.gameState === 'ended'
+        ? h.div([h.Class('pat-start')], [
+            model.gameState === 'ended'
+              ? h.p([h.Class('pat-gameover')], [t('patternGameOver', language)])
+              : h.p([h.Class('pat-tapstart')], [t('patternTapStart', language)]),
+            model.gameState === 'ended'
+              ? h.p([h.Class('pat-final-score')], [
+                  `${t('patternScore', language)} ${model.score}`,
+                  model.score > 0 && model.score >= model.highScore ? ` 🏆 ${t('patternNewHighScore', language)}` : '',
+                ])
+              : null,
+            h.button([h.OnClick(StartGame()), h.Class('btn btn-primary pat-start-btn')], [
+              model.gameState === 'ended' ? t('patternPlayAgain', language) : t('patternStart', language),
+            ]),
+          ])
+        : h.div([h.Class('pat-grid')], [
+            h.div([h.Class('pat-header')], [
+              h.span([h.Class('pat-round')], [`${t('patternRound', language)} ${model.sequence.length}`]),
+              h.span([h.Class('pat-score')], [`${t('patternScore', language)} ${model.score}`]),
+            ]),
+            h.div([h.Class('pat-tiles')], [
+              ...[0, 1, 2, 3].map(i => {
+                const isActive = model.gameState === 'showing' && model.waitTicks === 0 && model.showIndex > 0 && model.sequence[model.showIndex - 1] === i
+                return h.div([
+                  h.Class(tileClasses(model, i)),
+                  h.OnClick(ClickedTile({ index: i })),
+                  ...(isActive ? [h.Key(`pat-tile-${i}-${model.showIndex}`)] : []),
+                ], [])
+              }),
+            ]),
+            model.gameState === 'playing'
+              ? h.div([h.Class('pat-progress')], [
+                  ...model.sequence.map((_, idx) =>
+                    h.div([h.Class(`pat-dot${idx < model.playerIndex ? ' pat-dot--filled' : ''}`)], []),
+                  ),
+                ])
+              : null,
+          ]),
+    ]),
+  ])
+}

@@ -1,0 +1,418 @@
+.whack-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: clamp(8px, 2.5vmin, 16px);
+  padding: clamp(12px, 3vmin, 24px);
+  width: 100%;
+}
+
+.whack-cell {
+  position: relative;
+  aspect-ratio: 0.75;
+  cursor: pointer;
+  overflow: hidden;
+  border-radius: 38% 38% 0 0;
+  touch-action: manipulation;
+  background: linear-gradient(160deg, #a8e6cf 0%, #7ecba1 35%, #5cb85c 100%);
+  border: 3px solid #4a9e4a;
+  box-shadow: inset 0 4px 8px rgba(255,255,255,0.3), inset 0 -4px 8px rgba(0,0,0,0.1);
+  transition: filter 0.1s;
+}
+
+.whack-cell::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 10%;
+  right: 10%;
+  height: 30%;
+  background: radial-gradient(ellipse at 50% 0%, rgba(255,255,255,0.25) 0%, transparent 100%);
+  border-radius: 50%;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.dark .whack-cell {
+  background: linear-gradient(160deg, #2d5a27 0%, #1e4d1e 35%, #143d14 100%);
+  border-color: #0f2e0f;
+  box-shadow: inset 0 4px 8px rgba(255,255,255,0.05), inset 0 -4px 8px rgba(0,0,0,0.3);
+}
+
+.whack-cell:active {
+  filter: brightness(0.85);
+}
+
+.whack-cell:active .whack-mole-head {
+  animation: whackBonk 0.2s ease-out;
+}
+
+@keyframes whackBonk {
+  0% { transform: scale(1) rotate(0deg); }
+  30% { transform: scale(0.8) rotate(-8deg); }
+  60% { transform: scale(1.05) rotate(4deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+
+.whack-cell--up .whack-mole {
+  transform: translate(-50%, 8%);
+}
+
+.whack-hole {
+  position: absolute;
+  bottom: 0%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  height: 48%;
+  background: radial-gradient(ellipse at 50% 30%, #3d2817 0%, #1a0e05 100%);
+  border-radius: 50%;
+  z-index: 1;
+  box-shadow: inset 0 -6px 10px rgba(0,0,0,0.5), 0 3px 6px rgba(0,0,0,0.3);
+}
+
+.dark .whack-hole {
+  background: radial-gradient(ellipse at 50% 30%, #1e1008 0%, #0a0500 100%);
+}
+
+.whack-mole {
+  position: absolute;
+  bottom: 12%;
+  left: 50%;
+  transform: translate(-50%, 110%);
+  z-index: 2;
+  transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
+  width: 66%;
+}
+
+.whack-mole-head {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 0.92;
+  background: radial-gradient(ellipse at 50% 35%, #d4a574 0%, #8B5E3C 50%, #6d4226 100%);
+  border-radius: 44% 44% 46% 46%;
+  box-shadow: 0 3px 8px rgba(0,0,0,0.25);
+}
+
+.whack-mole-ear {
+  position: absolute;
+  top: 5%;
+  width: 26%;
+  aspect-ratio: 0.8;
+  background: radial-gradient(ellipse at 50% 60%, #d4a57a 0%, #8B5E3C 55%, #6d4226 100%);
+  border-radius: 50%;
+}
+
+.whack-mole-ear--l {
+  left: 1%;
+  transform: rotate(-15deg);
+}
+
+.whack-mole-ear--r {
+  right: 1%;
+  transform: rotate(15deg);
+}
+
+.whack-mole-eye {
+  position: absolute;
+  top: 30%;
+  width: 24%;
+  aspect-ratio: 1.1;
+  background: radial-gradient(circle at 50% 50%, #f5f5f5 0%, #ddd 100%);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: inset 0 -1px 3px rgba(0,0,0,0.1);
+}
+
+.whack-mole-eye--l {
+  left: 17%;
+}
+
+.whack-mole-eye--r {
+  right: 17%;
+}
+
+.whack-mole-pupil {
+  width: 55%;
+  aspect-ratio: 1;
+  background: radial-gradient(circle at 45% 40%, #222 0%, #000 100%);
+  border-radius: 50%;
+  transition: transform 0.1s;
+}
+
+.whack-cell--up .whack-mole-pupil {
+  transform: scale(0.85);
+}
+
+.whack-mole-nose {
+  position: absolute;
+  top: 45%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 16%;
+  aspect-ratio: 1.1;
+  background: radial-gradient(ellipse at 50% 35%, #ffb0c3 0%, #e8697e 50%, #cc5a6f 100%);
+  border-radius: 50%;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+}
+
+.whack-cell--up .whack-mole-nose {
+  animation: noseWiggle 0.6s ease-in-out infinite;
+}
+
+@keyframes noseWiggle {
+  0%, 100% { transform: translateX(-50%) rotate(0deg); }
+  25% { transform: translateX(-50%) rotate(3deg); }
+  75% { transform: translateX(-50%) rotate(-3deg); }
+}
+
+.whack-header {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  width: 100%;
+  padding: clamp(6px, 1.5vmin, 12px) clamp(8px, 2vmin, 20px);
+  font-size: clamp(1.3rem, 6vmin, 2.2rem);
+  font-weight: 800;
+  gap: clamp(8px, 3vmin, 24px);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent);
+  border-radius: 1rem;
+}
+
+.whack-score {
+  color: #16a34a;
+  display: flex;
+  align-items: center;
+  gap: 0.3em;
+}
+
+.whack-score::before {
+  content: '🏆';
+  font-size: 0.75em;
+}
+
+.whack-time {
+  color: #2563eb;
+  display: flex;
+  align-items: center;
+  gap: 0.3em;
+}
+
+.whack-time::before {
+  content: '⏱';
+  font-size: 0.75em;
+}
+
+.whack-time--danger {
+  color: #dc2626;
+  animation: timePulse 0.5s ease-in-out infinite;
+}
+
+@keyframes timePulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+.dark .whack-score {
+  color: #4ade80;
+}
+
+.dark .whack-time {
+  color: #60a5fa;
+}
+
+.dark .whack-time--danger {
+  color: #f87171;
+}
+
+.whack-start {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(10px, 2.5vmin, 24px);
+  padding: clamp(16px, 4vmin, 40px);
+  text-align: center;
+}
+
+.whack-gameover {
+  font-size: clamp(2rem, 8vmin, 3.5rem);
+  font-weight: 800;
+  color: #dc2626;
+  margin: 0;
+  animation: gameOverBounce 0.5s ease-out;
+}
+
+@keyframes gameOverBounce {
+  0% { transform: scale(0.3); opacity: 0; }
+  50% { transform: scale(1.15); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.dark .whack-gameover {
+  color: #f87171;
+}
+
+.whack-tapstart {
+  font-size: clamp(1.2rem, 4.5vmin, 1.8rem);
+  color: #64748b;
+  margin: 0;
+}
+
+.dark .whack-tapstart {
+  color: #94a3b8;
+}
+
+.whack-final-score {
+  font-size: clamp(1.5rem, 6vmin, 2.4rem);
+  font-weight: 700;
+  color: #475569;
+  margin: 0;
+}
+
+.dark .whack-final-score {
+  color: #cbd5e1;
+}
+
+.whack-start-btn {
+  font-size: clamp(1.3rem, 5vmin, 1.8rem);
+  padding: clamp(10px, 2.5vmin, 20px) clamp(32px, 8vmin, 64px);
+  border-radius: 1.2rem;
+}
+
+/* ── Angry mole (type 2) ── */
+.whack-mole--type-2 .whack-mole-head {
+  background: radial-gradient(ellipse at 50% 35%, #c0392b 0%, #8B2500 50%, #5a1800 100%);
+  box-shadow: 0 3px 8px rgba(200,50,0,0.35);
+}
+
+.whack-mole--type-2 .whack-mole-ear {
+  background: radial-gradient(ellipse at 50% 60%, #c0392b 0%, #8B2500 55%, #5a1800 100%);
+}
+
+.whack-mole--type-2 .whack-mole-eye {
+  background: radial-gradient(circle at 50% 50%, #ffcccc 0%, #ff6666 100%);
+  box-shadow: inset 0 -1px 3px rgba(0,0,0,0.1), 0 0 4px rgba(255,0,0,0.3);
+}
+
+.whack-mole--type-2 .whack-mole-head::before,
+.whack-mole--type-2 .whack-mole-head::after {
+  content: '';
+  position: absolute;
+  top: 18%;
+  width: 22%;
+  height: 6%;
+  background: #2d1500;
+  border-radius: 2px;
+  z-index: 5;
+}
+
+.whack-mole--type-2 .whack-mole-head::before {
+  left: 14%;
+  transform: rotate(-20deg);
+}
+
+.whack-mole--type-2 .whack-mole-head::after {
+  right: 14%;
+  transform: rotate(20deg);
+}
+
+.dark .whack-mole--type-2 .whack-mole-head {
+  background: radial-gradient(ellipse at 50% 35%, #a03020 0%, #6b1a00 50%, #3d1000 100%);
+}
+
+.dark .whack-mole--type-2 .whack-mole-ear {
+  background: radial-gradient(ellipse at 50% 60%, #a03020 0%, #6b1a00 55%, #3d1000 100%);
+}
+
+/* ── Golden mole (type 3) ── */
+.whack-mole--type-3 .whack-mole-head {
+  background: radial-gradient(ellipse at 50% 35%, #ffe44d 0%, #ffb300 50%, #cc8800 100%);
+  box-shadow: 0 3px 12px rgba(255,180,0,0.4);
+}
+
+.whack-mole--type-3 .whack-mole-ear {
+  background: radial-gradient(ellipse at 50% 60%, #ffe44d 0%, #ffb300 55%, #cc8800 100%);
+}
+
+.whack-mole--type-3 .whack-mole-head::before {
+  content: '✨';
+  position: absolute;
+  top: -8%;
+  right: -6%;
+  font-size: clamp(0.9rem, 3vmin, 1.4rem);
+  z-index: 6;
+  animation: goldenSparkle 0.8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes goldenSparkle {
+  0%, 100% { transform: scale(1) rotate(0deg); opacity: 0.8; }
+  50% { transform: scale(1.3) rotate(20deg); opacity: 1; }
+}
+
+.dark .whack-mole--type-3 .whack-mole-head {
+  background: radial-gradient(ellipse at 50% 35%, #ccb830 0%, #b38600 50%, #996600 100%);
+}
+
+.dark .whack-mole--type-3 .whack-mole-ear {
+  background: radial-gradient(ellipse at 50% 60%, #ccb830 0%, #b38600 55%, #996600 100%);
+}
+
+/* ── Damsel mole (type 4) ── */
+.whack-mole--type-4 .whack-mole-head {
+  background: radial-gradient(ellipse at 50% 35%, #ffb6d9 0%, #e880b0 50%, #c45a8a 100%);
+  box-shadow: 0 3px 8px rgba(220,100,150,0.3);
+}
+
+.whack-mole--type-4 .whack-mole-ear {
+  background: radial-gradient(ellipse at 50% 60%, #ffb6d9 0%, #e880b0 55%, #c45a8a 100%);
+}
+
+.whack-mole--type-4 .whack-mole-eye {
+  background: radial-gradient(circle at 50% 50%, #f5f5f5 0%, #ddd 100%);
+}
+
+.whack-mole--type-4 .whack-mole-pupil {
+  width: 65%;
+}
+
+.whack-mole--type-4 .whack-mole-nose {
+  background: radial-gradient(ellipse at 50% 35%, #ff99aa 0%, #e86080 50%, #cc4060 100%);
+}
+
+.whack-mole--type-4 .whack-mole-head::before {
+  content: '🎀';
+  position: absolute;
+  top: -18%;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: clamp(1.2rem, 4vmin, 1.8rem);
+  z-index: 6;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.2));
+}
+
+.whack-mole--type-4 .whack-mole-head::after {
+  content: '';
+  position: absolute;
+  top: 40%;
+  width: 14%;
+  height: 7%;
+  border-radius: 50%;
+  background: rgba(255,120,140,0.5);
+  z-index: 5;
+}
+
+.whack-mole--type-4 .whack-mole-head::after {
+  left: 12%;
+  box-shadow: 5.2em 0 0 rgba(255,120,140,0.5);
+}
+
+.dark .whack-mole--type-4 .whack-mole-head {
+  background: radial-gradient(ellipse at 50% 35%, #cc80a0 0%, #b05a80 50%, #8a4060 100%);
+}
+
+.dark .whack-mole--type-4 .whack-mole-ear {
+  background: radial-gradient(ellipse at 50% 60%, #cc80a0 0%, #b05a80 55%, #8a4060 100%);
+}
