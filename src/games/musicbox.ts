@@ -758,32 +758,29 @@ export const view = (model: Model, language: string = 'en') => {
 
           h.div([h.Class('musicbox-controls')], [
             h.div([h.Class('musicbox-dropdown')], [
-              h.div([h.Class('musicbox-song-label-row')], [
-                h.label([h.Class('musicbox-dropdown-label')], [t('musicBoxPickSong', language)]),
-                h.div([h.Class('musicbox-song-nav')], [
-                  h.button(
-                    [
-                      h.Id('musicbox-previous'),
-                      h.OnClick(PreviousSong()),
-                      h.Class('btn btn-tiny musicbox-song-nav-btn'),
-                      h.Disabled(visibleSongs.length <= 1),
-                      h.Attribute('aria-label', 'Previous song'),
-                      h.Attribute('title', 'Previous song'),
-                    ],
-                    [renderSongNavIcon(h, 'previous')],
-                  ),
-                  h.button(
-                    [
-                      h.Id('musicbox-skip'),
-                      h.OnClick(SkipSong()),
-                      h.Class('btn btn-tiny musicbox-song-nav-btn'),
-                      h.Disabled(visibleSongs.length <= 1),
-                      h.Attribute('aria-label', 'Skip song'),
-                      h.Attribute('title', 'Skip song'),
-                    ],
-                    [renderSongNavIcon(h, 'skip')],
-                  ),
-                ]),
+              h.div([h.Class('musicbox-song-nav')], [
+                h.button(
+                  [
+                    h.Id('musicbox-previous'),
+                    h.OnClick(PreviousSong()),
+                    h.Class('btn btn-tiny musicbox-song-nav-btn'),
+                    h.Disabled(visibleSongs.length <= 1),
+                    h.Attribute('aria-label', 'Previous song'),
+                    h.Attribute('title', 'Previous song'),
+                  ],
+                  [renderSongNavIcon(h, 'previous')],
+                ),
+                h.button(
+                  [
+                    h.Id('musicbox-skip'),
+                    h.OnClick(SkipSong()),
+                    h.Class('btn btn-tiny musicbox-song-nav-btn'),
+                    h.Disabled(visibleSongs.length <= 1),
+                    h.Attribute('aria-label', 'Skip song'),
+                    h.Attribute('title', 'Skip song'),
+                  ],
+                  [renderSongNavIcon(h, 'skip')],
+                ),
               ]),
               h.select(
                 [
