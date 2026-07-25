@@ -1,21 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import { Story } from 'foldkit'
 
-import { ClickedTile, init, SoundPlayed, StartGame, Tick, update } from './main'
+import { ClickedTile, init, ShowTile, SoundPlayed, StartGame, StartPlaying, update } from './main'
 
-const resolveTile0 = [{ name: 'PlayTile0' }, SoundPlayed()] as const
-const resolveTile1 = [{ name: 'PlayTile1' }, SoundPlayed()] as const
-const resolveTile2 = [{ name: 'PlayTile2' }, SoundPlayed()] as const
-const resolveTile3 = [{ name: 'PlayTile3' }, SoundPlayed()] as const
 const resolveAscend = [{ name: 'PlayAscend' }, SoundPlayed()] as const
 const resolveDescend = [{ name: 'PlayDescend' }, SoundPlayed()] as const
 const resolveCorrect = [{ name: 'PlayCorrect' }, SoundPlayed()] as const
+const resolveTile0 = [{ name: 'PlayTile0' }, SoundPlayed()] as const
+const resolveTile2 = [{ name: 'PlayTile2' }, SoundPlayed()] as const
 
-const showingWithSeq = (seq: number[], showIdx = 0, waitTicks = 0) => ({
+const showingWithSeq = (seq: number[], showIdx = -1) => ({
   ...init,
   sequence: seq,
   showIndex: showIdx,
-  waitTicks,
   gameState: 'showing' as const,
 })
 
@@ -33,14 +30,13 @@ describe('Pattern', () => {
       highScore: 0,
       sequence: [],
       showIndex: -1,
-      waitTicks: 0,
       gameState: 'idle',
       playerIndex: 0,
       wrongTile: -1,
     })
   })
 
-  it('starts game with 3-tile sequence and wait ticks', () => {
+  it('starts game with 3-tile sequence in showing state', () => {
     Story.story(
       update,
       Story.with(init),
@@ -48,89 +44,73 @@ describe('Pattern', () => {
       Story.model((model) => {
         expect(model.gameState).toBe('showing')
         expect(model.sequence).toHaveLength(3)
-        expect(model.showIndex).toBe(0)
-        expect(model.waitTicks).toBe(1)
         expect(model.score).toBe(0)
         for (const idx of model.sequence) {
           expect(idx).toBeGreaterThanOrEqual(0)
           expect(idx).toBeLessThan(4)
         }
       }),
-      Story.Command.resolveAll(resolveAscend),
+      Story.Command.resolveAll(
+        resolveAscend,
+        [{ name: 'ShowTile0' }, ShowTile({ idx: 0 })],
+        [{ name: 'ShowTile1' }, ShowTile({ idx: 1 })],
+        [{ name: 'ShowTile2' }, ShowTile({ idx: 2 })],
+        [{ name: 'StartPlaying' }, StartPlaying()],
+      ),
       Story.Command.expectNone(),
     )
   })
 
-  it('waits before showing first tile', () => {
-    const show = showingWithSeq([0, 1, 2], 0, 1)
-    Story.story(
-      update,
-      Story.with(show),
-      Story.message(Tick()),
-      Story.model((model) => {
-        expect(model.waitTicks).toBe(0)
-        expect(model.showIndex).toBe(0)
-        expect(model.gameState).toBe('showing')
-      }),
-      Story.Command.expectNone(),
-    )
-  })
-
-  it('shows first tile after wait', () => {
-    const show = showingWithSeq([0, 1, 2], 0, 0)
-    Story.story(
-      update,
-      Story.with(show),
-      Story.message(Tick()),
-      Story.model((model) => {
-        expect(model.showIndex).toBe(1)
-        expect(model.gameState).toBe('showing')
-      }),
-      Story.Command.resolveAll(resolveTile0),
-      Story.Command.expectNone(),
-    )
-  })
-
-  it('shows first tile on first tick', () => {
+  it('showTile updates showIndex', () => {
     const show = showingWithSeq([0, 1, 2])
     Story.story(
       update,
       Story.with(show),
-      Story.message(Tick()),
+      Story.message(ShowTile({ idx: 1 })),
       Story.model((model) => {
         expect(model.showIndex).toBe(1)
         expect(model.gameState).toBe('showing')
       }),
-      Story.Command.resolveAll(resolveTile0),
       Story.Command.expectNone(),
     )
   })
 
-  it('shows second tile on second tick', () => {
-    const show = showingWithSeq([0, 1, 2], 1, 0)
+  it('showTile ignored if not showing', () => {
+    const play = playingWithSeq([0, 1, 2])
     Story.story(
       update,
-      Story.with(show),
-      Story.message(Tick()),
+      Story.with(play),
+      Story.message(ShowTile({ idx: 1 })),
       Story.model((model) => {
-        expect(model.showIndex).toBe(2)
-        expect(model.gameState).toBe('showing')
+        expect(model.showIndex).toBe(-1)
       }),
-      Story.Command.resolveAll(resolveTile1),
       Story.Command.expectNone(),
     )
   })
 
-  it('transitions to playing after showing all tiles', () => {
-    const show = showingWithSeq([0, 1, 2], 3, 0)
+  it('startPlaying transitions to playing', () => {
+    const show = showingWithSeq([0, 1, 2])
     Story.story(
       update,
       Story.with(show),
-      Story.message(Tick()),
+      Story.message(StartPlaying()),
       Story.model((model) => {
         expect(model.gameState).toBe('playing')
         expect(model.showIndex).toBe(-1)
         expect(model.playerIndex).toBe(0)
+      }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('startPlaying ignored if not showing', () => {
+    const play = playingWithSeq([0, 1, 2])
+    Story.story(
+      update,
+      Story.with(play),
+      Story.message(StartPlaying()),
+      Story.model((model) => {
+        expect(model.gameState).toBe('playing')
       }),
       Story.Command.expectNone(),
     )
@@ -151,7 +131,7 @@ describe('Pattern', () => {
     )
   })
 
-  it('completing sequence adds tile and waits before showing', () => {
+  it('completing sequence adds tile and starts showing', () => {
     const play = playingWithSeq([0, 1], 1)
     Story.story(
       update,
@@ -159,14 +139,18 @@ describe('Pattern', () => {
       Story.message(ClickedTile({ index: 1 })),
       Story.model((model) => {
         expect(model.gameState).toBe('showing')
-        expect(model.showIndex).toBe(0)
-        expect(model.waitTicks).toBe(1)
         expect(model.sequence).toHaveLength(3)
         expect(model.score).toBe(1)
         expect(model.sequence[0]).toBe(0)
         expect(model.sequence[1]).toBe(1)
       }),
-      Story.Command.resolveAll(resolveCorrect),
+      Story.Command.resolveAll(
+        resolveCorrect,
+        [{ name: 'ShowTile0' }, ShowTile({ idx: 0 })],
+        [{ name: 'ShowTile1' }, ShowTile({ idx: 1 })],
+        [{ name: 'ShowTile2' }, ShowTile({ idx: 2 })],
+        [{ name: 'StartPlaying' }, StartPlaying()],
+      ),
       Story.Command.expectNone(),
     )
   })
@@ -186,18 +170,6 @@ describe('Pattern', () => {
     )
   })
 
-  it('ignores tick when idle', () => {
-    Story.story(
-      update,
-      Story.with(init),
-      Story.message(Tick()),
-      Story.model((model) => {
-        expect(model.gameState).toBe('idle')
-      }),
-      Story.Command.expectNone(),
-    )
-  })
-
   it('ignores click when idle', () => {
     Story.story(
       update,
@@ -211,7 +183,7 @@ describe('Pattern', () => {
   })
 
   it('ignores click when showing', () => {
-    const show = showingWithSeq([0, 1, 2], 0, 0)
+    const show = showingWithSeq([0, 1, 2])
     Story.story(
       update,
       Story.with(show),
@@ -260,43 +232,35 @@ describe('Pattern', () => {
       Story.model((model) => {
         expect(model.highScore).toBe(3)
       }),
-      Story.Command.resolveAll(resolveAscend),
+      Story.Command.resolveAll(
+        resolveAscend,
+        [{ name: 'ShowTile0' }, ShowTile({ idx: 0 })],
+        [{ name: 'ShowTile1' }, ShowTile({ idx: 1 })],
+        [{ name: 'ShowTile2' }, ShowTile({ idx: 2 })],
+        [{ name: 'StartPlaying' }, StartPlaying()],
+      ),
       Story.Command.expectNone(),
     )
   })
 
-  it('starts from init and reaches playing after enough ticks', () => {
-    let seq: number[] = []
+  it('end to start produces showing state with high score', () => {
+    const ended = { ...init, gameState: 'ended' as const, highScore: 5 }
     Story.story(
       update,
-      Story.with(init),
+      Story.with(ended),
       Story.message(StartGame()),
-      Story.model(m => {
-        seq = [...m.sequence]
-        expect(seq).toHaveLength(3)
+      Story.model((model) => {
+        expect(model.gameState).toBe('showing')
+        expect(model.highScore).toBe(5)
+        expect(model.score).toBe(0)
       }),
-      Story.Command.resolveAll(resolveAscend),
-      Story.Command.expectNone(),
-      Story.message(Tick()),
-      Story.model(m => expect(m.waitTicks).toBe(0)),
-      Story.Command.expectNone(),
-      Story.message(Tick()),
-      Story.model(m => expect(m.showIndex).toBe(1)),
-      Story.Command.resolveAll(resolveTile0, resolveTile1, resolveTile2, resolveTile3),
-      Story.Command.expectNone(),
-      Story.message(Tick()),
-      Story.model(m => expect(m.showIndex).toBe(2)),
-      Story.Command.resolveAll(resolveTile0, resolveTile1, resolveTile2, resolveTile3),
-      Story.Command.expectNone(),
-      Story.message(Tick()),
-      Story.model(m => expect(m.showIndex).toBe(3)),
-      Story.Command.resolveAll(resolveTile0, resolveTile1, resolveTile2, resolveTile3),
-      Story.Command.expectNone(),
-      Story.message(Tick()),
-      Story.model(m => {
-        expect(m.gameState).toBe('playing')
-        expect(m.showIndex).toBe(-1)
-      }),
+      Story.Command.resolveAll(
+        resolveAscend,
+        [{ name: 'ShowTile0' }, ShowTile({ idx: 0 })],
+        [{ name: 'ShowTile1' }, ShowTile({ idx: 1 })],
+        [{ name: 'ShowTile2' }, ShowTile({ idx: 2 })],
+        [{ name: 'StartPlaying' }, StartPlaying()],
+      ),
       Story.Command.expectNone(),
     )
   })

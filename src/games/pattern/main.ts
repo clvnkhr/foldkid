@@ -1,4 +1,4 @@
-import { Effect, Match as M, Schema as S, Stream } from 'effect'
+import { Effect, Match as M, pipe, Schema as S } from 'effect'
 import { Command } from 'foldkit'
 import { Html, html } from 'foldkit/html'
 import { m } from 'foldkit/message'
@@ -12,7 +12,6 @@ export const Model = S.Struct({
   highScore: S.Number,
   sequence: S.Array(S.Number),
   showIndex: S.Number,
-  waitTicks: S.Number,
   gameState: S.Union([S.Literal('idle'), S.Literal('showing'), S.Literal('playing'), S.Literal('ended')]),
   playerIndex: S.Number,
   wrongTile: S.Number,
@@ -24,18 +23,18 @@ export const init: Model = {
   highScore: 0,
   sequence: [],
   showIndex: -1,
-  waitTicks: 0,
   gameState: 'idle',
   playerIndex: 0,
   wrongTile: -1,
 }
 
 export const ClickedTile = m('PatClickedTile', { index: S.Number })
-export const Tick = m('PatTick')
 export const StartGame = m('PatStartGame')
 export const SoundPlayed = m('PatSoundPlayed')
+export const ShowTile = m('PatShowTile', { idx: S.Number })
+export const StartPlaying = m('PatStartPlaying')
 
-export const Message = S.Union([ClickedTile, Tick, StartGame, SoundPlayed])
+export const Message = S.Union([ClickedTile, StartGame, SoundPlayed, ShowTile, StartPlaying])
 export type Message = typeof Message.Type
 
 const rng = (n: number): number => Math.floor(Math.random() * n)
@@ -44,11 +43,7 @@ const genSeq = (len: number): number[] =>
   Array.from({ length: len }, () => rng(TILE_COUNT))
 
 const TILE_FREQUENCIES = [523, 659, 784, 1047]
-
-const tileSound = <Msg>(tile: number, msg: Msg) => ({
-  name: `PlayTile${tile}` as const,
-  effect: playTone(TILE_FREQUENCIES[tile]!, 0.15, 'sine').pipe(Effect.as(msg)),
-})
+const TILE_FLASH_MS = 500
 
 const ascend = <Msg>(msg: Msg) => ({
   name: 'PlayAscend' as const,
@@ -83,6 +78,34 @@ const correct = <Msg>(msg: Msg) => ({
   }).pipe(Effect.as(msg)),
 })
 
+const buildShowCommands = (seq: number[], muted: boolean): ReadonlyArray<Command.Command<Message>> => {
+  const cmds: Command.Command<Message>[] = []
+  for (let i = 0; i < seq.length; i++) {
+    const tile = seq[i] as number
+    cmds.push({
+      name: `ShowTile${i}` as const,
+      effect: pipe(
+        Effect.sleep(i * TILE_FLASH_MS),
+        Effect.flatMap(() => muted ? Effect.void : playTone(TILE_FREQUENCIES[tile]!, 0.15, 'sine')),
+        Effect.as(ShowTile({ idx: i })),
+      ),
+    })
+  }
+  cmds.push({
+    name: 'StartPlaying' as const,
+    effect: pipe(
+      Effect.sleep(seq.length * TILE_FLASH_MS),
+      Effect.as(StartPlaying()),
+    ),
+  })
+  return cmds
+}
+
+const tileSound = <Msg>(tile: number, msg: Msg) => ({
+  name: `PlayTile${tile}` as const,
+  effect: playTone(TILE_FREQUENCIES[tile]!, 0.15, 'sine').pipe(Effect.as(msg)),
+})
+
 export const update = (
   model: Model,
   message: Message,
@@ -91,35 +114,23 @@ export const update = (
   M.value(message).pipe(
     M.withReturnType<readonly [Model, ReadonlyArray<Command.Command<Message>>]>(),
     M.tagsExhaustive({
-      PatStartGame: () => [
-        {
-          ...init,
-          sequence: genSeq(3),
-          showIndex: 0,
-          waitTicks: 1,
-          gameState: 'showing',
-          highScore: model.highScore,
-        } as Model,
-        muted ? [] : [ascend(SoundPlayed())],
-      ],
-      PatTick: () => {
-        if (model.gameState === 'showing') {
-          if (model.waitTicks > 0) {
-            return [{ ...model, waitTicks: model.waitTicks - 1 } as Model, []]
-          }
-          if (model.showIndex >= model.sequence.length) {
-            return [
-              { ...model, gameState: 'playing', showIndex: -1, playerIndex: 0, wrongTile: -1 } as Model,
-              [],
-            ]
-          }
-          const tile = model.sequence[model.showIndex] as number
-          return [
-            { ...model, showIndex: model.showIndex + 1 } as Model,
-            muted ? [] : [tileSound(tile, SoundPlayed())],
-          ]
-        }
-        return [model, []]
+      PatStartGame: () => {
+        const seq = genSeq(3)
+        return [
+          { ...init, sequence: seq, gameState: 'showing', highScore: model.highScore } as Model,
+          [...(muted ? [] : [ascend(SoundPlayed())]), ...buildShowCommands(seq, muted)],
+        ]
+      },
+      PatShowTile: (msg) => {
+        if (model.gameState !== 'showing') return [model, []]
+        return [{ ...model, showIndex: msg.idx } as Model, []]
+      },
+      PatStartPlaying: () => {
+        if (model.gameState !== 'showing') return [model, []]
+        return [
+          { ...model, gameState: 'playing', showIndex: -1, playerIndex: 0, wrongTile: -1 } as Model,
+          [],
+        ]
       },
       PatClickedTile: (msg) => {
         if (model.gameState !== 'playing') return [model, []]
@@ -148,13 +159,11 @@ export const update = (
               score: newScore,
               highScore: Math.max(model.highScore, newScore),
               sequence: newSeq,
-              showIndex: 0,
-              waitTicks: 1,
               gameState: 'showing',
               playerIndex: 0,
               wrongTile: -1,
             } as Model,
-            muted ? [] : [correct(SoundPlayed())],
+            [...(muted ? [] : [correct(SoundPlayed())]), ...buildShowCommands(newSeq, muted)],
           ]
         }
         return [
@@ -166,27 +175,11 @@ export const update = (
     }),
   )
 
-const tileClasses = (model: Model, i: number): string => {
-  const base = `pat-tile pat-tile--${i}`
-  if (model.gameState === 'showing' && model.waitTicks === 0 && model.showIndex > 0) {
-    const showing = model.sequence[model.showIndex - 1]
-    if (showing === i) return `${base} pat-tile--active`
-  }
-  return base
-}
-
-const timerMount = {
-  name: 'patternTimer' as const,
-  f: () => Stream.sync(() => Tick()).pipe(
-    Stream.concat(Stream.tick(500).pipe(Stream.map(() => Tick()))),
-  ),
-}
-
 export const view = (model: Model, language: string = 'en'): Html => {
   const h = html<Message>()
 
   return h.div([h.Class('page')], [
-    h.div([h.Class('card'), h.OnMount(timerMount)], [
+    h.div([h.Class('card')], [
       h.h1([h.Class('title')], [t('patternTitle', language)]),
       model.gameState === 'idle' || model.gameState === 'ended'
         ? h.div([h.Class('pat-start')], [
@@ -210,9 +203,12 @@ export const view = (model: Model, language: string = 'en'): Html => {
             ]),
             h.div([h.Class('pat-tiles')], [
               ...[0, 1, 2, 3].map(i => {
-                const isActive = model.gameState === 'showing' && model.waitTicks === 0 && model.showIndex > 0 && model.sequence[model.showIndex - 1] === i
+                const activeIdx = model.gameState === 'showing' && model.showIndex >= 0 && model.showIndex < model.sequence.length
+                  ? model.sequence[model.showIndex] as number
+                  : -1
+                const isActive = activeIdx === i
                 return h.div([
-                  h.Class(tileClasses(model, i)),
+                  h.Class(`pat-tile pat-tile--${i}${isActive ? ' pat-tile--active' : ''}`),
                   h.OnClick(ClickedTile({ index: i })),
                   ...(isActive ? [h.Key(`pat-tile-${i}-${model.showIndex}`)] : []),
                 ], [])
