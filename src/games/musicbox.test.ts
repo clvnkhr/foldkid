@@ -1471,13 +1471,13 @@ describe('MusicBox', () => {
       )
     })
 
-    it('renders previous and skip buttons beside the song picker label', () => {
+    it('renders previous and skip buttons beside the song picker', () => {
       Scene.scene(
         { update: MusicBox.update, view: MusicBox.view },
         Scene.with(MusicBox.init()),
         Scene.Mount.resolveAll(...resolveMount),
-        Scene.expect(Scene.selector('.musicbox-song-label-row #musicbox-previous svg')).toExist(),
-        Scene.expect(Scene.selector('.musicbox-song-label-row #musicbox-skip svg')).toExist(),
+        Scene.expect(Scene.selector('.musicbox-song-nav #musicbox-previous svg')).toExist(),
+        Scene.expect(Scene.selector('.musicbox-song-nav #musicbox-skip svg')).toExist(),
         Scene.Command.expectNone(),
       )
     })

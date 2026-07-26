@@ -1,4 +1,4 @@
-import { Effect, Fiber } from 'effect'
+import { Effect } from 'effect'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { findVoice, speak } from './speech'
 
@@ -99,14 +99,10 @@ describe('speech', () => {
     }
   })
 
-  it('clears the deferred speak timer when interrupted', async () => {
-    vi.useFakeTimers()
-
-    const fiber = Effect.runFork(speak('interrupted', 'result_msg').effect)
-    await Effect.runPromise(Fiber.interrupt(fiber))
-    vi.runAllTimers()
-
-    expect(speakCount).toBe(0)
-    expect(lastSpokenText).toBe('')
+  it('speak starts speech immediately', async () => {
+    const result = await Effect.runPromise(speak('immediate', 'result_msg').effect)
+    expect(result).toBe('result_msg')
+    expect(speakCount).toBe(1)
+    expect(lastSpokenText).toBe('immediate')
   })
 })

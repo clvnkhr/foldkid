@@ -26,24 +26,23 @@ export const speak = <Msg>(
   options?: SpeechOptions,
 ) => ({
   name: 'Speak',
-  effect: Effect.callback<Msg>((resume) => {
+  effect: Effect.sync(() => {
     const synth = getSpeechSynthesis()
     if (!synth || typeof globalThis.SpeechSynthesisUtterance === 'undefined') {
-      resume(Effect.succeed(msg))
-      return Effect.void
+      return msg
     }
     synth.cancel()
-    const timer = globalThis.setTimeout(() => {
-      const utterance = new SpeechSynthesisUtterance(text)
-      utterance.rate = options?.rate ?? DEFAULT_SPEECH_RATE
-      utterance.pitch = options?.pitch ?? DEFAULT_SPEECH_PITCH
-      utterance.lang = options?.lang ?? 'en'
-      const voice = findVoice(utterance.lang)
-      if (voice) utterance.voice = voice
-      utterance.onend = () => resume(Effect.succeed(msg))
-      utterance.onerror = () => resume(Effect.succeed(msg))
+    const utterance = new SpeechSynthesisUtterance(text)
+    utterance.rate = options?.rate ?? DEFAULT_SPEECH_RATE
+    utterance.pitch = options?.pitch ?? DEFAULT_SPEECH_PITCH
+    utterance.lang = options?.lang ?? 'en'
+    const voice = findVoice(utterance.lang)
+    if (voice) utterance.voice = voice
+    try {
       synth.speak(utterance)
-    }, 0)
-    return Effect.sync(() => { globalThis.clearTimeout(timer) })
+    } catch {
+      // speech synthesis failed
+    }
+    return msg
   }),
 })
