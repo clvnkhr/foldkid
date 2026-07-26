@@ -43,10 +43,10 @@
   border: 3px solid var(--border-color, #cbd5e1);
   background: var(--card-bg, #fff);
   cursor: pointer;
+  touch-action: manipulation;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
 
 .rps-choice-btn:hover {

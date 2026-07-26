@@ -55,7 +55,6 @@
   background: var(--cell-bg);
   border-radius: 1rem;
   cursor: pointer;
-  transition: background 0.15s, transform 0.15s;
 }
 
 .emoji-cell--pairs {
@@ -70,6 +69,7 @@
 
 .emoji-cell:active {
   transform: scale(0.95);
+  transition: none;
 }
 
 .emoji-cell.shaking {
