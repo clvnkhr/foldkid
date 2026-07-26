@@ -16,6 +16,7 @@ const resolveChime = [{ name: 'PlayChime' }, SoundPlayed()] as const
 const resolveUhOh = [{ name: 'PlayUhOh' }, SoundPlayed()] as const
 const resolveAscend = [{ name: 'PlayAscend' }, SoundPlayed()] as const
 const resolveDescend = [{ name: 'PlayDescend' }, SoundPlayed()] as const
+const resolveSwoosh = [{ name: 'PlaySwoosh' }, SoundPlayed()] as const
 
 describe('Whackamole', () => {
   it('init state', () => {
@@ -106,7 +107,7 @@ describe('Whackamole', () => {
     )
   })
 
-  it('whacking empty hole does nothing', () => {
+  it('whacking empty hole deducts 1', () => {
     const playing = {
       ...init,
       gameState: 'playing' as const,
@@ -116,8 +117,10 @@ describe('Whackamole', () => {
       Story.with(playing),
       Story.message(ClickedHole({ index: 0 })),
       Story.model((model) => {
-        expect(model.score).toBe(0)
+        expect(model.score).toBe(-1)
       }),
+      Story.Command.resolveAll(resolveSwoosh),
+      Story.Command.expectNone(),
     )
   })
 

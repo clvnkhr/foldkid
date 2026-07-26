@@ -2,7 +2,7 @@ import { Effect, Match as M, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { Html, html } from 'foldkit/html'
 import { m } from 'foldkit/message'
-import { pop, chime, boing, getContext, playTone } from '../../audio'
+import { pop, chime, boing, swoosh, getContext, playTone } from '../../audio'
 import { t } from '../../i18n'
 
 const HOLE_COUNT = 9
@@ -118,7 +118,10 @@ export const update = (
         const index = msg.index
         if (index < 0 || index >= HOLE_COUNT) return [model, []]
         const moleType = model.holes[index] ?? 0
-        if (moleType === 0) return [model, []]
+        if (moleType === 0) {
+          const next: Model = { ...model, score: model.score - 1, holes: model.holes }
+          return [next, muted ? [] : [swoosh(SoundPlayed())]]
+        }
         const newHoles = [...model.holes]
         newHoles[index] = 0
         const scoreChange = MOLE_SCORES[moleType] ?? 1
