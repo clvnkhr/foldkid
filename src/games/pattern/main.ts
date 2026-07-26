@@ -193,13 +193,11 @@ export const view = (model: Model, language: string = 'en'): Html => {
                 ], [])
               }),
             ]),
-            model.gameState === 'playing'
-              ? h.div([h.Class('pat-progress')], [
-                  ...model.sequence.map((_, idx) =>
-                    h.div([h.Class(`pat-dot${idx < model.playerIndex ? ' pat-dot--filled' : ''}`)], []),
-                  ),
-                ])
-              : null,
+            h.div([h.Class('pat-progress')], [
+              ...model.sequence.map((_, idx) =>
+                h.div([h.Class(`pat-dot${idx < model.playerIndex ? ' pat-dot--filled' : ''}`)], []),
+              ),
+            ]),
           ]),
     ]),
   ])
