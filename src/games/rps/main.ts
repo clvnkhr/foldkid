@@ -166,7 +166,7 @@ export const view = (model: Model, language: string = 'en'): Html => {
           ...CHOICES.map(choice =>
             h.button(
               [
-                h.OnClick(Picked({ choice })),
+                h.OnTouchStart(Picked({ choice })),
                 h.Class('rps-choice-btn' + (model.playerChoice === choice ? ' rps-choice-btn--selected' : '')),
               ],
               [h.span([h.Class('rps-choice-emoji')], [choiceEmoji[choice]])],

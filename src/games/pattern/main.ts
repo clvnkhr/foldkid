@@ -188,7 +188,7 @@ export const view = (model: Model, language: string = 'en'): Html => {
                 const isActive = activeIdx === i
                 return h.div([
                   h.Class(`pat-tile pat-tile--${i}${isActive ? ' pat-tile--active' : ''}`),
-                  h.OnClick(ClickedTile({ index: i })),
+                  h.OnTouchStart(ClickedTile({ index: i })),
                   ...(isActive ? [h.Key(`pat-tile-${i}-${model.showIndex}`)] : []),
                 ], [])
               }),

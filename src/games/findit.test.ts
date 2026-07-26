@@ -149,25 +149,23 @@ describe('FindIt', () => {
   it('clicking wrong cell shows wobble', () => {
     const game = FindIt.init()
     const wrong = game.grid.find(c => c.emoji !== game.target)!
-    Scene.scene(
-      { update: FindIt.update, view: FindIt.view },
-      Scene.with(game),
-      Scene.click(Scene.text(wrong.emoji)),
-      Scene.expect(Scene.text(`Where is ${game.target}?`)).toExist(),
-      Scene.Command.expectNone(),
+    Story.story(
+      FindIt.update,
+      Story.with(game),
+      Story.message(FindIt.ClickedCell({ id: wrong.id })),
+      Story.model(model => { expect(model.shaking).toBe(wrong.id) }),
     )
   })
 
   it('clicking correct cell shows you win', () => {
     const game = FindIt.init()
     const cell = game.grid.find(c => c.emoji === game.target)!
-    Scene.scene(
-      { update: FindIt.update, view: FindIt.view },
-      Scene.with(game),
-      Scene.click(Scene.text(cell.emoji)),
-      Scene.expect(Scene.text(`${FindIt.emojiName(cell.emoji)}!`)).toExist(),
-      Scene.Command.resolveAll(...resolveWin),
-      Scene.Command.expectNone(),
+    Story.story(
+      FindIt.update,
+      Story.with(game),
+      Story.message(FindIt.ClickedCell({ id: cell.id })),
+      Story.Command.resolveAll(...resolveWin),
+      Story.model(model => { expect(model.won).toBe(true) }),
     )
   })
 

@@ -266,7 +266,7 @@ const keyButton = (
   cls: string,
 ): Html =>
   h.button(
-    [h.OnClick(message), h.Class(cls)],
+    [h.OnTouchStart(message), h.Class(cls)],
     [label],
   )
 
