@@ -303,7 +303,7 @@ export const view = (model: Model, language: string = 'en'): Html => {
         h.h1([h.Class('title')], [t('calculatorTitle', language)]),
         h.div(
           [h.Class('calc-display')],
-          [h.span([h.Class('calc-display-text' + (model.isResult ? ' calc-display-result' : ''))], [displayLabel()])],
+          [h.span([h.Class('calc-display-text' + (model.isResult ? ' calc-display-result' : '')), h.Style({ '--n': String(displayLabel().length) })], [displayLabel()])],
         ),
         h.div([h.Class('calc-grid')], [
           keyButton(h, 'AC', ClickedClear(), fnStyle),

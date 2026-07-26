@@ -11,6 +11,7 @@
   box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.35);
   overflow: hidden;
   position: relative;
+  container-type: inline-size;
 }
 
 .calc-display::after {
@@ -23,14 +24,12 @@
 }
 
 .calc-display-text {
-  font-size: clamp(1.3rem, 6.5vmin, 2.6rem);
+  font-size: clamp(0.55rem, calc((100cqw - 2.8rem) / var(--n, 10) * 1.7), 2.6rem);
   font-weight: 800;
   color: #fff;
   font-family: 'Courier New', monospace;
   text-align: right;
   white-space: nowrap;
-  text-overflow: ellipsis;
-  overflow: hidden;
   max-width: 100%;
   position: relative;
   z-index: 1;
@@ -275,3 +274,7 @@
 .calc-theme-4 .calc-btn-op { background: linear-gradient(135deg, #c084fc, #9333ea); }
 .calc-theme-4 .calc-btn-eq { background: linear-gradient(135deg, #f472b6, #db2777); }
 .calc-theme-4 .calc-btn-fn { background: linear-gradient(135deg, #818cf8, #4f46e5); }
+
+.card[class*="calc-theme-"] {
+  padding: clamp(0.35rem, 1.5vmin, 0.7rem);
+}
