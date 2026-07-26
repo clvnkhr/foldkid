@@ -46,7 +46,7 @@
   border-radius: clamp(12px, 3vmin, 20px);
   cursor: pointer;
   touch-action: manipulation;
-  transition: filter 0.1s, transform 0.1s, box-shadow 0.12s;
+  transition: filter 0.45s ease-out, transform 0.45s ease-out, box-shadow 0.45s ease-out;
   position: relative;
   overflow: hidden;
 }
@@ -110,7 +110,24 @@
 
 .pat-tile:active {
   filter: brightness(1.8);
-  transform: scale(1.05);
+  transform: scale(1.08);
+  transition: filter 0.05s, transform 0.05s, box-shadow 0.05s;
+}
+
+.pat-tile--0:active {
+  box-shadow: 0 0 30px rgba(255,100,100,0.6), 0 0 60px rgba(231,76,60,0.3);
+}
+
+.pat-tile--1:active {
+  box-shadow: 0 0 30px rgba(80,200,100,0.6), 0 0 60px rgba(46,204,113,0.3);
+}
+
+.pat-tile--2:active {
+  box-shadow: 0 0 30px rgba(80,130,255,0.6), 0 0 60px rgba(52,152,219,0.3);
+}
+
+.pat-tile--3:active {
+  box-shadow: 0 0 30px rgba(255,200,50,0.6), 0 0 60px rgba(243,156,18,0.3);
 }
 
 .dark .pat-tile--active {
@@ -131,6 +148,26 @@
 
 .dark .pat-tile--3.pat-tile--active {
   box-shadow: 0 0 40px rgba(255,200,30,0.7), 0 0 80px rgba(243,156,18,0.35);
+}
+
+.dark .pat-tile:active {
+  filter: brightness(2);
+}
+
+.dark .pat-tile--0:active {
+  box-shadow: 0 0 40px rgba(255,80,80,0.5), 0 0 80px rgba(231,76,60,0.25);
+}
+
+.dark .pat-tile--1:active {
+  box-shadow: 0 0 40px rgba(60,200,80,0.5), 0 0 80px rgba(46,204,113,0.25);
+}
+
+.dark .pat-tile--2:active {
+  box-shadow: 0 0 40px rgba(60,120,255,0.5), 0 0 80px rgba(52,152,219,0.25);
+}
+
+.dark .pat-tile--3:active {
+  box-shadow: 0 0 40px rgba(255,200,30,0.5), 0 0 80px rgba(243,156,18,0.25);
 }
 
 .pat-progress {
