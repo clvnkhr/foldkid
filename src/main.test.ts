@@ -8,6 +8,7 @@ import * as Bubbles from './games/bubbles'
 import * as Draw from './games/draw'
 import * as Memory from './games/memory'
 import * as MusicBox from './games/musicbox'
+import * as Rps from './games/rps/main'
 import { LANDING_GAME_COUNT, LANDING_GAMES } from './pages/landing'
 import { ApplyImport, ClickedLanding, ClickedCounter, ClickedFindIt, ClickedBubbles, ClickedDarkMode, ClickedMemory, ConfirmResetSettings, ExportSettings, ImportedSettings, LandingDragStarted, LandingDroppedOn, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsPersisted, ToggleMute } from './message'
 
@@ -121,6 +122,7 @@ describe('settings persistence', () => {
     { label: 'DrawSetIncludeNumbers', msg: Draw.SetIncludeNumbers({ value: false }) },
     { label: 'DrawSetIncludeLetters', msg: Draw.SetIncludeLetters({ value: false }) },
     { label: 'MemorySetEmojiPackEnabled', msg: Memory.SetEmojiPackEnabled({ key: 'numbers', value: false }) },
+    { label: 'RpsSetGigaChad', msg: Rps.SetGigaChad({ value: true }) },
     { label: 'MusicBoxSetDrumVolume', msg: MusicBox.SetDrumVolume({ value: 0.35 }) },
     { label: 'MusicBoxToggleSongVisibility', msg: MusicBox.ToggleSongVisibility({ index: 1 }) },
     { label: 'MusicBoxSongDroppedOn', msg: MusicBox.SongDroppedOn({ index: 1 }) },

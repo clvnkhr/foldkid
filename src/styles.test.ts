@@ -60,6 +60,9 @@ const generatedClassNames = new Set([
   'pat-tile--1',
   'pat-tile--2',
   'pat-tile--3',
+  'rps-result-text--win',
+  'rps-result-text--lose',
+  'rps-result-text--tie',
 ])
 
 const stripDataUrls = (css: string): string =>

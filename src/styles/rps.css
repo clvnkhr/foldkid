@@ -1,0 +1,135 @@
+.rps-score {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.rps-wr {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 400;
+}
+
+.rps-reset-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1.2rem;
+  padding: 0.1rem 0.3rem;
+  color: var(--text-secondary);
+  line-height: 1;
+  border-radius: 4px;
+  transition: color 0.15s;
+}
+
+.rps-reset-btn:hover {
+  color: var(--text-primary);
+}
+
+.rps-choices {
+  display: flex;
+  gap: 1rem;
+}
+
+.rps-choice-btn {
+  width: clamp(4rem, 15vmin, 6rem);
+  height: clamp(4rem, 15vmin, 6rem);
+  border-radius: 50%;
+  border: 3px solid var(--border-color, #cbd5e1);
+  background: var(--card-bg, #fff);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+
+.rps-choice-btn:hover {
+  transform: scale(1.1);
+  border-color: var(--accent-color, #667eea);
+  box-shadow: 0 0 12px rgba(102, 126, 234, 0.3);
+}
+
+.rps-choice-btn:active {
+  transform: scale(0.95);
+}
+
+.rps-choice-btn--selected {
+  border-color: var(--accent-color, #667eea);
+  box-shadow: 0 0 12px rgba(102, 126, 234, 0.3);
+}
+
+.rps-choice-emoji {
+  font-size: clamp(1.8rem, 6vmin, 2.8rem);
+}
+
+.rps-result {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.rps-result-choices {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.rps-result-pick {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.rps-result-emoji {
+  font-size: clamp(2rem, 8vmin, 3.5rem);
+}
+
+.rps-vs {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.rps-result-text {
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.rps-result-text--win {
+  color: #22c55e;
+}
+
+.rps-result-text--lose {
+  color: #ef4444;
+}
+
+.rps-result-text--tie {
+  color: var(--text-primary);
+}
+
+.rps-prompt {
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
+.dark .rps-choice-btn {
+  --border-color: #475569;
+  --card-bg: rgba(30, 30, 50, 0.95);
+}
+
+.dark .rps-choice-btn:hover {
+  border-color: #818cf8;
+  box-shadow: 0 0 12px rgba(129, 140, 248, 0.3);
+}

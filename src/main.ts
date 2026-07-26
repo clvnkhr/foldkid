@@ -2,9 +2,9 @@ import { Effect, Match as M, Option, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { Document, html } from 'foldkit/html'
 
-import { ApplyImport, CancelResetSettings, ClickedAudioTest, ClickedBubbles, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedLanding, ClickedDraw, ClickedMemory, ClickedMusicBox, ClickedPhonemeGarden, ClickedSpeakerCalculator, ClickedSettings, ClickedWhackamole, ClickedPattern, ConfirmResetSettings, CopyExportData, DismissMessage, ExportSettings, ImportSettings, ImportedSettings, LandingDragEnded, LandingDragStarted, LandingDroppedOn, LandingSettingsDragEnded, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, ResetSettings, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsDragEnded, SettingsDragMoved, SettingsDragStarted, SettingsImportFailed, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
+import { ApplyImport, CancelResetSettings, ClickedAudioTest, ClickedBubbles, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedLanding, ClickedDraw, ClickedMemory, ClickedMusicBox, ClickedPhonemeGarden, ClickedRps, ClickedSpeakerCalculator, ClickedSettings, ClickedWhackamole, ClickedPattern, ConfirmResetSettings, CopyExportData, DismissMessage, ExportSettings, ImportSettings, ImportedSettings, LandingDragEnded, LandingDragStarted, LandingDroppedOn, LandingSettingsDragEnded, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, ResetSettings, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsDragEnded, SettingsDragMoved, SettingsDragStarted, SettingsImportFailed, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
 
-import { Page, PageAudioTest, PageBubbles, PageCounter, PageFindIt, PageLanding, PageDraw, PageMemory, PageMusicBox, PagePhonemeGarden, PageSpeakerCalculator, PageWhackamole, PagePattern } from './route'
+import { Page, PageAudioTest, PageBubbles, PageCounter, PageFindIt, PageLanding, PageDraw, PageMemory, PageMusicBox, PagePhonemeGarden, PageRps, PageSpeakerCalculator, PageWhackamole, PagePattern } from './route'
 
 import * as FindIt from './games/findit'
 import * as MusicBox from './games/musicbox'
@@ -16,6 +16,7 @@ import * as PhonemeGarden from './games/phonemeGarden'
 import * as SpeakerCalculator from './games/speakerCalculator/main'
 import * as Whackamole from './games/whackamole/main'
 import * as Pattern from './games/pattern/main'
+import * as Rps from './games/rps/main'
 import { LANDING_GAME_COUNT, LANDING_GAMES, view as landingView } from './pages/landing'
 import { view as audioTestView } from './pages/audiotest'
 import { Language, normalizeLanguage, t, tf } from './i18n'
@@ -61,6 +62,7 @@ const PersistedSettingsSchema = S.Struct({
   drawIncludePairs: S.optionalKey(S.Boolean),
   drawIncludeNumbers: S.optionalKey(S.Boolean),
   drawIncludeLetters: S.optionalKey(S.Boolean),
+  rpsGigaChad: S.optionalKey(S.Boolean),
   memoryEnabledPacks: S.optionalKey(S.Array(FindIt.EmojiPackKey)),
   musicBoxSongOrder: S.optionalKey(S.Array(S.Number)),
   musicBoxHiddenSongs: S.optionalKey(S.Array(S.Boolean)),
@@ -160,6 +162,7 @@ const buildSettingsData = (model: Model): PersistedSettings => ({
   drawIncludePairs: model.draw.includePairs,
   drawIncludeNumbers: model.draw.includeNumbers,
   drawIncludeLetters: model.draw.includeLetters,
+  rpsGigaChad: model.rps.gigaChad,
   memoryEnabledPacks: model.memory.enabledPacks,
   musicBoxSongOrder: model.musicBox.songOrder,
   musicBoxHiddenSongs: model.musicBox.hiddenSongs,
@@ -212,6 +215,7 @@ export const Model = S.Struct({
   speakerCalculator: SpeakerCalculator.Model,
   whackamole: Whackamole.Model,
   pattern: Pattern.Model,
+  rps: Rps.Model,
   settingsPanelWidth: S.Number,
   isDraggingSettings: S.Boolean,
   settingsDragStartMouseX: S.Number,
@@ -248,6 +252,7 @@ export const Message = S.Union([
   ClickedSpeakerCalculator,
   ClickedWhackamole,
   ClickedPattern,
+  ClickedRps,
   LandingDragStarted,
   LandingDroppedOn,
   LandingDragEnded,
@@ -330,6 +335,10 @@ export const Message = S.Union([
   Pattern.SoundPlayed,
   Pattern.ShowTile,
   Pattern.StartPlaying,
+  Rps.Picked,
+  Rps.StartGame,
+  Rps.SoundPlayed,
+  Rps.SetGigaChad,
   MusicBox.Play,
   MusicBox.Stop,
   MusicBox.SetSong,
@@ -436,6 +445,7 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
       speakerCalculator: SpeakerCalculator.init,
       whackamole: Whackamole.init,
       pattern: Pattern.init,
+      rps: Rps.init,
       settingsPanelWidth: 150,
       isDraggingSettings: false,
       settingsDragStartMouseX: 0,
@@ -527,6 +537,14 @@ const updatePattern = (
   return [{ ...model, pattern: next }, cmds]
 }
 
+const updateRps = (
+  model: Model,
+  message: Rps.Message,
+): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
+  const [next, cmds] = Rps.update(model.rps, message, model.muted)
+  return [{ ...model, rps: next }, cmds]
+}
+
 const updateSpeakerCalculator = (
   model: Model,
   message: SpeakerCalculator.Message,
@@ -595,6 +613,10 @@ const applyImportData = (model: Model, s: PersistedSettings): Model => {
     memory: s.memoryEnabledPacks === undefined
       ? model.memory
       : Memory.init(s.memoryEnabledPacks),
+    rps: {
+      ...model.rps,
+      gigaChad: s.rpsGigaChad ?? model.rps.gigaChad,
+    },
     phonemeGarden: model.phonemeGarden,
     musicBox: {
       ...model.musicBox,
@@ -683,6 +705,7 @@ const _update = (
       ClickedSpeakerCalculator: () => [{ ...model, page: PageSpeakerCalculator() }, []],
       ClickedWhackamole: () => [{ ...model, page: PageWhackamole() }, []],
       ClickedPattern: () => [{ ...model, page: PagePattern() }, []],
+      ClickedRps: () => [{ ...model, page: PageRps() }, []],
       LandingDragStarted: (msg) => [{ ...model, landingDragIndex: msg.index }, []],
       LandingDroppedOn: (msg) => {
         if (model.landingDragIndex < 0 || model.landingDragIndex === msg.index) return [{ ...model, landingDragIndex: -1 }, []]
@@ -792,6 +815,10 @@ const _update = (
       PatSoundPlayed: (msg) => updatePattern(model, msg),
       PatShowTile: (msg) => updatePattern(model, msg),
       PatStartPlaying: (msg) => updatePattern(model, msg),
+      RpsPicked: (msg) => updateRps(model, msg),
+      RpsStartGame: (msg) => updateRps(model, msg),
+      RpsSoundPlayed: (msg) => updateRps(model, msg),
+      RpsSetGigaChad: (msg) => updateRps(model, msg),
       MusicBoxPlay: (msg) => updateMusicBox(model, msg),
       MusicBoxStop: (msg) => updateMusicBox(model, msg),
       MusicBoxSetSong: (msg) => updateMusicBox(model, msg),
@@ -872,7 +899,7 @@ export const PERSISTED_SETTINGS_MESSAGE_TAGS = [
   'FindItSetAnyWins', 'FindItSetVoiceMode', 'FindItSetPairsMode', 'FindItSetEmojiPackEnabled',
   'BubblesSetPopLabel', 'BubblesSetSayColor',
   'DrawSetTopN', 'DrawSetRecognitionMode', 'DrawSetTargetOrderMode', 'DrawSetFreeMode', 'DrawSetIncludeSingle', 'DrawSetIncludePairs', 'DrawSetIncludeNumbers', 'DrawSetIncludeLetters',
-  'MemorySetEmojiPackEnabled',
+  'MemorySetEmojiPackEnabled', 'RpsSetGigaChad',
   'MusicBoxSetDrumVolume', 'MusicBoxToggleSongVisibility', 'MusicBoxSongDroppedOn',
   'LandingSettingsDroppedOn', 'LandingToggleGameVisibility',
 ] as const satisfies ReadonlyArray<Message['_tag']>
@@ -914,6 +941,7 @@ const pageTitle = (model: Model): string =>
       PageSpeakerCalculator: () => t('calculatorTitle', model.language),
       PageWhackamole: () => t('pageTitleWhackamole', model.language),
       PagePattern: () => t('pageTitlePattern', model.language),
+      PageRps: () => t('pageTitleRps', model.language),
     }),
   )
 
@@ -1260,6 +1288,21 @@ export const view = (model: Model): Document => {
               ]),
             ])
             : null,
+          model.page._tag === 'PageRps'
+            ? h.div([h.Class('setting-section')], [
+              h.h3([], [t('rpsTitle', model.language)]),
+              h.div([h.Class('lang-buttons')], [
+                h.button(
+                  [h.Class(!model.rps.gigaChad ? 'btn btn-primary' : 'btn btn-secondary'), settingsOnClick(Rps.SetGigaChad({ value: false }))],
+                  ['Normal'],
+                ),
+                h.button(
+                  [h.Class(model.rps.gigaChad ? 'btn btn-primary' : 'btn btn-secondary'), settingsOnClick(Rps.SetGigaChad({ value: true }))],
+                  [t('rpsGigaChad', model.language)],
+                ),
+              ]),
+            ])
+            : null,
           model.page._tag === 'PageMemory'
             ? h.div([h.Class('setting-section')], [
               h.h3([], [t('memoryCardsTitle', model.language)]),
@@ -1439,8 +1482,9 @@ export const view = (model: Model): Document => {
               PageAudioTest: () => audioTestView(model.language),
               PageSpeakerCalculator: () => SpeakerCalculator.view(model.speakerCalculator, model.language),
               PageWhackamole: () => Whackamole.view(model.whackamole, model.language),
-              PagePattern: () => Pattern.view(model.pattern, model.language),
-            }),
+      PagePattern: () => Pattern.view(model.pattern, model.language),
+      PageRps: () => Rps.view(model.rps, model.language),
+    }),
           ),
           model.settingsOverlay
             ? h.div([
