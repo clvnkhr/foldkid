@@ -176,7 +176,7 @@ export const view = (model: Model, language: string = 'en'): Html => {
               ...Array.from({ length: HOLE_COUNT }, (_, i) => {
                 const type = model.holes[i] ?? 0
                 return h.div(
-                  [h.Class(moleClass(type)), h.OnTouchStart(ClickedHole({ index: i }))],
+                  [h.Class(moleClass(type)), h.OnTouchEnd(ClickedHole({ index: i }))],
                   [
                     h.div([h.Class('whack-hole')], []),
                     type > 0

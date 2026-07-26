@@ -301,7 +301,7 @@ export const view = (model: Model, language: string = 'en') => {
                     h.AllowDrop(),
                     h.OnDrop(GridDroppedOn({ index: i })),
                     h.OnDragEnd(GridDragEnded()),
-                    h.OnTouchStart(ClickedCell({ id: cell.id })),
+                    h.OnTouchEnd(ClickedCell({ id: cell.id })),
                     h.Key(cell.id.toString() + (model.shaking === cell.id ? 's' + model.shakeTick : '')),
                   ],
                   [cell.emoji],
@@ -327,7 +327,7 @@ export const view = (model: Model, language: string = 'en') => {
             h.p([h.Class('collection-label')], [t('collection', language)]),
             h.div([h.Class('collection-grid')], [
               ...model.found.map((e, i) =>
-                h.span([h.Class('collection-emoji'), h.Key(e), h.Attribute('draggable', 'true'), h.OnDragStart(SetDragIndex({ index: i })), h.AllowDrop(), h.OnDrop(DroppedOn({ index: i })), h.OnDragEnd(DragEnded()), h.OnTouchStart(ClickedCollectionEmoji({ emoji: e }))], [e]),
+                h.span([h.Class('collection-emoji'), h.Key(e), h.Attribute('draggable', 'true'), h.OnDragStart(SetDragIndex({ index: i })), h.AllowDrop(), h.OnDrop(DroppedOn({ index: i })), h.OnDragEnd(DragEnded()), h.OnTouchEnd(ClickedCollectionEmoji({ emoji: e }))], [e]),
               ),
             ]),
           ]),

@@ -13,6 +13,10 @@ export const resetContext = (): void => {
   MutableRef.set(sharedCtx, undefined)
 }
 
+// NOTE (iOS Safari): AudioContext.resume() and osc.start() only actually
+// produce sound when triggered by a qualifying user gesture. Use `OnTouchEnd`
+// or `OnPointerUp` (not `OnTouchStart`/`OnPointerDown`) for game interactions
+// that call any function in this module.
 export const getContext = (): AudioContext | undefined => {
   let ctx = MutableRef.get(sharedCtx)
   if (ctx && isRetiredContext(ctx)) {
