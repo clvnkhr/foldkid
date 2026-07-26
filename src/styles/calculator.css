@@ -24,13 +24,14 @@
 }
 
 .calc-display-text {
+  flex: 1;
+  min-width: 0;
   font-size: clamp(0.55rem, calc((100cqw - 2.8rem) / var(--n, 10) * 1.7), 2.6rem);
   font-weight: 800;
   color: #fff;
   font-family: 'Courier New', monospace;
   text-align: right;
   white-space: nowrap;
-  max-width: 100%;
   position: relative;
   z-index: 1;
 }
