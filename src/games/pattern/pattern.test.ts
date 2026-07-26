@@ -7,6 +7,7 @@ const resolveAscend = [{ name: 'PlayAscend' }, SoundPlayed()] as const
 const resolveDescend = [{ name: 'PlayDescend' }, SoundPlayed()] as const
 const resolveCorrect = [{ name: 'PlayCorrect' }, SoundPlayed()] as const
 const resolveTile0 = [{ name: 'PlayTile0' }, SoundPlayed()] as const
+const resolveTile1 = [{ name: 'PlayTile1' }, SoundPlayed()] as const
 const resolveTile2 = [{ name: 'PlayTile2' }, SoundPlayed()] as const
 
 const showingWithSeq = (seq: number[], showIdx = -1) => ({
@@ -127,6 +128,27 @@ describe('Pattern', () => {
         expect(model.gameState).toBe('playing')
       }),
       Story.Command.resolveAll(resolveTile0),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('processes consecutive taps without delay between them', () => {
+    const play = playingWithSeq([0, 1, 0])
+    Story.story(
+      update,
+      Story.with(play),
+      Story.message(ClickedTile({ index: 0 })),
+      Story.model((model) => {
+        expect(model.playerIndex).toBe(1)
+        expect(model.gameState).toBe('playing')
+      }),
+      Story.Command.resolveAll(resolveTile0),
+      Story.message(ClickedTile({ index: 1 })),
+      Story.model((model) => {
+        expect(model.playerIndex).toBe(2)
+        expect(model.gameState).toBe('playing')
+      }),
+      Story.Command.resolveAll(resolveTile1),
       Story.Command.expectNone(),
     )
   })

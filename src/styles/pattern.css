@@ -46,7 +46,7 @@
   border-radius: clamp(12px, 3vmin, 20px);
   cursor: pointer;
   touch-action: manipulation;
-  transition: filter 0.45s ease-out, transform 0.45s ease-out, box-shadow 0.45s ease-out;
+  transition: filter 0.1s ease-out, transform 0.1s ease-out, box-shadow 0.1s ease-out;
   position: relative;
   overflow: hidden;
 }
