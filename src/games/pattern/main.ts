@@ -44,6 +44,7 @@ const genSeq = (len: number): number[] =>
 
 const TILE_FREQUENCIES = [523, 659, 784, 1047]
 const TILE_FLASH_MS = 500
+const DELAY_BEFORE_SHOW_MS = 300
 
 const ascend = <Msg>(msg: Msg) => ({
   name: 'PlayAscend' as const,
@@ -85,7 +86,7 @@ const buildShowCommands = (seq: number[], muted: boolean): ReadonlyArray<Command
     cmds.push({
       name: `ShowTile${i}` as const,
       effect: pipe(
-        Effect.sleep(i * TILE_FLASH_MS),
+        Effect.sleep(DELAY_BEFORE_SHOW_MS + i * TILE_FLASH_MS),
         Effect.flatMap(() => muted ? Effect.void : playTone(TILE_FREQUENCIES[tile]!, 0.15, 'sine')),
         Effect.as(ShowTile({ idx: i })),
       ),
@@ -94,7 +95,7 @@ const buildShowCommands = (seq: number[], muted: boolean): ReadonlyArray<Command
   cmds.push({
     name: 'StartPlaying' as const,
     effect: pipe(
-      Effect.sleep(seq.length * TILE_FLASH_MS),
+      Effect.sleep(DELAY_BEFORE_SHOW_MS + seq.length * TILE_FLASH_MS),
       Effect.as(StartPlaying()),
     ),
   })
