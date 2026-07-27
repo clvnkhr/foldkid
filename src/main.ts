@@ -2,9 +2,9 @@ import { Effect, Match as M, Option, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { Document, html } from 'foldkit/html'
 
-import { ApplyImport, CancelResetSettings, ClickedAudioTest, ClickedBubbles, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedLanding, ClickedDraw, ClickedMemory, ClickedMusicBox, ClickedPhonemeGarden, ClickedRps, ClickedSpeakerCalculator, ClickedSettings, ClickedWhackamole, ClickedPattern, ConfirmResetSettings, CopyExportData, DismissMessage, ExportSettings, ImportSettings, ImportedSettings, LandingDragEnded, LandingDragStarted, LandingDroppedOn, LandingSettingsDragEnded, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, ResetSettings, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsDragEnded, SettingsDragMoved, SettingsDragStarted, SettingsImportFailed, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
+import { ApplyImport, CancelResetSettings, ClickedAudioTest, ClickedBsl, ClickedBubbles, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedLanding, ClickedDraw, ClickedMemory, ClickedMusicBox, ClickedPhonemeGarden, ClickedRps, ClickedSpeakerCalculator, ClickedSettings, ClickedWhackamole, ClickedPattern, ConfirmResetSettings, CopyExportData, DismissMessage, ExportSettings, ImportSettings, ImportedSettings, LandingDragEnded, LandingDragStarted, LandingDroppedOn, LandingSettingsDragEnded, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, ResetSettings, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsDragEnded, SettingsDragMoved, SettingsDragStarted, SettingsImportFailed, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
 
-import { Page, PageAudioTest, PageBubbles, PageCounter, PageFindIt, PageLanding, PageDraw, PageMemory, PageMusicBox, PagePhonemeGarden, PageRps, PageSpeakerCalculator, PageWhackamole, PagePattern } from './route'
+import { Page, PageAudioTest, PageBsl, PageBubbles, PageCounter, PageFindIt, PageLanding, PageDraw, PageMemory, PageMusicBox, PagePhonemeGarden, PageRps, PageSpeakerCalculator, PageWhackamole, PagePattern } from './route'
 
 import * as FindIt from './games/findit'
 import * as MusicBox from './games/musicbox'
@@ -16,6 +16,7 @@ import * as PhonemeGarden from './games/phonemeGarden'
 import * as SpeakerCalculator from './games/speakerCalculator/main'
 import * as Whackamole from './games/whackamole/main'
 import * as Pattern from './games/pattern/main'
+import * as Bsl from './games/bsl/main'
 import * as Rps from './games/rps/main'
 import { LANDING_GAME_COUNT, LANDING_GAMES, view as landingView } from './pages/landing'
 import { view as audioTestView } from './pages/audiotest'
@@ -215,6 +216,7 @@ export const Model = S.Struct({
   speakerCalculator: SpeakerCalculator.Model,
   whackamole: Whackamole.Model,
   pattern: Pattern.Model,
+  bsl: Bsl.Model,
   rps: Rps.Model,
   settingsPanelWidth: S.Number,
   isDraggingSettings: S.Boolean,
@@ -252,6 +254,7 @@ export const Message = S.Union([
   ClickedSpeakerCalculator,
   ClickedWhackamole,
   ClickedPattern,
+  ClickedBsl,
   ClickedRps,
   LandingDragStarted,
   LandingDroppedOn,
@@ -339,6 +342,10 @@ export const Message = S.Union([
   Rps.StartGame,
   Rps.SoundPlayed,
   Rps.SetGigaChad,
+  Bsl.ClickedLetter,
+  Bsl.ClickedReset,
+  Bsl.NextRound,
+  Bsl.SoundPlayed,
   MusicBox.Play,
   MusicBox.Stop,
   MusicBox.SetSong,
@@ -445,6 +452,7 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
       speakerCalculator: SpeakerCalculator.init,
       whackamole: Whackamole.init,
       pattern: Pattern.init,
+      bsl: Bsl.init(),
       rps: Rps.init,
       settingsPanelWidth: 150,
       isDraggingSettings: false,
@@ -543,6 +551,14 @@ const updateRps = (
 ): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
   const [next, cmds] = Rps.update(model.rps, message, model.muted)
   return [{ ...model, rps: next }, cmds]
+}
+
+const updateBsl = (
+  model: Model,
+  message: Bsl.Message,
+): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
+  const [next, cmds] = Bsl.update(model.bsl, message, model.muted, model.language)
+  return [{ ...model, bsl: next }, cmds]
 }
 
 const updateSpeakerCalculator = (
@@ -705,6 +721,7 @@ const _update = (
       ClickedSpeakerCalculator: () => [{ ...model, page: PageSpeakerCalculator() }, []],
       ClickedWhackamole: () => [{ ...model, page: PageWhackamole() }, []],
       ClickedPattern: () => [{ ...model, page: PagePattern() }, []],
+      ClickedBsl: () => [{ ...model, page: PageBsl() }, []],
       ClickedRps: () => [{ ...model, page: PageRps() }, []],
       LandingDragStarted: (msg) => [{ ...model, landingDragIndex: msg.index }, []],
       LandingDroppedOn: (msg) => {
@@ -819,6 +836,10 @@ const _update = (
       RpsStartGame: (msg) => updateRps(model, msg),
       RpsSoundPlayed: (msg) => updateRps(model, msg),
       RpsSetGigaChad: (msg) => updateRps(model, msg),
+      BslClickedLetter: (msg) => updateBsl(model, msg),
+      BslClickedReset: (msg) => updateBsl(model, msg),
+      BslNextRound: (msg) => updateBsl(model, msg),
+      BslSoundPlayed: (msg) => updateBsl(model, msg),
       MusicBoxPlay: (msg) => updateMusicBox(model, msg),
       MusicBoxStop: (msg) => updateMusicBox(model, msg),
       MusicBoxSetSong: (msg) => updateMusicBox(model, msg),
@@ -941,6 +962,7 @@ const pageTitle = (model: Model): string =>
       PageSpeakerCalculator: () => t('calculatorTitle', model.language),
       PageWhackamole: () => t('pageTitleWhackamole', model.language),
       PagePattern: () => t('pageTitlePattern', model.language),
+      PageBsl: () => t('pageTitleBsl', model.language),
       PageRps: () => t('pageTitleRps', model.language),
     }),
   )
@@ -1288,7 +1310,12 @@ export const view = (model: Model): Document => {
               ]),
             ])
             : null,
-          model.page._tag === 'PageRps'
+          model.page._tag === 'PageBsl'
+    ? h.div([h.Class('setting-section')], [
+      h.h3([], [t('bslTitle', model.language)]),
+    ])
+    : null,
+  model.page._tag === 'PageRps'
             ? h.div([h.Class('setting-section')], [
               h.h3([], [t('rpsTitle', model.language)]),
               h.div([h.Class('lang-buttons')], [
@@ -1483,6 +1510,7 @@ export const view = (model: Model): Document => {
               PageSpeakerCalculator: () => SpeakerCalculator.view(model.speakerCalculator, model.language),
               PageWhackamole: () => Whackamole.view(model.whackamole, model.language),
       PagePattern: () => Pattern.view(model.pattern, model.language),
+      PageBsl: () => Bsl.view(model.bsl, model.language),
       PageRps: () => Rps.view(model.rps, model.language),
     }),
           ),

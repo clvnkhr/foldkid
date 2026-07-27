@@ -13,6 +13,7 @@ export const PageAudioTest = ts('PageAudioTest')
 export const PageSpeakerCalculator = ts('PageSpeakerCalculator')
 export const PageWhackamole = ts('PageWhackamole')
 export const PagePattern = ts('PagePattern')
+export const PageBsl = ts('PageBsl')
 export const PageRps = ts('PageRps')
 
 export const Page = S.Union([
@@ -28,6 +29,7 @@ export const Page = S.Union([
   PageSpeakerCalculator,
   PageWhackamole,
   PagePattern,
+  PageBsl,
   PageRps,
 ])
 export type Page = typeof Page.Type
