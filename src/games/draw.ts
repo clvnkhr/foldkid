@@ -38,7 +38,7 @@ const DEFAULT_INCLUDE_SINGLE = true
 const DEFAULT_INCLUDE_PAIRS = true
 const DEFAULT_INCLUDE_NUMBERS = true
 const DEFAULT_INCLUDE_LETTERS = true
-export const INK_COLORS = ['#161616', '#e03131', '#f08c00', '#2f9e44', '#1971c2', '#9c36b5'] as const
+export const INK_COLORS = ['#161616', '#e03131', '#f08c00', '#fcc419', '#2f9e44', '#1971c2', '#7048e8', '#9c36b5'] as const
 const DEFAULT_INK_COLOR = INK_COLORS[0]
 const OCR_CANDIDATES = [...MODEL_LABELS, '+', '-', '=', '?', '!', '@', '$', '%']
 const ALLOWED_TARGETS = new Set(MODEL_LABELS)
