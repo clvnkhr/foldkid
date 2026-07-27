@@ -14,6 +14,7 @@ import { ApplyImport, ClickedLanding, ClickedCounter, ClickedFindIt, ClickedBubb
 
 const resolveSettings = [{ name: 'PersistSettings' }, SettingsPersisted()] as const
 const resolveBubblesChime = [{ name: 'PlayChime' }, Bubbles.SoundPlayed()] as const
+const resolveBubblesSpeak = [{ name: 'Speak' }, Bubbles.SoundPlayed()] as const
 const STORAGE_KEY = 'foldkid-settings'
 const segmentEmoji = (emoji: string): string[] =>
   [...new Intl.Segmenter().segment(emoji)].map(segment => segment.segment)
@@ -130,7 +131,7 @@ describe('settings persistence', () => {
     { label: 'LandingToggleGameVisibility', msg: LandingToggleGameVisibility({ index: 1 }) },
   ]
 
-  const nonSettingsMessages: Array<{ label: string; msg: Main.Message; resolves?: readonly [{ readonly name: string }, Main.Message] }> = [
+  const nonSettingsMessages: Array<{ label: string; msg: Main.Message; resolves?: ReadonlyArray<readonly [{ readonly name: string }, Main.Message]> }> = [
     { label: 'ClickedLanding', msg: ClickedLanding() },
     { label: 'ClickedCounter', msg: ClickedCounter() },
     { label: 'ClickedFindIt', msg: ClickedFindIt() },
@@ -140,7 +141,7 @@ describe('settings persistence', () => {
     { label: 'FindItClickedCell', msg: FindIt.ClickedCell({ id: 0 }) },
     { label: 'BubblesClickedPop', msg: Bubbles.ClickedPop({ id: 0 }) },
     { label: 'MemoryClickedCard', msg: Memory.ClickedCard({ id: 0 }) },
-    { label: 'BubblesClickedColor', msg: Bubbles.ClickedColor({ color: 'rainbow', duration: 500 }), resolves: resolveBubblesChime },
+    { label: 'BubblesClickedColor', msg: Bubbles.ClickedColor({ color: 'rainbow', duration: 500 }), resolves: [resolveBubblesChime, resolveBubblesSpeak] },
     { label: 'BubblesSetRainbowMode', msg: Bubbles.SetRainbowMode({ value: true }) },
     { label: 'MusicBoxNoteOn', msg: MusicBox.NoteOn({ pitch: 'C4' }) },
     { label: 'MusicBoxSetBottomPanelMode', msg: MusicBox.SetBottomPanelMode({ value: 'drums' }) },
@@ -172,7 +173,7 @@ describe('settings persistence', () => {
           Main.update,
           Story.with(createModel()),
           Story.message(msg),
-          Story.Command.resolveAll(resolves),
+          Story.Command.resolveAll(...resolves),
           Story.Command.expectNone(),
         )
       } else {

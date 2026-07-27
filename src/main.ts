@@ -501,7 +501,7 @@ const updateBubbles = (
   model: Model,
   message: Bubbles.Message,
 ): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
-  const [next, cmds] = Bubbles.update(model.bubbles, message, model.muted)
+  const [next, cmds] = Bubbles.update(model.bubbles, message, model.muted, model.language)
   return [{ ...model, bubbles: next }, cmds]
 }
 

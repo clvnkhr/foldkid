@@ -3,6 +3,7 @@ import { Command } from 'foldkit'
 import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
 import { pop, chime, swoosh } from '../audio'
+import { speak } from '../speech'
 import { t, tf, type StringKey } from '../i18n'
 
 const Bubble = S.Struct({ id: S.Number, color: S.String, popped: S.Boolean, size: S.Number })
@@ -29,6 +30,18 @@ const COLOR_NAME_KEYS: Record<string, StringKey> = {
 const getColorName = (color: string): StringKey => COLOR_NAME_KEYS[color] ?? 'colorRainbow'
 
 const isPointerDown = MutableRef.make(false)
+const MIN_BUBBLE_BASE = 40
+
+let poofContainer: HTMLElement | null = null
+const getPoofContainer = (): HTMLElement => {
+  if (!poofContainer || !poofContainer.isConnected) {
+    const c = document.createElement('div')
+    c.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:998;contain:strict'
+    document.body.appendChild(c)
+    poofContainer = c
+  }
+  return poofContainer
+}
 
 export const Model = S.Struct({ bubbles: S.Array(Bubble), score: S.Number, nextId: S.Number, rainbowMode: S.Boolean, popLabel: S.Boolean, sayColor: S.Boolean, selectedColor: S.String })
 export type Model = typeof Model.Type
@@ -48,133 +61,120 @@ export const init = (): Model => ({ bubbles: [], score: 0, nextId: 0, rainbowMod
 
 const poof = (cx: number, cy: number, w: number, color: string, popLabelText: string): void => {
   const s = w / 16
-  const count = Math.max(6, Math.floor(w / 8))
-  const duration = 300 + w * 1.5
+  const count = Math.max(4, Math.floor(w / 12))
+  const flashDuration = (300 + w * 1.5) * 0.4
+  const burstDuration = (300 + w * 1.5) * 0.6
   const isRainbow = color.startsWith('linear-gradient')
   const pickColor = () => isRainbow ? RAINBOW_COLORS[Math.floor(Math.random() * RAINBOW_COLORS.length)]! : color
 
+  const container = getPoofContainer()
+  const frag = document.createDocumentFragment()
+  const anims: Animation[] = []
+
+  const createParticle = (
+    size: number, left: number, top: number, bg: string, z: number,
+    keyframes: Keyframe[], options: KeyframeAnimationOptions,
+  ): void => {
+    const p = document.createElement('div')
+    p.style.cssText = `position:fixed;left:${left}px;top:${top}px;width:${size}px;height:${size}px;border-radius:50%;background:${bg};pointer-events:none;z-index:${z};contain:strict;will-change:transform,opacity`
+    frag.appendChild(p)
+    anims.push(p.animate(keyframes, options))
+  }
+
   // Center flash
-  const flash = document.createElement('div')
   const flashSize = w * 2
-  flash.style.cssText = [
-    'position:fixed',
-    `left:${cx - flashSize / 2}px`,
-    `top:${cy - flashSize / 2}px`,
-    `width:${flashSize}px`,
-    `height:${flashSize}px`,
-    'border-radius:50%',
-    `background:radial-gradient(circle, rgba(255,255,255,0.7) 0%, ${pickColor()} 50%, transparent 70%)`,
-    'pointer-events:none',
-    'z-index:999',
-  ].join(';')
-  document.body.appendChild(flash)
-  flash.animate([
-    { transform: 'scale(0.3)', opacity: 0.8 },
-    { transform: 'scale(1.5)', opacity: 0 },
-  ], { duration: duration * 0.4, easing: 'ease-out', fill: 'forwards' })
-    .onfinish = () => flash.remove()
+  createParticle(
+    flashSize, cx - flashSize / 2, cy - flashSize / 2,
+    `radial-gradient(circle, rgba(255,255,255,0.7) 0%, ${pickColor()} 50%, transparent 70%)`,
+    999,
+    [{ transform: 'scale(0.3)', opacity: 0.8 }, { transform: 'scale(1.5)', opacity: 0 }],
+    { duration: flashDuration, easing: 'ease-out', fill: 'forwards' },
+  )
 
   // Primary burst
   for (let i = 0; i < count; i++) {
-    const p = document.createElement('div')
     const ps = (3 + Math.random() * 5) * s
     const angle = Math.random() * Math.PI * 2
     const dist = (20 + Math.random() * 45) * s
-    const drift = duration * 0.6 + Math.random() * duration * 0.4
-    const pc = pickColor()
-    p.style.cssText = [
-      `position:fixed`,
-      `left:${cx - ps / 2}px`,
-      `top:${cy - ps / 2}px`,
-      `width:${ps}px`,
-      `height:${ps}px`,
-      `border-radius:50%`,
-      `background:${pc}`,
-      `pointer-events:none`,
-      `z-index:1000`,
-    ].join(';')
-    document.body.appendChild(p)
-    p.animate([
-      { transform: 'translate(0,0) scale(1)', opacity: 1 },
-      { transform: `translate(${Math.cos(angle) * dist}px,${Math.sin(angle) * dist}px) scale(0.15)`, opacity: 0 },
-    ], { duration: drift, easing: 'ease-out', fill: 'forwards' })
-      .onfinish = () => p.remove()
+    const drift = burstDuration * 0.4 + Math.random() * burstDuration * 0.6
+    const dx = Math.cos(angle) * dist
+    const dy = Math.sin(angle) * dist
+    createParticle(
+      ps, cx - ps / 2, cy - ps / 2, pickColor(), 1000,
+      [
+        { transform: 'translate(0,0) scale(1)', opacity: 1 },
+        { transform: `translate(${dx}px,${dy}px) scale(0.15)`, opacity: 0 },
+      ],
+      { duration: drift, easing: 'ease-out', fill: 'forwards' },
+    )
   }
 
-  // Secondary splash — smaller, faster fragments
-  const splashCount = Math.max(4, Math.floor(w / 12))
+  // Secondary splash
+  const splashCount = Math.max(3, Math.floor(w / 20))
   for (let i = 0; i < splashCount; i++) {
-    const p = document.createElement('div')
     const ps = (1.5 + Math.random() * 2.5) * s
     const angle = Math.random() * Math.PI * 2
     const dist = (30 + Math.random() * 50) * s
-    const hueShift = Math.random() > 0.5 ? `rgba(255,255,255,0.6)` : pickColor()
-    p.style.cssText = [
-      `position:fixed`,
-      `left:${cx - ps / 2}px`,
-      `top:${cy - ps / 2}px`,
-      `width:${ps}px`,
-      `height:${ps}px`,
-      `border-radius:50%`,
-      `background:${hueShift}`,
-      `pointer-events:none`,
-      `z-index:1001`,
-    ].join(';')
-    document.body.appendChild(p)
-    p.animate([
-      { transform: 'translate(0,0) scale(1)', opacity: 1 },
-      { transform: `translate(${Math.cos(angle) * dist}px,${Math.sin(angle) * dist}px) scale(0.1)`, opacity: 0 },
-    ], { duration: 150 + Math.random() * 100, easing: 'ease-out', fill: 'forwards' })
-      .onfinish = () => p.remove()
+    const dx = Math.cos(angle) * dist
+    const dy = Math.sin(angle) * dist
+    const hueShift = Math.random() > 0.5 ? 'rgba(255,255,255,0.6)' : pickColor()
+    createParticle(
+      ps, cx - ps / 2, cy - ps / 2, hueShift, 1001,
+      [
+        { transform: 'translate(0,0) scale(1)', opacity: 1 },
+        { transform: `translate(${dx}px,${dy}px) scale(0.1)`, opacity: 0 },
+      ],
+      { duration: 150 + Math.random() * 100, easing: 'ease-out', fill: 'forwards' },
+    )
   }
 
   // Sparkle particles
   for (let i = 0; i < 3; i++) {
-    const sp = document.createElement('div')
     const sps = 4 + Math.random() * 4
     const angle = Math.random() * Math.PI * 2
     const dist = 40 + Math.random() * 50
-    sp.style.cssText = [
-      'position:fixed',
-      `left:${cx - sps / 2}px`,
-      `top:${cy - sps / 2}px`,
-      `width:${sps}px`,
-      `height:${sps}px`,
-      'border-radius:50%',
-      'background:white',
-      'box-shadow:0 0 6px 2px rgba(255,255,255,0.8)',
-      'pointer-events:none',
-      'z-index:1002',
-    ].join(';')
-    document.body.appendChild(sp)
-    sp.animate([
-      { transform: 'translate(0,0) scale(1)', opacity: 1 },
-      { transform: `translate(${Math.cos(angle) * dist}px,${Math.sin(angle) * dist}px) scale(0.3)`, opacity: 0 },
-    ], { duration: 250 + Math.random() * 200, easing: 'ease-out', fill: 'forwards' })
-      .onfinish = () => sp.remove()
+    const dx = Math.cos(angle) * dist
+    const dy = Math.sin(angle) * dist
+    createParticle(
+      sps, cx - sps / 2, cy - sps / 2,
+      'white', 1002,
+      [
+        { transform: 'translate(0,0) scale(1)', opacity: 1 },
+        { transform: `translate(${dx}px,${dy}px) scale(0.3)`, opacity: 0 },
+      ],
+      { duration: 250 + Math.random() * 200, easing: 'ease-out', fill: 'forwards' },
+    )
   }
 
   // Score popup or pop label
   if (popLabelText) {
-    const popup = document.createElement('div')
-    popup.textContent = popLabelText
-    popup.style.cssText = [
-      'position:fixed',
-      `left:${cx - 15}px`,
-      `top:${cy - 15}px`,
-      'font-size:1.5rem',
-      'font-weight:700',
-      'color:#FFD700',
-      'text-shadow:0 1px 3px rgba(0,0,0,0.4)',
-      'pointer-events:none',
-      'z-index:1003',
-    ].join(';')
-    document.body.appendChild(popup)
-    popup.animate([
-      { transform: 'translateY(0) scale(1)', opacity: 1 },
-      { transform: 'translateY(-50px) scale(1.4)', opacity: 0 },
-    ], { duration: 700, easing: 'ease-out', fill: 'forwards' })
-      .onfinish = () => popup.remove()
+    createParticle(
+      0, cx - 15, cy - 15, 'transparent', 1003,
+      [
+        { transform: 'translateY(0) scale(1)', opacity: 1 },
+        { transform: 'translateY(-50px) scale(1.4)', opacity: 0 },
+      ],
+      { duration: 700, easing: 'ease-out', fill: 'forwards' },
+    )
+    // Set text on the last created element (the popup)
+    const popup = container.querySelector(':scope > :last-child') as HTMLElement | null
+    if (popup) {
+      popup.textContent = popLabelText
+      popup.style.cssText += ';font-size:1.5rem;font-weight:700;color:#FFD700;text-shadow:0 1px 3px rgba(0,0,0,0.4);width:auto;height:auto;background:none;border-radius:0'
+    }
+  }
+
+  container.appendChild(frag)
+
+  if (anims.length > 0) {
+    Promise.all(anims.map(a => a.finished)).then(() => {
+      for (const a of anims) {
+        if (a.effect && (a.effect as KeyframeEffect).target) {
+          const el = (a.effect as KeyframeEffect).target as HTMLElement
+          if (el.parentElement) el.remove()
+        }
+      }
+    })
   }
 }
 
@@ -185,6 +185,7 @@ interface BubbleAnim {
   vx: number
   vy: number
   r: number
+  baseR: number
   cx: number
   cy: number
   rectW: number
@@ -205,13 +206,15 @@ const initBubbleTracking = (state: AnimState, container: HTMLElement): void => {
     const id = parseInt(el.getAttribute('data-id') ?? '', 10)
     if (isNaN(id)) continue
     if (state.bubbles.has(id)) continue
+    const initialR = parseFloat(el.getAttribute('data-size') ?? '20')
     state.bubbles.set(id, {
       el,
       x: Math.random() * w,
       y: Math.random() * h,
       vx: (Math.random() - 0.5) * 60,
       vy: (Math.random() - 0.5) * 50 - 20,
-      r: parseFloat(el.getAttribute('data-size') ?? '20'),
+      r: initialR,
+      baseR: Math.max(initialR, MIN_BUBBLE_BASE),
       cx: 0, cy: 0, rectW: 0,
       color: el.getAttribute('data-color') ?? '#667eea',
     })
@@ -224,13 +227,15 @@ const addBubbleTracking = (state: AnimState, el: HTMLElement): void => {
   const id = parseInt(el.getAttribute('data-id') ?? '', 10)
   if (isNaN(id)) return
   if (state.bubbles.has(id)) return
+  const initialR = parseFloat(el.getAttribute('data-size') ?? '20')
   state.bubbles.set(id, {
     el,
     x: Math.random() * w,
     y: Math.random() * h,
     vx: (Math.random() - 0.5) * 60,
     vy: (Math.random() - 0.5) * 50 - 20,
-    r: parseFloat(el.getAttribute('data-size') ?? '20'),
+    r: initialR,
+    baseR: Math.max(initialR, MIN_BUBBLE_BASE),
     cx: 0, cy: 0, rectW: 0,
     color: el.getAttribute('data-color') ?? '#667eea',
   })
@@ -248,21 +253,17 @@ const tick = (state: AnimState): void => {
     ba.r += 6 * dt
     if (ba.r > 200) ba.r = 200
 
-    // Store center position for poof (no getBoundingClientRect needed)
     ba.cx = ba.x
     ba.cy = ba.y
     ba.rectW = ba.r * 2
 
-    // Wrap around edges
     if (ba.x < -ba.r) ba.x = w + ba.r
     if (ba.x > w + ba.r) ba.x = -ba.r
     if (ba.y < -ba.r) ba.y = h + ba.r
     if (ba.y > h + ba.r) ba.y = -ba.r
 
-    const size = ba.r * 2
-    ba.el.style.width = `${size}px`
-    ba.el.style.height = `${size}px`
-    ba.el.style.transform = `translate3d(${ba.x - ba.r}px,${ba.y - ba.r}px,0)`
+    const scale = (ba.r * 2) / ba.baseR
+    ba.el.style.transform = `translate3d(${ba.x - ba.baseR / 2}px,${ba.y - ba.baseR / 2}px,0) scale(${scale})`
   }
 }
 
@@ -270,6 +271,7 @@ export const update = (
   model: Model,
   message: Message,
   muted: boolean = false,
+  language: string = 'en',
 ): readonly [Model, ReadonlyArray<Command.Command<Message>>] =>
   M.value(message).pipe(
     M.withReturnType<readonly [Model, ReadonlyArray<Command.Command<Message>>]>(),
@@ -292,6 +294,13 @@ export const update = (
         const color = msg.color === 'rainbow' ? RAINBOW_GRADIENT : msg.color
         const size = Math.min(10 + msg.duration * 0.07, 200)
         const newBubble: Bubble = { id: model.nextId, color, popped: false, size }
+        const cmds: Array<Command.Command<Message>> = []
+        if (!muted) {
+          cmds.push(chime(SoundPlayed()))
+          const colorName = t(getColorName(msg.color), language)
+          const bubbleWord = t('bubble', language)
+          cmds.push(speak(`${colorName.toLowerCase()} ${bubbleWord}`, SoundPlayed(), { lang: language }))
+        }
         return [
           {
             ...model,
@@ -300,7 +309,7 @@ export const update = (
             selectedColor: msg.color,
             rainbowMode: msg.color === 'rainbow',
           },
-          muted ? [] : [chime(SoundPlayed())],
+          cmds,
         ]
       },
       BubblesClickedReset: () => {
@@ -339,23 +348,40 @@ export const view = (model: Model, language: string = 'en') => {
               yield* Effect.acquireRelease(
                 Effect.sync(() => {
                   const el = element as HTMLElement
-                  const colorMap = new Map<number, { startTime: number; color: string }>()
+                  const colorMap = new Map<number, { startTime: number; color: string; btn: HTMLElement; frameId: number }>()
 
                   const onDown = (e: PointerEvent): void => {
                     if (!(e.target instanceof HTMLElement)) return
                     const target = e.target
                     const colorBtn = target.closest('.color-btn')
                     if (!colorBtn) return
-                    const color = colorBtn.getAttribute('data-color') ?? ''
+                    const btn = colorBtn as HTMLElement
+                    const color = btn.getAttribute('data-color') ?? ''
                     if (!color) return
                     el.setPointerCapture(e.pointerId)
-                    colorMap.set(e.pointerId, { startTime: performance.now(), color })
+                    const startTime = performance.now()
+                    btn.classList.add('color-btn--charging')
+                    btn.style.setProperty('--charge-pct', '0%')
+                    const updateCharge = (): void => {
+                      const elapsed = performance.now() - startTime
+                      const pct = Math.min(elapsed / 3000, 1) * 100
+                      btn.style.setProperty('--charge-pct', `${pct}%`)
+                      if (pct < 100) {
+                        const id = colorMap.get(e.pointerId)
+                        if (id) id.frameId = requestAnimationFrame(updateCharge)
+                      }
+                    }
+                    const frameId = requestAnimationFrame(updateCharge)
+                    colorMap.set(e.pointerId, { startTime, color, btn, frameId })
                   }
 
                   const onUp = (e: PointerEvent): void => {
                     const entry = colorMap.get(e.pointerId)
                     if (!entry) return
                     colorMap.delete(e.pointerId)
+                    cancelAnimationFrame(entry.frameId)
+                    entry.btn.classList.remove('color-btn--charging')
+                    entry.btn.style.removeProperty('--charge-pct')
                     el.releasePointerCapture(e.pointerId)
                     Queue.offerUnsafe(queue, ClickedColor({ color: entry.color, duration: performance.now() - entry.startTime }))
                   }
@@ -503,8 +529,8 @@ export const view = (model: Model, language: string = 'en') => {
                   h.Class('bubble'),
                   h.Style({
                     ...(b.color.startsWith('linear-gradient') ? { background: `${b.color},${BUBBLE_GLOSS}` } : { backgroundColor: b.color }),
-                    width: `${b.size}px`,
-                    height: `${b.size}px`,
+                    width: `${Math.max(b.size, MIN_BUBBLE_BASE)}px`,
+                    height: `${Math.max(b.size, MIN_BUBBLE_BASE)}px`,
                   }),
                   h.Attribute('data-id', b.id.toString()),
                   h.Attribute('data-color', b.color),

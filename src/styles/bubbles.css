@@ -20,6 +20,7 @@
 }
 
 .color-btn {
+  position: relative;
   width: 2rem;
   height: 2rem;
   border-radius: 50%;
@@ -32,6 +33,27 @@
 
 .color-btn:hover {
   transform: scale(1.15);
+}
+
+.color-btn--charging {
+  animation: charge-pulse 0.6s ease-in-out infinite;
+  z-index: 2;
+}
+
+@keyframes charge-pulse {
+  0%, 100% { transform: scale(1.12); box-shadow: 0 0 8px 2px rgba(255,255,255,0.4); }
+  50% { transform: scale(1.25); box-shadow: 0 0 28px 10px rgba(255,255,255,0.6); }
+}
+
+.color-btn--charging::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  background: conic-gradient(var(--text-primary) 0% var(--charge-pct, 0%), transparent 0%);
+  -webkit-mask: radial-gradient(circle farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+  mask: radial-gradient(circle farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+  pointer-events: none;
 }
 
 .color-btn--active {

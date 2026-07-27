@@ -4,6 +4,7 @@ import * as Bubbles from './bubbles'
 
 const resolvePop = [{ name: 'PlayPop' }, Bubbles.SoundPlayed()] as const
 const resolveChime = [{ name: 'PlayChime' }, Bubbles.SoundPlayed()] as const
+const resolveSpeak = [{ name: 'Speak' }, Bubbles.SoundPlayed()] as const
 const resolveSwoosh = [{ name: 'PlaySwoosh' }, Bubbles.SoundPlayed()] as const
 const resolveAnim = [{ name: 'bubblesAnim' }, Bubbles.SoundPlayed()] as const
 const resolveColorSelector = [{ name: 'colorSelector' }, Bubbles.ClickedColor({ color: '', duration: 0 })] as const
@@ -35,7 +36,7 @@ describe('Bubbles', () => {
         expect(model.selectedColor).toBe('#FF6B6B')
         expect(model.rainbowMode).toBe(false)
       }),
-      Story.Command.resolveAll(resolveChime),
+      Story.Command.resolveAll(resolveChime, resolveSpeak),
       Story.Command.expectNone(),
     )
   })
@@ -51,7 +52,7 @@ describe('Bubbles', () => {
         expect(model.selectedColor).toBe('rainbow')
         expect(model.rainbowMode).toBe(true)
       }),
-      Story.Command.resolveAll(resolveChime),
+      Story.Command.resolveAll(resolveChime, resolveSpeak),
       Story.Command.expectNone(),
     )
   })
@@ -65,7 +66,7 @@ describe('Bubbles', () => {
         expect(model.bubbles).toHaveLength(1)
         expect(model.bubbles[0]?.size).toBeGreaterThan(100)
       }),
-      Story.Command.resolveAll(resolveChime),
+      Story.Command.resolveAll(resolveChime, resolveSpeak),
       Story.Command.expectNone(),
     )
   })
@@ -121,7 +122,7 @@ describe('Bubbles', () => {
       Scene.expect(Scene.text('Bubbles!')).toExist(),
       Scene.expect(Scene.text('Tap "Add Bubble" to start!')).toExist(),
       Scene.Mount.resolveAll(resolveAnim, resolveColorSelector),
-      Scene.Command.resolveAll(resolveChime),
+      Scene.Command.resolveAll(resolveChime, resolveSpeak),
       Scene.Command.expectNone(),
     )
   })
@@ -132,7 +133,7 @@ describe('Bubbles', () => {
       { update: Bubbles.update, view: Bubbles.view },
       Scene.with({ ...Bubbles.init(), bubbles: [bubble], score: 0, nextId: 1 }),
       Scene.Mount.resolveAll(resolveAnim, resolveColorSelector),
-      Scene.Command.resolveAll(resolveChime),
+      Scene.Command.resolveAll(resolveChime, resolveSpeak),
       Scene.Command.expectNone(),
     )
   })
@@ -144,7 +145,7 @@ describe('Bubbles', () => {
       Scene.with({ ...Bubbles.init(), bubbles: [bubble], score: 1, nextId: 1 }),
       Scene.expect(Scene.text('All popped! Add more!')).toExist(),
       Scene.Mount.resolveAll(resolveAnim, resolveColorSelector),
-      Scene.Command.resolveAll(resolveChime),
+      Scene.Command.resolveAll(resolveChime, resolveSpeak),
       Scene.Command.expectNone(),
     )
   })
@@ -155,7 +156,7 @@ describe('Bubbles', () => {
       Scene.with({ ...Bubbles.init(), bubbles: [{ id: 1, color: '#FF6B6B', popped: false, size: 20 }], score: 0, nextId: 1 }),
       Scene.expect(Scene.text('Clear')).toExist(),
       Scene.Mount.resolveAll(resolveAnim, resolveColorSelector),
-      Scene.Command.resolveAll(resolveChime),
+      Scene.Command.resolveAll(resolveChime, resolveSpeak),
       Scene.Command.expectNone(),
     )
   })
@@ -166,7 +167,7 @@ describe('Bubbles', () => {
       Scene.with(Bubbles.init()),
       Scene.expect(Scene.text('Clear')).toExist(),
       Scene.Mount.resolveAll(resolveAnim, resolveColorSelector),
-      Scene.Command.resolveAll(resolveChime),
+      Scene.Command.resolveAll(resolveChime, resolveSpeak),
       Scene.Command.expectNone(),
     )
   })
@@ -177,7 +178,7 @@ describe('Bubbles', () => {
       Scene.with({ ...Bubbles.init(), bubbles: [], score: 3, nextId: 3 }),
       Scene.expect(Scene.text('Clear')).toExist(),
       Scene.Mount.resolveAll(resolveAnim, resolveColorSelector),
-      Scene.Command.resolveAll(resolveChime),
+      Scene.Command.resolveAll(resolveChime, resolveSpeak),
       Scene.Command.expectNone(),
     )
   })
@@ -232,7 +233,7 @@ describe('Bubbles', () => {
       Scene.with(Bubbles.init()),
       Scene.expect(Scene.text('🌈')).toExist(),
       Scene.Mount.resolveAll(resolveAnim, resolveColorSelector),
-      Scene.Command.resolveAll(resolveChime),
+      Scene.Command.resolveAll(resolveChime, resolveSpeak),
       Scene.Command.expectNone(),
     )
   })
