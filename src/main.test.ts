@@ -114,6 +114,7 @@ describe('settings persistence', () => {
     { label: 'FindItSetEmojiPackEnabled', msg: FindIt.SetEmojiPackEnabled({ key: 'numbers', value: false }) },
     { label: 'BubblesSetPopLabel', msg: Bubbles.SetPopLabel({ value: true }) },
     { label: 'BubblesSetSayColor', msg: Bubbles.SetSayColor({ value: true }) },
+    { label: 'BubblesSetShapeMode', msg: Bubbles.SetShapeMode({ value: true }) },
     { label: 'DrawSetTopN', msg: Draw.SetTopN({ value: 7 }) },
     { label: 'DrawSetRecognitionMode', msg: Draw.SetRecognitionMode({ value: 'template' }) },
     { label: 'DrawSetTargetOrderMode', msg: Draw.SetTargetOrderMode({ value: 'ordered' }) },
@@ -199,7 +200,7 @@ describe('Main', () => {
     expect(model.speechPitch).toBe(1.1)
     expect(model.counter.count).toBe(0)
     expect(model.findIt.enabledPacks).toEqual(FindIt.DEFAULT_EMOJI_PACK_KEYS)
-    expect(model.bubbles).toStrictEqual({ bubbles: [], score: 0, nextId: 0, rainbowMode: false, popLabel: false, sayColor: false, selectedColor: '' })
+    expect(model.bubbles).toStrictEqual({ bubbles: [], score: 0, nextId: 0, rainbowMode: false, popLabel: false, sayColor: false, selectedColor: '', shapeMode: false, selectedShape: 'circle' })
   })
 
   it('init loads persisted Find It emoji packs', () => {

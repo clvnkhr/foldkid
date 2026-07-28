@@ -15,6 +15,8 @@ describe('Bubbles', () => {
     expect(model.bubbles).toHaveLength(0)
     expect(model.score).toBe(0)
     expect(model.nextId).toBe(0)
+    expect(model.shapeMode).toBe(false)
+    expect(model.selectedShape).toBe('circle')
   })
 
   it('init includes selectedColor', () => {
@@ -184,9 +186,9 @@ describe('Bubbles', () => {
   })
 
   it('popping one bubble does not affect other bubbles in the model', () => {
-    const b1 = { id: 1, color: '#FF6B6B', popped: false, size: 20 }
-    const b2 = { id: 2, color: '#4ECDC4', popped: false, size: 20 }
-    const b3 = { id: 3, color: '#FFE66D', popped: false, size: 20 }
+    const b1 = { id: 1, color: '#FF6B6B', popped: false, size: 20, shape: 'circle' }
+    const b2 = { id: 2, color: '#4ECDC4', popped: false, size: 20, shape: 'circle' }
+    const b3 = { id: 3, color: '#FFE66D', popped: false, size: 20, shape: 'circle' }
     Story.story(
       Bubbles.update,
       Story.with({ ...Bubbles.init(), bubbles: [b1, b2, b3], score: 0, nextId: 4 }),
@@ -204,7 +206,7 @@ describe('Bubbles', () => {
   })
 
   it('sequential pop and add preserves unpopped bubbles', () => {
-    const b1 = { id: 1, color: '#FF6B6B', popped: false, size: 20 }
+    const b1 = { id: 1, color: '#FF6B6B', popped: false, size: 20, shape: 'circle' }
     const next = Bubbles.update({ ...Bubbles.init(), bubbles: [b1], score: 0, nextId: 2 }, Bubbles.ClickedColor({ color: '#4ECDC4', duration: 500 }), false)[0]
     expect(next.bubbles).toHaveLength(2)
     const afterPop = Bubbles.update(next, Bubbles.ClickedPop({ id: 1 }), false)[0]
@@ -215,7 +217,7 @@ describe('Bubbles', () => {
   })
 
   it('SoundPlayed leaves model unchanged', () => {
-    const model = { ...Bubbles.init(), bubbles: [{ id: 1, color: '#FF6B6B', popped: false, size: 20 }], score: 2, nextId: 2 }
+    const model = { ...Bubbles.init(), bubbles: [{ id: 1, color: '#FF6B6B', popped: false, size: 20, shape: 'circle' }], score: 2, nextId: 2 }
     Story.story(
       Bubbles.update,
       Story.with(model),

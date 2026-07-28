@@ -6,15 +6,13 @@ import { pop, chime, swoosh } from '../audio'
 import { speak } from '../speech'
 import { t, tf, type StringKey } from '../i18n'
 
-const Bubble = S.Struct({ id: S.Number, color: S.String, popped: S.Boolean, size: S.Number })
+const Bubble = S.Struct({ id: S.Number, color: S.String, popped: S.Boolean, size: S.Number, shape: S.String })
 type Bubble = typeof Bubble.Type
 
 const COLORS = ['#FF4757', '#FF7F00', '#FFD93D', '#2ED573', '#1E90FF', '#A855F7', '#FF69B4', '#E0E0E0', '#666666']
 
 const RAINBOW_GRADIENT = 'linear-gradient(135deg, #ff6b6b, #ffd93d, #6bcb5e, #4ecdc4, #667eea, #ff8b94)'
 const RAINBOW_COLORS = ['#ff6b6b', '#ffd93d', '#6bcb5e', '#4ecdc4', '#667eea', '#ff8b94']
-const BUBBLE_GLOSS = 'radial-gradient(circle at 30% 25%, rgba(255,255,255,0.5) 0%, transparent 55%),radial-gradient(circle at 70% 80%, rgba(0,0,0,0.08) 0%, transparent 45%)'
-
 const COLOR_NAME_KEYS: Record<string, StringKey> = {
   '#FF4757': 'colorRed',
   '#FF7F00': 'colorOrange',
@@ -27,7 +25,18 @@ const COLOR_NAME_KEYS: Record<string, StringKey> = {
   '#666666': 'colorGrey',
 }
 
+const SHAPES = ['circle', 'star', 'heart', 'triangle', 'oval'] as const
+
+const SHAPE_NAME_KEYS: Record<string, StringKey> = {
+  circle: 'shapeCircle',
+  star: 'shapeStar',
+  heart: 'shapeHeart',
+  triangle: 'shapeTriangle',
+  oval: 'shapeOval',
+}
+
 const getColorName = (color: string): StringKey => COLOR_NAME_KEYS[color] ?? 'colorRainbow'
+const getShapeName = (shape: string): StringKey => SHAPE_NAME_KEYS[shape] ?? 'shapeCircle'
 
 const isPointerDown = MutableRef.make(false)
 const MIN_BUBBLE_BASE = 40
@@ -43,7 +52,7 @@ const getPoofContainer = (): HTMLElement => {
   return poofContainer
 }
 
-export const Model = S.Struct({ bubbles: S.Array(Bubble), score: S.Number, nextId: S.Number, rainbowMode: S.Boolean, popLabel: S.Boolean, sayColor: S.Boolean, selectedColor: S.String })
+export const Model = S.Struct({ bubbles: S.Array(Bubble), score: S.Number, nextId: S.Number, rainbowMode: S.Boolean, popLabel: S.Boolean, sayColor: S.Boolean, selectedColor: S.String, shapeMode: S.Boolean, selectedShape: S.String })
 export type Model = typeof Model.Type
 
 export const ClickedPop = m('BubblesClickedPop', { id: S.Number })
@@ -53,11 +62,13 @@ export const SoundPlayed = m('BubblesSoundPlayed')
 export const SetRainbowMode = m('BubblesSetRainbowMode', { value: S.Boolean })
 export const SetPopLabel = m('BubblesSetPopLabel', { value: S.Boolean })
 export const SetSayColor = m('BubblesSetSayColor', { value: S.Boolean })
+export const SetShapeMode = m('BubblesSetShapeMode', { value: S.Boolean })
+export const SetSelectedShape = m('BubblesSetSelectedShape', { value: S.String })
 
-export const Message = S.Union([ClickedPop, ClickedReset, ClickedColor, SoundPlayed, SetRainbowMode, SetPopLabel, SetSayColor])
+export const Message = S.Union([ClickedPop, ClickedReset, ClickedColor, SoundPlayed, SetRainbowMode, SetPopLabel, SetSayColor, SetShapeMode, SetSelectedShape])
 export type Message = typeof Message.Type
 
-export const init = (): Model => ({ bubbles: [], score: 0, nextId: 0, rainbowMode: false, popLabel: false, sayColor: false, selectedColor: '' })
+export const init = (): Model => ({ bubbles: [], score: 0, nextId: 0, rainbowMode: false, popLabel: false, sayColor: false, selectedColor: '', shapeMode: false, selectedShape: 'circle' })
 
 const poof = (cx: number, cy: number, w: number, color: string, popLabelText: string): void => {
   const s = w / 16
@@ -190,6 +201,9 @@ interface BubbleAnim {
   cy: number
   rectW: number
   color: string
+  angle: number
+  rotV: number
+  shape: string
 }
 
 interface AnimState {
@@ -217,6 +231,9 @@ const initBubbleTracking = (state: AnimState, container: HTMLElement): void => {
       baseR: Math.max(initialR, MIN_BUBBLE_BASE),
       cx: 0, cy: 0, rectW: 0,
       color: el.getAttribute('data-color') ?? '#667eea',
+      angle: 0,
+      rotV: (Math.random() - 0.5) * 120,
+      shape: el.getAttribute('data-shape') ?? 'circle',
     })
   }
 }
@@ -238,6 +255,9 @@ const addBubbleTracking = (state: AnimState, el: HTMLElement): void => {
     baseR: Math.max(initialR, MIN_BUBBLE_BASE),
     cx: 0, cy: 0, rectW: 0,
     color: el.getAttribute('data-color') ?? '#667eea',
+    angle: 0,
+    rotV: (Math.random() - 0.5) * 120,
+    shape: el.getAttribute('data-shape') ?? 'circle',
   })
 }
 
@@ -263,7 +283,13 @@ const tick = (state: AnimState): void => {
     if (ba.y > h + ba.r) ba.y = -ba.r
 
     const scale = (ba.r * 2) / ba.baseR
-    ba.el.style.transform = `translate3d(${ba.x - ba.baseR / 2}px,${ba.y - ba.baseR / 2}px,0) scale(${scale})`
+    ba.angle += ba.rotV * dt
+    const shape = ba.shape
+    if (shape === 'oval') {
+      ba.el.style.transform = `translate3d(${ba.x - ba.baseR / 2}px,${ba.y - ba.baseR / 2}px,0) rotate(${ba.angle}deg) scale(${scale}, ${scale * 0.65})`
+    } else {
+      ba.el.style.transform = `translate3d(${ba.x - ba.baseR / 2}px,${ba.y - ba.baseR / 2}px,0) scale(${scale}) rotate(${ba.angle}deg)`
+    }
   }
 }
 
@@ -293,13 +319,14 @@ export const update = (
       BubblesClickedColor: (msg) => {
         const color = msg.color === 'rainbow' ? RAINBOW_GRADIENT : msg.color
         const size = Math.min(10 + msg.duration * 0.07, 200)
-        const newBubble: Bubble = { id: model.nextId, color, popped: false, size }
+        const shape = model.shapeMode ? model.selectedShape : 'circle'
+        const newBubble: Bubble = { id: model.nextId, color, popped: false, size, shape }
         const cmds: Array<Command.Command<Message>> = []
         if (!muted) {
           cmds.push(chime(SoundPlayed()))
           const colorName = t(getColorName(msg.color), language)
-          const bubbleWord = t('bubble', language)
-          cmds.push(speak(`${colorName.toLowerCase()} ${bubbleWord}`, SoundPlayed(), { lang: language }))
+          const shapeName = model.shapeMode ? t(getShapeName(shape), language) : t('bubble', language)
+          cmds.push(speak(`${colorName.toLowerCase()} ${shapeName.toLowerCase()}`, SoundPlayed(), { lang: language }))
         }
         return [
           {
@@ -322,6 +349,8 @@ export const update = (
       BubblesSetRainbowMode: (msg) => [{ ...model, rainbowMode: msg.value, selectedColor: msg.value ? 'rainbow' : model.selectedColor }, []],
       BubblesSetPopLabel: (msg) => [{ ...model, popLabel: msg.value, sayColor: false }, []],
       BubblesSetSayColor: (msg) => [{ ...model, sayColor: msg.value, popLabel: false }, []],
+      BubblesSetShapeMode: (msg) => [{ ...model, shapeMode: msg.value }, []],
+      BubblesSetSelectedShape: (msg) => [{ ...model, selectedShape: msg.value }, []],
       BubblesSoundPlayed: () => [model, []],
     }),
   )
@@ -449,6 +478,22 @@ export const view = (model: Model, language: string = 'en') => {
             ? h.p([h.Class('bubbles-milestone'), h.Key('m-' + model.score)], [tf('bubblesMilestone', language, model.score)])
             : null,
         ]),
+        model.shapeMode
+          ? h.div([h.Class('shape-selector'), h.Key('shape-selector')], [
+            h.div([h.Class('shape-selector-row')], [
+              ...SHAPES.map((s) =>
+                h.button(
+                  [
+                    h.Class(s === model.selectedShape ? 'shape-btn shape-btn--active' : 'shape-btn'),
+                    h.OnClick(SetSelectedShape({ value: s })),
+                    h.Key(s),
+                  ],
+                  [t(getShapeName(s), language)],
+                ),
+              ),
+            ]),
+          ])
+          : null,
         h.div([
           h.Class('bubbles-container'),
           h.Key('bubbles-container'),
@@ -526,9 +571,9 @@ export const view = (model: Model, language: string = 'en') => {
               [
                   h.OnPointerDown(() => O.some(ClickedPop({ id: b.id }))),
                   h.OnPointerMove(() => MutableRef.get(isPointerDown) ? O.some(ClickedPop({ id: b.id })) : O.none()),
-                  h.Class('bubble'),
+                  h.Class(b.shape !== 'circle' ? `bubble bubble--${b.shape}` : 'bubble'),
                   h.Style({
-                    ...(b.color.startsWith('linear-gradient') ? { background: `${b.color},${BUBBLE_GLOSS}` } : { backgroundColor: b.color }),
+                    ...(b.color.startsWith('linear-gradient') ? { background: b.color } : { backgroundColor: b.color }),
                     width: `${Math.max(b.size, MIN_BUBBLE_BASE)}px`,
                     height: `${Math.max(b.size, MIN_BUBBLE_BASE)}px`,
                   }),
@@ -536,6 +581,7 @@ export const view = (model: Model, language: string = 'en') => {
                   h.Attribute('data-color', b.color),
                   h.Attribute('data-color-name', model.sayColor ? t(getColorName(b.color), language) : ''),
                   h.Attribute('data-size', b.size.toString()),
+                  h.Attribute('data-shape', b.shape),
                   h.Key(b.id.toString()),
                 ],
               [],

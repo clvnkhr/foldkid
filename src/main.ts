@@ -55,6 +55,7 @@ const PersistedSettingsSchema = S.Struct({
   findItEnabledPacks: S.optionalKey(S.Array(FindIt.EmojiPackKey)),
   bubblesPopLabel: S.optionalKey(S.Boolean),
   bubblesSayColor: S.optionalKey(S.Boolean),
+  bubblesShapeMode: S.optionalKey(S.Boolean),
   drawTopN: S.optionalKey(S.Number),
   drawRecognitionMode: S.optionalKey(Draw.RecognitionMode),
   drawTargetOrderMode: S.optionalKey(Draw.TargetOrderMode),
@@ -155,6 +156,7 @@ const buildSettingsData = (model: Model): PersistedSettings => ({
   findItEnabledPacks: model.findIt.enabledPacks,
   bubblesPopLabel: model.bubbles.popLabel,
   bubblesSayColor: model.bubbles.sayColor,
+  bubblesShapeMode: model.bubbles.shapeMode,
   drawTopN: model.draw.topN,
   drawRecognitionMode: model.draw.recognitionMode,
   drawTargetOrderMode: model.draw.targetOrderMode,
@@ -292,6 +294,8 @@ export const Message = S.Union([
   Bubbles.SetRainbowMode,
   Bubbles.SetPopLabel,
   Bubbles.SetSayColor,
+  Bubbles.SetShapeMode,
+  Bubbles.SetSelectedShape,
   Bubbles.ClickedColor,
   Draw.BoardRecognized,
   Draw.SubmitBoard,
@@ -435,6 +439,7 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
         ...Bubbles.init(),
         popLabel: saved.bubblesPopLabel ?? false,
         sayColor: saved.bubblesSayColor ?? false,
+        shapeMode: saved.bubblesShapeMode ?? false,
       },
       draw: Draw.normalizeTargetForPool({
         ...Draw.init(),
@@ -614,6 +619,7 @@ const applyImportData = (model: Model, s: PersistedSettings): Model => {
       ...model.bubbles,
       popLabel: s.bubblesPopLabel ?? model.bubbles.popLabel,
       sayColor: s.bubblesSayColor ?? model.bubbles.sayColor,
+      shapeMode: s.bubblesShapeMode ?? model.bubbles.shapeMode,
     },
     draw: Draw.normalizeTargetForPool({
       ...model.draw,
@@ -787,6 +793,8 @@ const _update = (
       BubblesSetRainbowMode: (msg) => updateBubbles(model, msg),
       BubblesSetPopLabel: (msg) => updateBubbles(model, msg),
       BubblesSetSayColor: (msg) => updateBubbles(model, msg),
+      BubblesSetShapeMode: (msg) => updateBubbles(model, msg),
+      BubblesSetSelectedShape: (msg) => updateBubbles(model, msg),
       DrawBoardRecognized: (msg) => updateDraw(model, msg),
       DrawSubmitBoard: (msg) => updateDraw(model, msg),
       DrawNextRound: (msg) => updateDraw(model, msg),
@@ -918,7 +926,7 @@ export const PERSISTED_SETTINGS_MESSAGE_TAGS = [
   'ClickedDarkMode', 'SetLanguage', 'ToggleMute', 'SetSpeechRate', 'SetSpeechPitch',
   'CounterSetDisplayMode',
   'FindItSetAnyWins', 'FindItSetVoiceMode', 'FindItSetPairsMode', 'FindItSetEmojiPackEnabled',
-  'BubblesSetPopLabel', 'BubblesSetSayColor',
+  'BubblesSetPopLabel', 'BubblesSetSayColor', 'BubblesSetShapeMode',
   'DrawSetTopN', 'DrawSetRecognitionMode', 'DrawSetTargetOrderMode', 'DrawSetFreeMode', 'DrawSetIncludeSingle', 'DrawSetIncludePairs', 'DrawSetIncludeNumbers', 'DrawSetIncludeLetters',
   'MemorySetEmojiPackEnabled', 'RpsSetGigaChad',
   'MusicBoxSetDrumVolume', 'MusicBoxToggleSongVisibility', 'MusicBoxSongDroppedOn',
@@ -1222,6 +1230,12 @@ export const view = (model: Model): Document => {
                 h.button(
                   [h.Class(model.bubbles.sayColor ? 'btn btn-primary' : 'btn btn-secondary'), settingsOnClick(Bubbles.SetSayColor({ value: true }))],
                   [t('sayColor', model.language)],
+                ),
+              ]),
+              h.div([h.Class('lang-buttons')], [
+                h.button(
+                  [h.Class(model.bubbles.shapeMode ? 'btn btn-primary' : 'btn btn-secondary'), settingsOnClick(Bubbles.SetShapeMode({ value: !model.bubbles.shapeMode }))],
+                  [t('shapeMode', model.language)],
                 ),
               ]),
             ])

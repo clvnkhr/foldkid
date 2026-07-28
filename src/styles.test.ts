@@ -63,6 +63,10 @@ const generatedClassNames = new Set([
   'rps-result-text--win',
   'rps-result-text--lose',
   'rps-result-text--tie',
+  'bubble--star',
+  'bubble--heart',
+  'bubble--triangle',
+  'bubble--oval',
 ])
 
 const stripDataUrls = (css: string): string =>
