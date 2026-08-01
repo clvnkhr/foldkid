@@ -169,11 +169,17 @@ interface BallState {
   el: HTMLElement
 }
 
-const GRAVITY = 980
-const BOUNCE = 0.5
-const FRICTION = 0.995
-const BALL_BOUNCE = 0.3
-const WALL_FRICTION = 0.85
+// A deliberately inelastic, fixed-step solver. Counter balls are decorative,
+// so losing energy is more useful than preserving a physically perfect bounce:
+// crowded piles should always settle rather than feed tiny collisions forever.
+const GRAVITY = 3900
+const FIXED_DT = 1 / 120
+const MAX_FRAME_DT = 0.1
+const MAX_STEPS_PER_FRAME = 8
+const COLLISION_ITERATIONS = 5
+const AIR_DAMPING = 4
+const REST_EPSILON = 0.01
+const SPAWN_INTERVAL = 0.14
 
 const poof = (el: HTMLElement, activeParticles: Set<HTMLElement>): void => {
   const rect = el.getBoundingClientRect()
@@ -213,13 +219,16 @@ const poof = (el: HTMLElement, activeParticles: Set<HTMLElement>): void => {
 
 const ballRadius = (fontSize: number): number => fontSize + 8
 
-const GRAVITY_DT = GRAVITY / 60
-const SPAWN_INTERVAL = 6
-
-const makeBall = (r: number, hue: number, containerW?: number): Omit<BallState, 'el'> => ({
-  x: containerW ? r + Math.random() * (containerW - r * 2) : r + Math.random() * 200,
-  y: -(r * 2 + Math.random() * 100),
-  vx: (Math.random() - 0.5) * 300,
+const makeBall = (
+  r: number,
+  hue: number,
+  w: number,
+  h: number,
+  gravityDirection: number,
+): Omit<BallState, 'el'> => ({
+  x: r + Math.random() * Math.max(0, w - r * 2),
+  y: gravityDirection > 0 ? r : Math.max(r, h - r),
+  vx: 0,
   vy: 0,
   hue,
   r,
@@ -234,160 +243,175 @@ interface TickState {
   target: number
   fontSize: number
   dirty: boolean
-  spawnCounter: number
-  settleTimer: number
-  frozen: boolean
+  spawnElapsed: number
+  lastTime: number
+  accumulator: number
+  nextHue: number
 }
 
-const tick = (state: TickState, parent: HTMLElement, activeParticles: Set<HTMLElement>): void => {
-  const dt = 1 / 60
-  const { rendered } = state
-  const w = state.w
-  const h = state.h
-  const negative = state.target < 0
-  const target = Math.abs(state.target)
+const constrainToBounds = (ball: BallState, w: number, h: number): void => {
+  const minX = ball.r
+  const maxX = Math.max(minX, w - ball.r)
+  const minY = ball.r
+  const maxY = Math.max(minY, h - ball.r)
+  ball.x = Math.min(maxX, Math.max(minX, ball.x))
+  ball.y = Math.min(maxY, Math.max(minY, ball.y))
+}
+
+const resolveCollision = (a: BallState, b: BallState, aIndex: number, bIndex: number): void => {
+  let dx = b.x - a.x
+  let dy = b.y - a.y
+  const minDistance = a.r + b.r
+  let distanceSquared = dx * dx + dy * dy
+  if (distanceSquared >= minDistance * minDistance) return
+
+  if (distanceSquared < 0.000001) {
+    const angle = ((aIndex * 73856093 + bIndex * 19349663) % 360) * Math.PI / 180
+    dx = Math.cos(angle)
+    dy = Math.sin(angle)
+    distanceSquared = 1
+  }
+
+  const distance = Math.sqrt(distanceSquared)
+  const overlap = minDistance - distance
+  const nx = dx / distance
+  const ny = dy / distance
+  const inverseMassA = 1 / (a.r * a.r)
+  const inverseMassB = 1 / (b.r * b.r)
+  const correction = overlap / (inverseMassA + inverseMassB)
+
+  a.x -= nx * correction * inverseMassA
+  a.y -= ny * correction * inverseMassA
+  b.x += nx * correction * inverseMassB
+  b.y += ny * correction * inverseMassB
+}
+
+const solveCollisions = (balls: BallState[], w: number, h: number): void => {
+  const maxRadius = balls.reduce((max, ball) => Math.max(max, ball.r), 1)
+  const cellSize = maxRadius * 2
+
+  for (let iteration = 0; iteration < COLLISION_ITERATIONS; iteration++) {
+    const grid = new Map<string, number[]>()
+    for (let i = 0; i < balls.length; i++) {
+      const ball = balls[i]
+      if (!ball) continue
+      const column = Math.floor(ball.x / cellSize)
+      const row = Math.floor(ball.y / cellSize)
+      const key = `${column}:${row}`
+      const cell = grid.get(key)
+      if (cell) cell.push(i)
+      else grid.set(key, [i])
+    }
+
+    for (let i = 0; i < balls.length; i++) {
+      const ball = balls[i]
+      if (!ball) continue
+      const column = Math.floor(ball.x / cellSize)
+      const row = Math.floor(ball.y / cellSize)
+      for (let y = row - 1; y <= row + 1; y++) {
+        for (let x = column - 1; x <= column + 1; x++) {
+          const neighbours = grid.get(`${x}:${y}`)
+          if (!neighbours) continue
+          for (const j of neighbours) {
+            if (j <= i) continue
+            const other = balls[j]
+            if (other) resolveCollision(ball, other, i, j)
+          }
+        }
+      }
+      constrainToBounds(ball, w, h)
+    }
+  }
+}
+
+const simulate = (balls: BallState[], w: number, h: number, gravityDirection: number): void => {
+  const previousX = new Float64Array(balls.length)
+  const previousY = new Float64Array(balls.length)
+  const damping = Math.exp(-AIR_DAMPING * FIXED_DT)
+
+  for (let i = 0; i < balls.length; i++) {
+    const ball = balls[i]
+    if (!ball) continue
+    previousX[i] = ball.x
+    previousY[i] = ball.y
+    ball.vx *= damping
+    ball.vy = (ball.vy + gravityDirection * GRAVITY * FIXED_DT) * damping
+    ball.x += ball.vx * FIXED_DT
+    ball.y += ball.vy * FIXED_DT
+    constrainToBounds(ball, w, h)
+  }
+
+  solveCollisions(balls, w, h)
+
+  for (let i = 0; i < balls.length; i++) {
+    const ball = balls[i]
+    if (!ball) continue
+    ball.vx = (ball.x - previousX[i]!) / FIXED_DT * damping
+    ball.vy = (ball.y - previousY[i]!) / FIXED_DT * damping
+
+    const restingAtGravityWall = gravityDirection > 0
+      ? ball.y >= h - ball.r - REST_EPSILON
+      : ball.y <= ball.r + REST_EPSILON
+    if (restingAtGravityWall) ball.vy = 0
+    if (Math.abs(ball.vx) < REST_EPSILON) ball.vx = 0
+    if (Math.abs(ball.vy) < REST_EPSILON) ball.vy = 0
+  }
+}
+
+const addBall = (state: TickState, parent: HTMLElement, negative: boolean): void => {
+  const gravityDirection = negative ? -1 : 1
   const r = ballRadius(state.fontSize)
+  const ball = makeBall(r, state.nextHue, state.w, state.h, gravityDirection)
+  state.nextHue = (state.nextHue + 137.508) % 360
+  const element = document.createElement('div')
+  element.className = `ball${negative ? ' neg' : ''}`
+  const size = ball.r * 2
+  element.style.width = `${size}px`
+  element.style.height = `${size}px`
+  element.style.background = ballGradient(ball.hue, negative)
+  parent.appendChild(element)
+  state.rendered.push({ ...ball, el: element })
+}
+
+const tick = (state: TickState, parent: HTMLElement, activeParticles: Set<HTMLElement>, now: number): void => {
+  const elapsed = Math.min(MAX_FRAME_DT, Math.max(0, (now - state.lastTime) / 1000))
+  state.lastTime = now
 
   if (state.dirty) {
     state.dirty = false
     const rect = parent.getBoundingClientRect()
     state.w = rect.width
     state.h = rect.height
+    for (const ball of state.rendered) constrainToBounds(ball, state.w, state.h)
   }
 
-  while (rendered.length > target) {
-    const b = rendered.pop()
-    if (b) poof(b.el, activeParticles)
+  const target = Math.abs(state.target)
+  const negative = state.target < 0
+  while (state.rendered.length > target) {
+    const ball = state.rendered.pop()
+    if (ball) poof(ball.el, activeParticles)
   }
 
-  if (rendered.length < target) {
-    state.spawnCounter++
-    if (state.spawnCounter >= SPAWN_INTERVAL) {
-      state.spawnCounter = 0
-      const b = makeBall(r, Date.now() % 360, w)
-      if (negative) {
-        b.y = h + b.r + Math.random() * 80
-        b.vy = -(Math.random() * 80 + 60)
-        b.hue = (b.hue + 180) % 360
-      }
-      const d = document.createElement('div')
-      d.className = `ball${negative ? ' neg' : ''}`
-      const size = b.r * 2
-      d.style.width = `${size}px`
-      d.style.height = `${size}px`
-      d.style.background = ballGradient(b.hue, negative)
-      parent.appendChild(d)
-      rendered.push({ ...b, el: d })
-    }
-  } else {
-    state.spawnCounter = 0
+  state.spawnElapsed += elapsed
+  let spawned = 0
+  while (state.rendered.length < target && state.spawnElapsed >= SPAWN_INTERVAL && spawned < 2) {
+    state.spawnElapsed -= SPAWN_INTERVAL
+    addBall(state, parent, negative)
+    spawned++
+  }
+  if (state.rendered.length >= target) state.spawnElapsed = 0
+
+  state.accumulator = Math.min(state.accumulator + elapsed, FIXED_DT * MAX_STEPS_PER_FRAME)
+  let steps = 0
+  const gravityDirection = negative ? -1 : 1
+  while (state.accumulator >= FIXED_DT && steps < MAX_STEPS_PER_FRAME) {
+    simulate(state.rendered, state.w, state.h, gravityDirection)
+    state.accumulator -= FIXED_DT
+    steps++
   }
 
-  if (rendered.length === target) {
-    state.settleTimer++
-  } else {
-    state.settleTimer = 0
-    state.frozen = false
-  }
-
-  if (state.settleTimer >= 2100) {
-    state.frozen = true
-  }
-
-  if (!state.frozen) {
-    const prevX = new Float64Array(rendered.length)
-    const prevY = new Float64Array(rendered.length)
-    for (let i = 0; i < rendered.length; i++) {
-      const b = rendered[i]
-      if (!b) continue
-      prevX[i] = b.x
-      prevY[i] = b.y
-    }
-
-    for (let i = 0; i < rendered.length; i++) {
-      const b = rendered[i]
-      if (!b) continue
-      b.vy += (negative ? -1 : 1) * GRAVITY * dt
-      b.vx *= FRICTION
-      b.x += b.vx * dt
-      b.y += b.vy * dt
-      if (b.x < b.r) { b.x = b.r; b.vx = -b.vx * BOUNCE * WALL_FRICTION; b.vy *= WALL_FRICTION }
-      if (b.x > w - b.r) { b.x = w - b.r; b.vx = -b.vx * BOUNCE * WALL_FRICTION; b.vy *= WALL_FRICTION }
-      if (negative) {
-        if (b.y - b.r < 0) {
-          b.y = b.r
-          b.vy = -b.vy * BOUNCE
-          b.vx *= WALL_FRICTION
-          if (b.vy > 0 && b.vy < GRAVITY_DT) b.vy = 0
-        }
-      } else if (b.y > h - b.r) {
-        b.y = h - b.r
-        b.vy = -b.vy * BOUNCE
-        b.vx *= WALL_FRICTION
-        if (b.vy < 0 && -b.vy < GRAVITY_DT) b.vy = 0
-      }
-    }
-
-    for (let i = 0; i < rendered.length; i++) {
-      const a = rendered[i]
-      if (!a) continue
-      for (let j = i + 1; j < rendered.length; j++) {
-        const b = rendered[j]
-        if (!b) continue
-        const dx = b.x - a.x
-        const dy = b.y - a.y
-        const minDist = a.r + b.r
-        const distSq = dx * dx + dy * dy
-        if (distSq >= minDist * minDist) continue
-        const dist = Math.sqrt(distSq)
-        if (dist <= 0 || !isFinite(dist)) continue
-        const overlap = minDist - dist
-        if (overlap < 1 && a.vx * a.vx + a.vy * a.vy + b.vx * b.vx + b.vy * b.vy < 4) continue
-        const nx = dx / dist
-        const ny = dy / dist
-        const massA = a.r * a.r * a.r
-        const massB = b.r * b.r * b.r
-        const totalMass = massA + massB
-        const pushWeight = overlap / totalMass
-        a.x -= nx * pushWeight * massB
-        a.y -= ny * pushWeight * massB
-        b.x += nx * pushWeight * massA
-        b.y += ny * pushWeight * massA
-        const dvx = a.vx - b.vx
-        const dvy = a.vy - b.vy
-        const dvn = dvx * nx + dvy * ny
-        const impulse = (1 + BALL_BOUNCE) * massA * massB * dvn / totalMass
-        const fa = impulse / massA
-        const fb = impulse / massB
-        a.vx -= fa * nx
-        a.vy -= fa * ny
-        b.vx += fb * nx
-        b.vy += fb * ny
-      }
-    }
-
-    if (state.settleTimer > 300) {
-      const t = Math.min((state.settleTimer - 300) / 1800, 1)
-      const maxDisp = 10 * (1 - t)
-      for (let i = 0; i < rendered.length; i++) {
-        const b = rendered[i]
-        if (!b) continue
-        const dx = b.x - prevX[i]!
-        const dy = b.y - prevY[i]!
-        const distSq = dx * dx + dy * dy
-        if (distSq > maxDisp * maxDisp) {
-          const dist = Math.sqrt(distSq)
-          const scale = maxDisp / dist
-          b.x = prevX[i]! + dx * scale
-          b.y = prevY[i]! + dy * scale
-        }
-      }
-    }
-  }
-
-  for (let i = 0; i < rendered.length; i++) {
-    const b = rendered[i]
-    if (b) b.el.style.transform = `translate3d(${b.x - b.r}px,${b.y - b.r}px,0)`
+  for (const ball of state.rendered) {
+    ball.el.style.transform = `translate3d(${ball.x - ball.r}px,${ball.y - ball.r}px,0)`
   }
 }
 
@@ -457,9 +481,10 @@ export const view = (model: Model, language: string = 'en') => {
                         target: model.count,
                         fontSize: model.fontSize,
                         dirty: true,
-                        spawnCounter: 0,
-                        settleTimer: 0,
-                        frozen: false,
+                        spawnElapsed: SPAWN_INTERVAL,
+                        lastTime: performance.now(),
+                        accumulator: 0,
+                        nextHue: 0,
                       }
                       const ro = new ResizeObserver(() => { state.dirty = true })
                       ro.observe(parent)
@@ -468,9 +493,9 @@ export const view = (model: Model, language: string = 'en') => {
                         state.fontSize = parseBallFontSize(parent.getAttribute('data-fontsize'))
                       })
                       mo.observe(parent, { attributes: true, attributeFilter: ['data-count', 'data-fontsize'] })
-                      const loop = () => {
+                      const loop = (now: number) => {
                         if (!state.running) return
-                        tick(state, parent, activeParticles)
+                        tick(state, parent, activeParticles, now)
                         state.id = requestAnimationFrame(loop)
                       }
                       state.id = requestAnimationFrame(loop)
