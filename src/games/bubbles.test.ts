@@ -5,7 +5,6 @@ import * as Bubbles from './bubbles'
 const resolvePop = [{ name: 'PlayPop' }, Bubbles.SoundPlayed()] as const
 const resolveChime = [{ name: 'PlayChime' }, Bubbles.SoundPlayed()] as const
 const resolveSpeak = [{ name: 'Speak' }, Bubbles.SoundPlayed()] as const
-const resolveSwoosh = [{ name: 'PlaySwoosh' }, Bubbles.SoundPlayed()] as const
 const resolveAnim = [{ name: 'bubblesAnim' }, Bubbles.SoundPlayed()] as const
 const resolveColorSelector = [{ name: 'colorSelector' }, Bubbles.ClickedColor({ color: '', duration: 0 })] as const
 
@@ -88,20 +87,19 @@ describe('Bubbles', () => {
     )
   })
 
-  it('reset clears all when there are bubbles', () => {
-    const bubble = { id: 1, color: '#FF6B6B', popped: false, size: 20 }
-    Story.story(
-      Bubbles.update,
-      Story.with({ ...Bubbles.init(), bubbles: [bubble], score: 3, nextId: 1 }),
-      Story.message(Bubbles.ClickedReset()),
-      Story.model((model) => {
-        expect(model.bubbles).toHaveLength(0)
-        expect(model.score).toBe(0)
-        expect(model.nextId).toBe(1)
-      }),
-      Story.Command.resolveAll(resolveSwoosh),
-      Story.Command.expectNone(),
-    )
+  it('reset pops bubbles sequentially before clearing them', () => {
+    const bubble = { id: 1, color: '#FF6B6B', popped: false, size: 20, shape: 'circle' }
+    const [clearing, commands] = Bubbles.update({ ...Bubbles.init(), bubbles: [bubble], score: 3, nextId: 1 }, Bubbles.ClickedReset())
+    expect(clearing.bubbles).toStrictEqual([bubble])
+    expect(clearing.score).toBe(0)
+    expect(clearing.nextId).toBe(1)
+    expect(commands.map((command) => command.name)).toStrictEqual(['ClearBubble', 'FinishClearing'])
+
+    const popped = Bubbles.update(clearing, Bubbles.ClearBubble({ id: 1 }), true)[0]
+    expect(popped.bubbles[0]?.popped).toBe(true)
+
+    const completed = Bubbles.update(popped, Bubbles.ClearCompleted({ ids: [1] }), true)[0]
+    expect(completed.bubbles).toHaveLength(0)
   })
 
   it('reset is no-op when already empty', () => {
@@ -257,19 +255,14 @@ describe('Bubbles global state', () => {
     )
   })
 
-  it('reset works correctly after multiple pops', () => {
-    const b1 = { id: 1, color: '#FF6B6B', popped: true, size: 20 }
-    const b2 = { id: 2, color: '#4ECDC4', popped: false, size: 20 }
-    Story.story(
-      Bubbles.update,
-      Story.with({ ...Bubbles.init(), bubbles: [b1, b2], score: 3, nextId: 2 }),
-      Story.message(Bubbles.ClickedReset()),
-      Story.model((model) => {
-        expect(model.bubbles).toHaveLength(0)
-        expect(model.score).toBe(0)
-      }),
-      Story.Command.resolveAll(resolveSwoosh),
-      Story.Command.expectNone(),
-    )
+  it('reset clears both previously and newly popped bubbles', () => {
+    const b1 = { id: 1, color: '#FF6B6B', popped: true, size: 20, shape: 'circle' }
+    const b2 = { id: 2, color: '#4ECDC4', popped: false, size: 20, shape: 'circle' }
+    const [clearing] = Bubbles.update({ ...Bubbles.init(), bubbles: [b1, b2], score: 3, nextId: 2 }, Bubbles.ClickedReset())
+    expect(clearing.score).toBe(0)
+
+    const popped = Bubbles.update(clearing, Bubbles.ClearBubble({ id: 2 }), true)[0]
+    const completed = Bubbles.update(popped, Bubbles.ClearCompleted({ ids: [1, 2] }), true)[0]
+    expect(completed.bubbles).toHaveLength(0)
   })
 })

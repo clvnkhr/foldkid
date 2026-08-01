@@ -2,7 +2,7 @@ import { Effect, Match as M, MutableRef, Option as O, Queue, Schema as S, Stream
 import { Command } from 'foldkit'
 import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
-import { pop, chime, swoosh } from '../audio'
+import { pop, chime } from '../audio'
 import { speak } from '../speech'
 import { t, tf, type StringKey } from '../i18n'
 
@@ -40,6 +40,7 @@ const getShapeName = (shape: string): StringKey => SHAPE_NAME_KEYS[shape] ?? 'sh
 
 const isPointerDown = MutableRef.make(false)
 const MIN_BUBBLE_BASE = 40
+const CLEAR_POP_INTERVAL_MS = 120
 
 let poofContainer: HTMLElement | null = null
 const getPoofContainer = (): HTMLElement => {
@@ -57,6 +58,8 @@ export type Model = typeof Model.Type
 
 export const ClickedPop = m('BubblesClickedPop', { id: S.Number })
 export const ClickedReset = m('BubblesClickedReset')
+export const ClearBubble = m('BubblesClearBubble', { id: S.Number })
+export const ClearCompleted = m('BubblesClearCompleted', { ids: S.Array(S.Number) })
 export const ClickedColor = m('BubblesClickedColor', { color: S.String, duration: S.Number })
 export const SoundPlayed = m('BubblesSoundPlayed')
 export const SetRainbowMode = m('BubblesSetRainbowMode', { value: S.Boolean })
@@ -65,10 +68,25 @@ export const SetSayColor = m('BubblesSetSayColor', { value: S.Boolean })
 export const SetShapeMode = m('BubblesSetShapeMode', { value: S.Boolean })
 export const SetSelectedShape = m('BubblesSetSelectedShape', { value: S.String })
 
-export const Message = S.Union([ClickedPop, ClickedReset, ClickedColor, SoundPlayed, SetRainbowMode, SetPopLabel, SetSayColor, SetShapeMode, SetSelectedShape])
+export const Message = S.Union([ClickedPop, ClickedReset, ClearBubble, ClearCompleted, ClickedColor, SoundPlayed, SetRainbowMode, SetPopLabel, SetSayColor, SetShapeMode, SetSelectedShape])
 export type Message = typeof Message.Type
 
 export const init = (): Model => ({ bubbles: [], score: 0, nextId: 0, rainbowMode: false, popLabel: false, sayColor: false, selectedColor: '', shapeMode: false, selectedShape: 'circle' })
+
+const clearCommands = (bubbles: ReadonlyArray<Bubble>): ReadonlyArray<Command.Command<Message>> => {
+  const ids = bubbles.map((bubble) => bubble.id)
+  const idsToPop = bubbles.filter((bubble) => !bubble.popped).map((bubble) => bubble.id)
+  return [
+    ...idsToPop.map((id, index) => ({
+      name: 'ClearBubble',
+      effect: Effect.sleep(index * CLEAR_POP_INTERVAL_MS).pipe(Effect.as(ClearBubble({ id }))),
+    })),
+    {
+      name: 'FinishClearing',
+      effect: Effect.sleep(idsToPop.length * CLEAR_POP_INTERVAL_MS).pipe(Effect.as(ClearCompleted({ ids }))),
+    },
+  ]
+}
 
 const poof = (cx: number, cy: number, w: number, color: string, popLabelText: string): void => {
   const s = w / 16
@@ -342,10 +360,22 @@ export const update = (
       BubblesClickedReset: () => {
         if (model.bubbles.length === 0 && model.score === 0) return [model, []]
         return [
-          { ...model, bubbles: [], score: 0 },
-          muted ? [] : [swoosh(SoundPlayed())],
+          { ...model, score: 0 },
+          clearCommands(model.bubbles),
         ]
       },
+      BubblesClearBubble: (msg) => {
+        const bubble = model.bubbles.find((b) => b.id === msg.id)
+        if (!bubble || bubble.popped) return [model, []]
+        return [
+          { ...model, bubbles: model.bubbles.map((b) => b.id === msg.id ? { ...b, popped: true } : b) },
+          muted ? [] : [pop(SoundPlayed())],
+        ]
+      },
+      BubblesClearCompleted: (msg) => [
+        { ...model, bubbles: model.bubbles.filter((bubble) => !msg.ids.includes(bubble.id)) },
+        [],
+      ],
       BubblesSetRainbowMode: (msg) => [{ ...model, rainbowMode: msg.value, selectedColor: msg.value ? 'rainbow' : model.selectedColor }, []],
       BubblesSetPopLabel: (msg) => [{ ...model, popLabel: msg.value, sayColor: false }, []],
       BubblesSetSayColor: (msg) => [{ ...model, sayColor: msg.value, popLabel: false }, []],
@@ -364,12 +394,22 @@ export const view = (model: Model, language: string = 'en') => {
       h.div([h.Class('card')], [
         h.h1([h.Class('title')], [t('bubblesTitle', language)]),
         h.p([h.Class('bubbles-score')], [tf('popped', language, model.score)]),
-        h.div([h.Class('buttons')], [
-          h.button(
-            [h.OnClick(ClickedReset()), h.Class('btn btn-secondary')],
-            [t('clear', language)],
-          ),
-        ]),
+        model.shapeMode
+          ? h.div([h.Class('shape-selector'), h.Key('shape-selector')], [
+            h.div([h.Class('shape-selector-row')], [
+              ...SHAPES.map((s) =>
+                h.button(
+                  [
+                    h.Class(s === model.selectedShape ? 'shape-btn shape-btn--active' : 'shape-btn'),
+                    h.OnClick(SetSelectedShape({ value: s })),
+                    h.Key(s),
+                  ],
+                  [t(getShapeName(s), language)],
+                ),
+              ),
+            ]),
+          ])
+          : null,
         h.div([h.Class('color-selector'), h.Key('color-selector'), h.OnMount({
           name: 'colorSelector',
           f: (element) => Stream.callback<Message>(queue =>
@@ -478,22 +518,12 @@ export const view = (model: Model, language: string = 'en') => {
             ? h.p([h.Class('bubbles-milestone'), h.Key('m-' + model.score)], [tf('bubblesMilestone', language, model.score)])
             : null,
         ]),
-        model.shapeMode
-          ? h.div([h.Class('shape-selector'), h.Key('shape-selector')], [
-            h.div([h.Class('shape-selector-row')], [
-              ...SHAPES.map((s) =>
-                h.button(
-                  [
-                    h.Class(s === model.selectedShape ? 'shape-btn shape-btn--active' : 'shape-btn'),
-                    h.OnClick(SetSelectedShape({ value: s })),
-                    h.Key(s),
-                  ],
-                  [t(getShapeName(s), language)],
-                ),
-              ),
-            ]),
-          ])
-          : null,
+        h.div([h.Class('buttons')], [
+          h.button(
+            [h.OnClick(ClickedReset()), h.Class('btn btn-secondary')],
+            [t('clear', language)],
+          ),
+        ]),
         h.div([
           h.Class('bubbles-container'),
           h.Key('bubbles-container'),
