@@ -1,7 +1,7 @@
 import { Effect, Fiber, Stream } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { componentColor, componentsFor, findClosestSnap, init, mountMagneticBlocks, RemoveBlock, removeBondsFor, snapTogether, SpawnBlocks, update } from './magneticBlocks'
+import { componentColor, componentsFor, findClosestSnap, init, mountMagneticBlocks, RemoveBlock, removeBondsFor, snapTogether, SpawnBlocks, splitComponentAtBestBond, update } from './magneticBlocks'
 
 describe('Magnetic Blocks', () => {
   const blocks = [
@@ -34,6 +34,19 @@ describe('Magnetic Blocks', () => {
       { a: 2, b: 3 },
       { a: 3, b: 4 },
     ], 2)).toEqual([{ a: 3, b: 4 }])
+  })
+
+  it('splits a connecting block into two collections instead of isolating it', () => {
+    const line = Array.from({ length: 5 }, (_, index) => ({ id: index + 1, x: 50 + index * 50, y: 100 }))
+    const split = splitComponentAtBestBond(line, [
+      { a: 1, b: 2 },
+      { a: 2, b: 3 },
+      { a: 3, b: 4 },
+      { a: 4, b: 5 },
+    ], 2, 0, 0)
+
+    expect(split?.draggedIds).toEqual([1, 2])
+    expect(componentsFor(line, split?.bonds ?? [])).toEqual([[1, 2], [3, 4, 5]])
   })
 
   it('finds the nearest edge-to-edge snap and returns its joining bond', () => {

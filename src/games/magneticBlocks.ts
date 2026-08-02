@@ -127,6 +127,41 @@ export const componentsFor = (
 export const removeBondsFor = (bonds: readonly MagneticBond[], id: number): MagneticBond[] =>
   bonds.filter(bond => bond.a !== id && bond.b !== id)
 
+export const splitComponentAtBestBond = (
+  blocks: readonly MagneticBlock[],
+  bonds: readonly MagneticBond[],
+  grabbedId: number,
+  dragX: number,
+  dragY: number,
+): { bonds: MagneticBond[]; draggedIds: number[] } | undefined => {
+  const before = componentsFor(blocks, bonds).find(component => component.includes(grabbedId))
+  const grabbed = blocks.find(block => block.id === grabbedId)
+  if (!before || !grabbed || before.length < 2) return undefined
+
+  let best: { bonds: MagneticBond[]; draggedIds: number[]; balance: number; opposition: number } | undefined
+  for (const bond of bonds) {
+    if (bond.a !== grabbedId && bond.b !== grabbedId) continue
+    const nextBonds = bonds.filter(candidate => candidate !== bond)
+    const after = componentsFor(blocks, nextBonds)
+    const draggedIds = after.find(component => component.includes(grabbedId))
+    const otherIds = after.find(component => component.some(id => before.includes(id) && !draggedIds?.includes(id)))
+    if (!draggedIds || !otherIds) continue
+    const neighborId = bond.a === grabbedId ? bond.b : bond.a
+    const neighbor = blocks.find(block => block.id === neighborId)
+    const opposition = neighbor ? (neighbor.x - grabbed.x) * dragX + (neighbor.y - grabbed.y) * dragY : 0
+    const candidate = {
+      bonds: nextBonds,
+      draggedIds,
+      balance: Math.abs(draggedIds.length - otherIds.length),
+      opposition,
+    }
+    if (!best || candidate.balance < best.balance || (candidate.balance === best.balance && candidate.opposition < best.opposition)) {
+      best = candidate
+    }
+  }
+  return best ? { bonds: best.bonds, draggedIds: best.draggedIds } : undefined
+}
+
 const wouldOverlap = (
   blocks: readonly MagneticBlock[],
   moving: ReadonlySet<number>,
@@ -423,13 +458,16 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
             const elapsed = event.timeStamp - drag.lastTime
             const speed = elapsed > 12 ? Math.hypot(point.x - drag.lastX, point.y - drag.lastY) * 1000 / elapsed : 0
             if (speed > BREAK_SPEED && drag.ids.length > 1 && !drag.brokeApart) {
-              bonds = removeBondsFor(bonds, drag.grabbedId)
-              for (const id of drag.ids) blocks.find(block => block.id === id)?.el.classList.remove('magnetic-block--dragging')
-              drag.ids = [drag.grabbedId]
-              drag.offsets = offsetsFor(drag.ids, point.x, point.y)
-              drag.brokeApart = true
-              blocks.find(block => block.id === drag!.grabbedId)?.el.classList.add('magnetic-block--dragging')
-              colorBlocks()
+              const split = splitComponentAtBestBond(blocks, bonds, drag.grabbedId, point.x - drag.lastX, point.y - drag.lastY)
+              if (split) {
+                bonds = split.bonds
+                for (const id of drag.ids) blocks.find(block => block.id === id)?.el.classList.remove('magnetic-block--dragging')
+                drag.ids = split.draggedIds
+                drag.offsets = offsetsFor(drag.ids, point.x, point.y)
+                drag.brokeApart = true
+                blocks.find(block => block.id === drag!.grabbedId)?.el.classList.add('magnetic-block--dragging')
+                colorBlocks()
+              }
             }
             moveDraggedBlocks(point)
             drag.lastX = point.x
