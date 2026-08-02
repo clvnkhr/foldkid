@@ -68,7 +68,6 @@ interface DragState {
   lastY: number
   lastTime: number
   brokeApart: boolean
-  separated: boolean
 }
 
 const BLOCK_FACES = ['•ᴗ•', '◕‿◕', '^‿^', '˶ᵔ ᵕ ᵔ˶', 'ᵔᴗᵔ', '•‿•']
@@ -512,7 +511,6 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
               lastY: point.y,
               lastTime: event.timeStamp,
               brokeApart: false,
-              separated: false,
             }
             for (const draggedId of ids) blocks.find(block => block.id === draggedId)?.el.classList.add('magnetic-block--dragging')
             board.setPointerCapture(event.pointerId)
@@ -532,9 +530,9 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
                 drag.ids = split.draggedIds
                 drag.offsets = offsetsFor(drag.ids, point.x, point.y)
                 drag.brokeApart = true
-                drag.separated = true
                 blocks.find(block => block.id === drag!.grabbedId)?.el.classList.add('magnetic-block--dragging')
                 colorBlocks()
+                if (!muted) playMagnetClick('release')
               }
             }
             moveDraggedBlocks(point)
@@ -545,7 +543,6 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
 
           const finishDrag = (event: PointerEvent): void => {
             if (!drag || drag.pointerId !== event.pointerId) return
-            const separated = drag.separated
             const previousBondCount = bonds.length
             const snapped = snapTogether(blocks, bonds, drag.ids, cell, cell * SNAP_DISTANCE_FACTOR, bounds())
             bonds = snapped.bonds
@@ -556,7 +553,6 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
             drag = undefined
             render()
             if (!muted && event.type === 'pointerup') {
-              if (separated) playMagnetClick('release')
               if (joins > 0) playMagnetClick('join', joins)
             }
           }
