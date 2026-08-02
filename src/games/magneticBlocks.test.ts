@@ -95,6 +95,7 @@ describe('Magnetic Blocks', () => {
     const fiber = Effect.runFork(Stream.runDrain(mountMagneticBlocks(board)))
     await new Promise(resolve => setTimeout(resolve, 0))
     const initialCount = board.querySelectorAll('.magnetic-block').length
+    expect([...board.querySelectorAll('.magnetic-block-count')].map(el => el.textContent)).toEqual(new Array(initialCount).fill('1'))
     board.setAttribute('data-magnetic-spawn-id', '1')
     await new Promise(resolve => setTimeout(resolve, 0))
 

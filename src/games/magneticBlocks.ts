@@ -306,7 +306,9 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
           let nextId = 0
           let drag: DragState | undefined
           let cell = boardCellSize(board.getBoundingClientRect())
-          let breakSpeed = normalizeBreakSpeed(Number(board.getAttribute('data-magnetic-break-speed')))
+          const readBreakSpeed = (): number =>
+            normalizeBreakSpeed(Number(board.getAttribute('data-magnetic-break-speed') ?? DEFAULT_BREAK_SPEED))
+          let breakSpeed = readBreakSpeed()
           const faces = new Map<string, { id: number; face: string }>()
 
           const bounds = (): BoardBounds => {
@@ -338,7 +340,7 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
               block.el.style.setProperty('--magnetic-block-color', componentColor(size))
               block.el.style.setProperty('--magnetic-block-size', `${cell}px`)
               block.el.querySelector('.magnetic-block-face')!.textContent = faceById.get(block.id) ?? ''
-              block.el.querySelector('.magnetic-block-count')!.textContent = size > 1 ? size.toString() : ''
+              block.el.querySelector('.magnetic-block-count')!.textContent = size.toString()
               block.el.title = size > 1 ? `${size} blocks snapped together` : '1 block'
             }
           }
@@ -512,7 +514,7 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
           const onBoardRequest = (): void => {
             const nextSpawnId = Number(board.getAttribute('data-magnetic-spawn-id')) || 0
             const nextRemoveId = Number(board.getAttribute('data-magnetic-remove-id')) || 0
-            breakSpeed = normalizeBreakSpeed(Number(board.getAttribute('data-magnetic-break-speed')))
+            breakSpeed = readBreakSpeed()
             if (nextSpawnId !== spawnedFor) {
               spawnedFor = nextSpawnId
               spawn(3 + Math.floor(Math.random() * 4))
