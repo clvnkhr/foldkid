@@ -9,8 +9,9 @@ import * as Draw from './games/draw'
 import * as Memory from './games/memory'
 import * as MusicBox from './games/musicbox'
 import * as Rps from './games/rps/main'
+import * as MagneticBlocks from './games/magneticBlocks'
 import { LANDING_GAME_COUNT, LANDING_GAMES } from './pages/landing'
-import { ApplyImport, ClickedLanding, ClickedCounter, ClickedFindIt, ClickedBubbles, ClickedDarkMode, ClickedMemory, ConfirmResetSettings, ExportSettings, ImportedSettings, LandingDragStarted, LandingDroppedOn, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsPersisted, ToggleMute } from './message'
+import { ApplyImport, ClickedLanding, ClickedCounter, ClickedFindIt, ClickedBubbles, ClickedDarkMode, ClickedMagneticBlocks, ClickedMemory, ConfirmResetSettings, ExportSettings, ImportedSettings, LandingDragStarted, LandingDroppedOn, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsPersisted, ToggleMute } from './message'
 
 const resolveSettings = [{ name: 'PersistSettings' }, SettingsPersisted()] as const
 const resolveBubblesChime = [{ name: 'PlayChime' }, Bubbles.SoundPlayed()] as const
@@ -147,6 +148,7 @@ describe('settings persistence', () => {
     { label: 'MusicBoxNoteOn', msg: MusicBox.NoteOn({ pitch: 'C4' }) },
     { label: 'MusicBoxSetBottomPanelMode', msg: MusicBox.SetBottomPanelMode({ value: 'drums' }) },
     { label: 'MusicBoxDrumPadHit', msg: MusicBox.DrumPadHit({ kind: 'kick' }) },
+    { label: 'MagneticBlocksSpawn', msg: MagneticBlocks.SpawnBlocks() },
   ]
 
   it('keeps the persisted message tag list aligned with persistence tests', () => {
@@ -389,6 +391,18 @@ describe('Main', () => {
       Story.message(ClickedBubbles()),
       Story.model((model) => {
         expect(model.page._tag).toBe('PageBubbles')
+      }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('ClickedMagneticBlocks opens Magnetic Blocks', () => {
+    Story.story(
+      Main.update,
+      Story.with(createModel()),
+      Story.message(ClickedMagneticBlocks()),
+      Story.model((model) => {
+        expect(model.page._tag).toBe('PageMagneticBlocks')
       }),
       Story.Command.expectNone(),
     )

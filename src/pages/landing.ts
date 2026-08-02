@@ -1,6 +1,6 @@
 import { html } from 'foldkit/html'
 
-import { ClickedAudioTest, ClickedBsl, ClickedBubbles, ClickedCounter, ClickedDraw, ClickedFindIt, ClickedMemory, ClickedMusicBox, ClickedPhonemeGarden, ClickedRps, ClickedSpeakerCalculator, ClickedWhackamole, ClickedPattern, LandingDragEnded, LandingDragStarted, LandingDroppedOn } from '../message'
+import { ClickedAudioTest, ClickedBsl, ClickedBubbles, ClickedCounter, ClickedDraw, ClickedFindIt, ClickedMagneticBlocks, ClickedMemory, ClickedMusicBox, ClickedPhonemeGarden, ClickedRps, ClickedSpeakerCalculator, ClickedWhackamole, ClickedPattern, LandingDragEnded, LandingDragStarted, LandingDroppedOn } from '../message'
 import { t } from '../i18n'
 import { pointerReorder } from '../pointerReorder'
 
@@ -17,6 +17,7 @@ type Message = ReturnType<typeof ClickedCounter>
   | ReturnType<typeof ClickedPattern>
   | ReturnType<typeof ClickedBsl>
   | ReturnType<typeof ClickedRps>
+  | ReturnType<typeof ClickedMagneticBlocks>
   | ReturnType<typeof LandingDragStarted>
   | ReturnType<typeof LandingDroppedOn>
   | ReturnType<typeof LandingDragEnded>
@@ -34,6 +35,7 @@ export const LANDING_GAMES = [
   { msg: ClickedPattern, title: 'patternTitle' as const, emoji: '🧩' },
   { msg: ClickedBsl, title: 'bslTitle' as const, emoji: '🤟' },
   { msg: ClickedRps, title: 'rpsTitle' as const, emoji: '✊' },
+  { msg: ClickedMagneticBlocks, title: 'magneticBlocksTitle' as const, emoji: '🧲' },
 ]
 
 export const LANDING_GAME_COUNT = LANDING_GAMES.length

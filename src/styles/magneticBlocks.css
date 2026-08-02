@@ -1,0 +1,180 @@
+.magnetic-blocks-card {
+  overflow: hidden;
+}
+
+.magnetic-blocks-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: clamp(10px, 3vmin, 28px);
+  padding: clamp(4px, 1vmin, 10px) clamp(4px, 1vmin, 12px) clamp(10px, 2vmin, 18px);
+}
+
+.magnetic-blocks-heading .title {
+  margin: 0;
+}
+
+.magnetic-blocks-help,
+.magnetic-blocks-key {
+  color: #5b6475;
+  font-size: clamp(0.82rem, 2.7vmin, 1.05rem);
+  line-height: 1.35;
+  margin: 0.2rem 0 0;
+}
+
+.magnetic-blocks-spawn {
+  flex: 0 0 auto;
+  font-size: clamp(0.95rem, 3.2vmin, 1.25rem);
+  padding: 0.6em 0.9em;
+  white-space: nowrap;
+}
+
+.magnetic-blocks-spawn--active {
+  animation: magneticSpawnPress 0.26s ease-out;
+}
+
+@keyframes magneticSpawnPress {
+  0% { transform: scale(1); }
+  45% { transform: scale(0.87) rotate(-2deg); }
+  100% { transform: scale(1); }
+}
+
+.magnetic-blocks-board {
+  position: relative;
+  width: 100%;
+  height: clamp(320px, 58vmin, 580px);
+  min-height: 280px;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  border: 3px solid #526179;
+  border-radius: clamp(18px, 4vmin, 30px);
+  background:
+    radial-gradient(circle at 50% 50%, rgba(90, 180, 255, 0.19), transparent 48%),
+    repeating-linear-gradient(0deg, transparent 0 31px, rgba(137, 168, 203, 0.23) 32px),
+    repeating-linear-gradient(90deg, transparent 0 31px, rgba(137, 168, 203, 0.23) 32px),
+    linear-gradient(145deg, #e9f6ff, #c8dcef);
+  box-shadow: inset 0 0 44px rgba(66, 104, 151, 0.2), 0 8px 20px rgba(32, 52, 80, 0.15);
+}
+
+.magnetic-blocks-board::before,
+.magnetic-blocks-board::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  inset: 12%;
+  border: 1px solid rgba(78, 117, 160, 0.17);
+  border-radius: 50%;
+}
+
+.magnetic-blocks-board::after {
+  inset: 28% 8%;
+  border-color: rgba(78, 117, 160, 0.12);
+}
+
+.magnetic-block {
+  --magnetic-block-color: #4f8cff;
+  --magnetic-block-size: 56px;
+  position: absolute;
+  width: var(--magnetic-block-size);
+  height: var(--magnetic-block-size);
+  display: grid;
+  place-items: center;
+  z-index: 2;
+  cursor: grab;
+  border: 3px solid color-mix(in srgb, var(--magnetic-block-color), #162238 35%);
+  border-radius: 16%;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.54), transparent 34%),
+    linear-gradient(145deg, color-mix(in srgb, var(--magnetic-block-color), white 30%), var(--magnetic-block-color) 55%, color-mix(in srgb, var(--magnetic-block-color), #101827 32%));
+  box-shadow:
+    0 5px 0 color-mix(in srgb, var(--magnetic-block-color), #111827 44%),
+    0 10px 16px rgba(25, 47, 77, 0.28),
+    inset 0 2px 3px rgba(255, 255, 255, 0.66),
+    inset 0 -5px 7px rgba(18, 34, 59, 0.22);
+  transition: box-shadow 0.15s, filter 0.15s;
+  will-change: transform;
+}
+
+.magnetic-block-face {
+  position: relative;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: calc(var(--magnetic-block-size) * 0.36);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.08em;
+  text-shadow: 0 2px 2px rgba(12, 24, 43, 0.35);
+}
+
+.magnetic-block-count {
+  position: absolute;
+  right: -0.28em;
+  bottom: -0.42em;
+  min-width: 1.25em;
+  padding: 0.08em 0.28em;
+  color: #182238;
+  font-size: clamp(0.72rem, 2.6vmin, 1rem);
+  font-weight: 900;
+  line-height: 1.2;
+  text-align: center;
+  background: #fff9d8;
+  border: 2px solid #53627b;
+  border-radius: 999px;
+  box-shadow: 0 2px 3px rgba(32, 43, 62, 0.24);
+}
+
+.magnetic-block--dragging {
+  z-index: 5;
+  cursor: grabbing;
+  filter: brightness(1.12) saturate(1.2);
+  box-shadow:
+    0 5px 0 color-mix(in srgb, var(--magnetic-block-color), #111827 44%),
+    0 0 0 6px color-mix(in srgb, var(--magnetic-block-color), transparent 65%),
+    0 0 26px color-mix(in srgb, var(--magnetic-block-color), white 36%),
+    inset 0 2px 3px rgba(255, 255, 255, 0.66),
+    inset 0 -5px 7px rgba(18, 34, 59, 0.22);
+}
+
+.magnetic-block--snap {
+  animation: magneticSnap 0.42s cubic-bezier(0.18, 0.95, 0.32, 1);
+}
+
+@keyframes magneticSnap {
+  0% { filter: brightness(1) saturate(1); }
+  42% { filter: brightness(1.85) saturate(1.6); }
+  100% { filter: brightness(1) saturate(1); }
+}
+
+.magnetic-blocks-key {
+  padding: clamp(9px, 2vmin, 16px) clamp(4px, 1vmin, 12px) 0;
+  text-align: center;
+}
+
+.dark .magnetic-blocks-board {
+  border-color: #61728f;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(62, 156, 243, 0.18), transparent 48%),
+    repeating-linear-gradient(0deg, transparent 0 31px, rgba(144, 184, 226, 0.12) 32px),
+    repeating-linear-gradient(90deg, transparent 0 31px, rgba(144, 184, 226, 0.12) 32px),
+    linear-gradient(145deg, #17263c, #0c1728);
+}
+
+.dark .magnetic-blocks-help,
+.dark .magnetic-blocks-key {
+  color: #bac8da;
+}
+
+@media (max-width: 480px) {
+  .magnetic-blocks-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .magnetic-blocks-spawn {
+    align-self: stretch;
+  }
+
+  .magnetic-blocks-board {
+    height: min(62vh, 480px);
+  }
+}

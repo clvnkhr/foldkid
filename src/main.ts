@@ -2,9 +2,9 @@ import { Effect, Match as M, Option, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { Document, html } from 'foldkit/html'
 
-import { ApplyImport, CancelResetSettings, ClickedAudioTest, ClickedBsl, ClickedBubbles, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedLanding, ClickedDraw, ClickedMemory, ClickedMusicBox, ClickedPhonemeGarden, ClickedRps, ClickedSpeakerCalculator, ClickedSettings, ClickedWhackamole, ClickedPattern, ConfirmResetSettings, CopyExportData, DismissMessage, ExportSettings, ImportSettings, ImportedSettings, LandingDragEnded, LandingDragStarted, LandingDroppedOn, LandingSettingsDragEnded, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, ResetSettings, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsDragEnded, SettingsDragMoved, SettingsDragStarted, SettingsImportFailed, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
+import { ApplyImport, CancelResetSettings, ClickedAudioTest, ClickedBsl, ClickedBubbles, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedLanding, ClickedDraw, ClickedMagneticBlocks, ClickedMemory, ClickedMusicBox, ClickedPhonemeGarden, ClickedRps, ClickedSpeakerCalculator, ClickedSettings, ClickedWhackamole, ClickedPattern, ConfirmResetSettings, CopyExportData, DismissMessage, ExportSettings, ImportSettings, ImportedSettings, LandingDragEnded, LandingDragStarted, LandingDroppedOn, LandingSettingsDragEnded, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, ResetSettings, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsDragEnded, SettingsDragMoved, SettingsDragStarted, SettingsImportFailed, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
 
-import { Page, PageAudioTest, PageBsl, PageBubbles, PageCounter, PageFindIt, PageLanding, PageDraw, PageMemory, PageMusicBox, PagePhonemeGarden, PageRps, PageSpeakerCalculator, PageWhackamole, PagePattern } from './route'
+import { Page, PageAudioTest, PageBsl, PageBubbles, PageCounter, PageFindIt, PageLanding, PageDraw, PageMagneticBlocks, PageMemory, PageMusicBox, PagePhonemeGarden, PageRps, PageSpeakerCalculator, PageWhackamole, PagePattern } from './route'
 
 import * as FindIt from './games/findit'
 import * as MusicBox from './games/musicbox'
@@ -18,6 +18,7 @@ import * as Whackamole from './games/whackamole/main'
 import * as Pattern from './games/pattern/main'
 import * as Bsl from './games/bsl/main'
 import * as Rps from './games/rps/main'
+import * as MagneticBlocks from './games/magneticBlocks'
 import { LANDING_GAME_COUNT, LANDING_GAMES, view as landingView } from './pages/landing'
 import { view as audioTestView } from './pages/audiotest'
 import { Language, normalizeLanguage, t, tf } from './i18n'
@@ -220,6 +221,7 @@ export const Model = S.Struct({
   pattern: Pattern.Model,
   bsl: Bsl.Model,
   rps: Rps.Model,
+  magneticBlocks: MagneticBlocks.Model,
   settingsPanelWidth: S.Number,
   isDraggingSettings: S.Boolean,
   settingsDragStartMouseX: S.Number,
@@ -258,6 +260,8 @@ export const Message = S.Union([
   ClickedPattern,
   ClickedBsl,
   ClickedRps,
+  ClickedMagneticBlocks,
+  MagneticBlocks.SpawnBlocks,
   LandingDragStarted,
   LandingDroppedOn,
   LandingDragEnded,
@@ -461,6 +465,7 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
       pattern: Pattern.init,
       bsl: Bsl.init(),
       rps: Rps.init,
+      magneticBlocks: MagneticBlocks.init,
       settingsPanelWidth: 150,
       isDraggingSettings: false,
       settingsDragStartMouseX: 0,
@@ -558,6 +563,14 @@ const updateRps = (
 ): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
   const [next, cmds] = Rps.update(model.rps, message, model.muted)
   return [{ ...model, rps: next }, cmds]
+}
+
+const updateMagneticBlocks = (
+  model: Model,
+  message: MagneticBlocks.Message,
+): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
+  const [next, cmds] = MagneticBlocks.update(model.magneticBlocks, message)
+  return [{ ...model, magneticBlocks: next }, cmds]
 }
 
 const updateBsl = (
@@ -731,6 +744,8 @@ const _update = (
       ClickedPattern: () => [{ ...model, page: PagePattern() }, []],
       ClickedBsl: () => [{ ...model, page: PageBsl() }, []],
       ClickedRps: () => [{ ...model, page: PageRps() }, []],
+      ClickedMagneticBlocks: () => [{ ...model, page: PageMagneticBlocks() }, []],
+      MagneticBlocksSpawn: (msg) => updateMagneticBlocks(model, msg),
       LandingDragStarted: (msg) => [{ ...model, landingDragIndex: msg.index }, []],
       LandingDroppedOn: (msg) => {
         if (model.landingDragIndex < 0 || model.landingDragIndex === msg.index) return [{ ...model, landingDragIndex: -1 }, []]
@@ -976,6 +991,7 @@ const pageTitle = (model: Model): string =>
       PagePattern: () => t('pageTitlePattern', model.language),
       PageBsl: () => t('pageTitleBsl', model.language),
       PageRps: () => t('pageTitleRps', model.language),
+      PageMagneticBlocks: () => t('pageTitleMagneticBlocks', model.language),
     }),
   )
 
@@ -1530,6 +1546,7 @@ export const view = (model: Model): Document => {
       PagePattern: () => Pattern.view(model.pattern, model.language),
       PageBsl: () => Bsl.view(model.bsl, model.language),
       PageRps: () => Rps.view(model.rps, model.language),
+      PageMagneticBlocks: () => MagneticBlocks.view(model.magneticBlocks, model.language),
     }),
           ),
           model.settingsOverlay
