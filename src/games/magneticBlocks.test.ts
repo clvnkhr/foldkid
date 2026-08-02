@@ -1,7 +1,7 @@
 import { Effect, Fiber, Stream } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { componentColor, componentsFor, findClosestSnap, init, mountMagneticBlocks, removeBondsFor, SpawnBlocks, update } from './magneticBlocks'
+import { componentColor, componentsFor, findClosestSnap, init, mountMagneticBlocks, RemoveBlock, removeBondsFor, SpawnBlocks, update } from './magneticBlocks'
 
 describe('Magnetic Blocks', () => {
   const blocks = [
@@ -19,9 +19,13 @@ describe('Magnetic Blocks', () => {
   })
 
   it('uses a colour based on the component size', () => {
-    expect(componentColor(1)).not.toBe(componentColor(2))
-    expect(componentColor(2)).not.toBe(componentColor(3))
-    expect(componentColor(100)).toBe(componentColor(8))
+    expect(Array.from({ length: 10 }, (_, index) => componentColor(index + 1))).toEqual([
+      '#ef4444', '#f97316', '#facc15', '#22c55e', '#3b82f6',
+      '#6366f1', '#a855f7', '#ec4899', '#94a3b8', '#f8fafc',
+    ])
+    expect(componentColor(11)).not.toBe(componentColor(1))
+    expect(componentColor(18)).not.toBe(componentColor(8))
+    expect(componentColor(100)).not.toBe(componentColor(10))
   })
 
   it('breaks only the bonds touching the fast-moving block', () => {
@@ -57,6 +61,7 @@ describe('Magnetic Blocks', () => {
   it('creates initial blocks and adds another random batch when the spawn id changes', async () => {
     const board = document.createElement('div')
     board.setAttribute('data-magnetic-spawn-id', '0')
+    board.setAttribute('data-magnetic-remove-id', '0')
     board.getBoundingClientRect = () => new DOMRect(0, 0, 620, 420)
     document.body.appendChild(board)
 
@@ -69,11 +74,17 @@ describe('Magnetic Blocks', () => {
     expect(initialCount).toBe(8)
     expect(board.querySelectorAll('.magnetic-block').length).toBeGreaterThan(initialCount)
 
+    const afterSpawn = board.querySelectorAll('.magnetic-block').length
+    board.setAttribute('data-magnetic-remove-id', '1')
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(board.querySelectorAll('.magnetic-block').length).toBe(afterSpawn - 1)
+
     await Effect.runPromise(Fiber.interrupt(fiber))
     board.remove()
   })
 
   it('increments the spawn id through the game message', () => {
-    expect(update(init, SpawnBlocks())[0]).toEqual({ spawnId: 1 })
+    expect(update(init, SpawnBlocks())[0]).toEqual({ spawnId: 1, removeId: 0 })
+    expect(update(init, RemoveBlock())[0]).toEqual({ spawnId: 0, removeId: 1 })
   })
 })

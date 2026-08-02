@@ -149,6 +149,7 @@ describe('settings persistence', () => {
     { label: 'MusicBoxSetBottomPanelMode', msg: MusicBox.SetBottomPanelMode({ value: 'drums' }) },
     { label: 'MusicBoxDrumPadHit', msg: MusicBox.DrumPadHit({ kind: 'kick' }) },
     { label: 'MagneticBlocksSpawn', msg: MagneticBlocks.SpawnBlocks() },
+    { label: 'MagneticBlocksRemove', msg: MagneticBlocks.RemoveBlock() },
   ]
 
   it('keeps the persisted message tag list aligned with persistence tests', () => {

@@ -262,6 +262,7 @@ export const Message = S.Union([
   ClickedRps,
   ClickedMagneticBlocks,
   MagneticBlocks.SpawnBlocks,
+  MagneticBlocks.RemoveBlock,
   LandingDragStarted,
   LandingDroppedOn,
   LandingDragEnded,
@@ -746,6 +747,7 @@ const _update = (
       ClickedRps: () => [{ ...model, page: PageRps() }, []],
       ClickedMagneticBlocks: () => [{ ...model, page: PageMagneticBlocks() }, []],
       MagneticBlocksSpawn: (msg) => updateMagneticBlocks(model, msg),
+      MagneticBlocksRemove: (msg) => updateMagneticBlocks(model, msg),
       LandingDragStarted: (msg) => [{ ...model, landingDragIndex: msg.index }, []],
       LandingDroppedOn: (msg) => {
         if (model.landingDragIndex < 0 || model.landingDragIndex === msg.index) return [{ ...model, landingDragIndex: -1 }, []]

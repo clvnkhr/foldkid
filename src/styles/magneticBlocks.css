@@ -23,9 +23,22 @@
 }
 
 .magnetic-blocks-spawn {
-  flex: 0 0 auto;
   font-size: clamp(0.95rem, 3.2vmin, 1.25rem);
   padding: 0.6em 0.9em;
+  white-space: nowrap;
+}
+
+.magnetic-blocks-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.magnetic-blocks-remove {
+  font-size: clamp(0.9rem, 3vmin, 1.15rem);
+  padding: 0.6em 0.8em;
   white-space: nowrap;
 }
 
@@ -172,6 +185,14 @@
 
   .magnetic-blocks-spawn {
     align-self: stretch;
+  }
+
+  .magnetic-blocks-actions {
+    align-self: stretch;
+  }
+
+  .magnetic-blocks-actions > .btn {
+    flex: 1 1 0;
   }
 
   .magnetic-blocks-board {

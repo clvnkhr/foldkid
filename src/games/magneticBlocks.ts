@@ -9,17 +9,19 @@ const MAX_BLOCKS = 48
 const SNAP_DISTANCE_FACTOR = 0.46
 const BREAK_SPEED = 1150
 
-export const Model = S.Struct({ spawnId: S.Number })
+export const Model = S.Struct({ spawnId: S.Number, removeId: S.Number })
 export type Model = typeof Model.Type
-export const init: Model = { spawnId: 0 }
+export const init: Model = { spawnId: 0, removeId: 0 }
 
 export const SpawnBlocks = m('MagneticBlocksSpawn')
-export const Message = S.Union([SpawnBlocks])
+export const RemoveBlock = m('MagneticBlocksRemove')
+export const Message = S.Union([SpawnBlocks, RemoveBlock])
 export type Message = typeof Message.Type
 
 export const update = (model: Model, message: Message): readonly [Model, readonly []] => {
   switch (message._tag) {
-    case 'MagneticBlocksSpawn': return [{ spawnId: model.spawnId + 1 }, []]
+    case 'MagneticBlocksSpawn': return [{ ...model, spawnId: model.spawnId + 1 }, []]
+    case 'MagneticBlocksRemove': return [{ ...model, removeId: model.removeId + 1 }, []]
   }
 }
 
@@ -60,15 +62,34 @@ interface DragState {
   brokeApart: boolean
 }
 
-const COMPONENT_COLORS = [
-  '#4f8cff', '#32c99a', '#ffd166', '#ff8a5b', '#e879f9', '#fb7185', '#a3e635', '#22d3ee',
-]
 const BLOCK_FACES = ['•ᴗ•', '◕‿◕', '^‿^', '˶ᵔ ᵕ ᵔ˶', 'ᵔᴗᵔ', '•‿•']
+const COMPONENT_COLOR_THEMES = [
+  { base: '#ef4444', hue: 0, saturation: 84, lightness: 60 }, // red
+  { base: '#f97316', hue: 24, saturation: 92, lightness: 59 }, // orange
+  { base: '#facc15', hue: 48, saturation: 94, lightness: 53 }, // yellow
+  { base: '#22c55e', hue: 142, saturation: 71, lightness: 45 }, // green
+  { base: '#3b82f6', hue: 217, saturation: 91, lightness: 60 }, // blue
+  { base: '#6366f1', hue: 239, saturation: 84, lightness: 67 }, // indigo
+  { base: '#a855f7', hue: 271, saturation: 91, lightness: 65 }, // violet
+  { base: '#ec4899', hue: 330, saturation: 81, lightness: 61 }, // pink
+  { base: '#94a3b8', hue: 215, saturation: 20, lightness: 65 }, // grey
+  { base: '#f8fafc', hue: 210, saturation: 40, lightness: 98 }, // white
+] as const
 
 const bondKey = (a: number, b: number): string => a < b ? `${a}:${b}` : `${b}:${a}`
 
 export const componentColor = (size: number): string =>
-  COMPONENT_COLORS[Math.min(Math.max(size, 1), COMPONENT_COLORS.length) - 1]!
+  (() => {
+    const normalizedSize = Math.max(size, 1)
+    const colorIndex = (normalizedSize - 1) % COMPONENT_COLOR_THEMES.length
+    const variation = Math.floor((normalizedSize - 1) / COMPONENT_COLOR_THEMES.length)
+    const theme = COMPONENT_COLOR_THEMES[colorIndex]!
+    if (variation === 0) return theme.base
+    const wave = ((variation - 1) % 4 - 1.5) * 7
+    const lightness = clamp(theme.lightness + wave, 28, 96)
+    const saturation = Math.max(0, theme.saturation - variation * 3)
+    return `hsl(${theme.hue + variation * 6}deg ${saturation}% ${lightness}%)`
+  })()
 
 export const componentsFor = (
   blocks: readonly Pick<MagneticBlock, 'id'>[],
@@ -297,6 +318,15 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
             render()
           }
 
+          const removeNewestBlock = (): void => {
+            const block = blocks.at(-1)
+            if (!block) return
+            bonds = removeBondsFor(bonds, block.id)
+            block.el.remove()
+            blocks = blocks.filter(candidate => candidate.id !== block.id)
+            render()
+          }
+
           const componentFor = (id: number): number[] =>
             componentsFor(blocks, bonds).find(component => component.includes(id)) ?? [id]
 
@@ -405,16 +435,23 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
           }
 
           let spawnedFor = Number(board.getAttribute('data-magnetic-spawn-id')) || 0
-          const onSpawnRequest = (): void => {
+          let removedFor = Number(board.getAttribute('data-magnetic-remove-id')) || 0
+          const onBoardRequest = (): void => {
             const nextSpawnId = Number(board.getAttribute('data-magnetic-spawn-id')) || 0
-            if (nextSpawnId === spawnedFor) return
-            spawnedFor = nextSpawnId
-            spawn(3 + Math.floor(Math.random() * 4))
+            const nextRemoveId = Number(board.getAttribute('data-magnetic-remove-id')) || 0
+            if (nextSpawnId !== spawnedFor) {
+              spawnedFor = nextSpawnId
+              spawn(3 + Math.floor(Math.random() * 4))
+            }
+            if (nextRemoveId !== removedFor) {
+              removedFor = nextRemoveId
+              removeNewestBlock()
+            }
           }
           const resizeObserver = new ResizeObserver(onResize)
-          const spawnObserver = new MutationObserver(onSpawnRequest)
+          const spawnObserver = new MutationObserver(onBoardRequest)
           resizeObserver.observe(board)
-          spawnObserver.observe(board, { attributes: true, attributeFilter: ['data-magnetic-spawn-id'] })
+          spawnObserver.observe(board, { attributes: true, attributeFilter: ['data-magnetic-spawn-id', 'data-magnetic-remove-id'] })
           board.addEventListener('pointerdown', onPointerDown)
           board.addEventListener('pointermove', onPointerMove)
           board.addEventListener('pointerup', finishDrag)
@@ -448,11 +485,15 @@ export const view = (model: Model, language: string = 'en') => {
             h.h1([h.Class('title')], [t('magneticBlocksTitle', language)]),
             h.p([h.Class('magnetic-blocks-help')], ['Drag slowly to carry joined blocks. Flick a block quickly to pull it free.']),
           ]),
-          h.button([h.Class(`btn btn-primary magnetic-blocks-spawn${model.spawnId > 0 ? ' magnetic-blocks-spawn--active' : ''}`), h.OnClick(SpawnBlocks()), h.Key(model.spawnId.toString())], [t('magneticBlocksSpawn', language)]),
+          h.div([h.Class('magnetic-blocks-actions')], [
+            h.button([h.Class(`btn btn-primary magnetic-blocks-spawn${model.spawnId > 0 ? ' magnetic-blocks-spawn--active' : ''}`), h.OnClick(SpawnBlocks()), h.Key(model.spawnId.toString())], [t('magneticBlocksSpawn', language)]),
+            h.button([h.Class('btn btn-secondary magnetic-blocks-remove'), h.OnClick(RemoveBlock()), h.Key(model.removeId.toString())], [t('magneticBlocksRemove', language)]),
+          ]),
         ]),
         h.div([
           h.Class('magnetic-blocks-board'),
           h.Attribute('data-magnetic-spawn-id', model.spawnId.toString()),
+          h.Attribute('data-magnetic-remove-id', model.removeId.toString()),
           h.OnMount({ name: 'magneticBlocks', f: mountMagneticBlocks }),
         ], []),
         h.p([h.Class('magnetic-blocks-key')], ['Same-sized colour = one magnetic shape. Snap blocks edge-to-edge!']),
