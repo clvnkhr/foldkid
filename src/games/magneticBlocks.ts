@@ -7,21 +7,28 @@ import { t } from '../i18n'
 const INITIAL_BLOCKS = 8
 const MAX_BLOCKS = 48
 const SNAP_DISTANCE_FACTOR = 0.46
-const BREAK_SPEED = 1150
+export const DEFAULT_BREAK_SPEED = 950
+export const MIN_BREAK_SPEED = 500
+export const MAX_BREAK_SPEED = 1500
 
-export const Model = S.Struct({ spawnId: S.Number, removeId: S.Number })
+export const normalizeBreakSpeed = (value: number): number =>
+  Math.round(Math.max(MIN_BREAK_SPEED, Math.min(MAX_BREAK_SPEED, value)))
+
+export const Model = S.Struct({ spawnId: S.Number, removeId: S.Number, breakSpeed: S.Number })
 export type Model = typeof Model.Type
-export const init: Model = { spawnId: 0, removeId: 0 }
+export const init: Model = { spawnId: 0, removeId: 0, breakSpeed: DEFAULT_BREAK_SPEED }
 
 export const SpawnBlocks = m('MagneticBlocksSpawn')
 export const RemoveBlock = m('MagneticBlocksRemove')
-export const Message = S.Union([SpawnBlocks, RemoveBlock])
+export const SetBreakSpeed = m('MagneticBlocksSetBreakSpeed', { value: S.Number })
+export const Message = S.Union([SpawnBlocks, RemoveBlock, SetBreakSpeed])
 export type Message = typeof Message.Type
 
 export const update = (model: Model, message: Message): readonly [Model, readonly []] => {
   switch (message._tag) {
     case 'MagneticBlocksSpawn': return [{ ...model, spawnId: model.spawnId + 1 }, []]
     case 'MagneticBlocksRemove': return [{ ...model, removeId: model.removeId + 1 }, []]
+    case 'MagneticBlocksSetBreakSpeed': return [{ ...model, breakSpeed: normalizeBreakSpeed(message.value) }, []]
   }
 }
 
@@ -299,6 +306,7 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
           let nextId = 0
           let drag: DragState | undefined
           let cell = boardCellSize(board.getBoundingClientRect())
+          let breakSpeed = normalizeBreakSpeed(Number(board.getAttribute('data-magnetic-break-speed')))
           const faces = new Map<string, { id: number; face: string }>()
 
           const bounds = (): BoardBounds => {
@@ -457,7 +465,7 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
             const point = pagePoint(event, board)
             const elapsed = event.timeStamp - drag.lastTime
             const speed = elapsed > 12 ? Math.hypot(point.x - drag.lastX, point.y - drag.lastY) * 1000 / elapsed : 0
-            if (speed > BREAK_SPEED && drag.ids.length > 1 && !drag.brokeApart) {
+            if (speed > breakSpeed && drag.ids.length > 1 && !drag.brokeApart) {
               const split = splitComponentAtBestBond(blocks, bonds, drag.grabbedId, point.x - drag.lastX, point.y - drag.lastY)
               if (split) {
                 bonds = split.bonds
@@ -504,6 +512,7 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
           const onBoardRequest = (): void => {
             const nextSpawnId = Number(board.getAttribute('data-magnetic-spawn-id')) || 0
             const nextRemoveId = Number(board.getAttribute('data-magnetic-remove-id')) || 0
+            breakSpeed = normalizeBreakSpeed(Number(board.getAttribute('data-magnetic-break-speed')))
             if (nextSpawnId !== spawnedFor) {
               spawnedFor = nextSpawnId
               spawn(3 + Math.floor(Math.random() * 4))
@@ -516,7 +525,7 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
           const resizeObserver = new ResizeObserver(onResize)
           const spawnObserver = new MutationObserver(onBoardRequest)
           resizeObserver.observe(board)
-          spawnObserver.observe(board, { attributes: true, attributeFilter: ['data-magnetic-spawn-id', 'data-magnetic-remove-id'] })
+          spawnObserver.observe(board, { attributes: true, attributeFilter: ['data-magnetic-spawn-id', 'data-magnetic-remove-id', 'data-magnetic-break-speed'] })
           board.addEventListener('pointerdown', onPointerDown)
           board.addEventListener('pointermove', onPointerMove)
           board.addEventListener('pointerup', finishDrag)
@@ -559,6 +568,7 @@ export const view = (model: Model, language: string = 'en') => {
           h.Class('magnetic-blocks-board'),
           h.Attribute('data-magnetic-spawn-id', model.spawnId.toString()),
           h.Attribute('data-magnetic-remove-id', model.removeId.toString()),
+          h.Attribute('data-magnetic-break-speed', model.breakSpeed.toString()),
           h.OnMount({ name: 'magneticBlocks', f: mountMagneticBlocks }),
         ], []),
         h.p([h.Class('magnetic-blocks-key')], ['Same-sized colour = one magnetic shape. Snap blocks edge-to-edge!']),

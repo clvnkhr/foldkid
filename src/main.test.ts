@@ -126,6 +126,7 @@ describe('settings persistence', () => {
     { label: 'DrawSetIncludeLetters', msg: Draw.SetIncludeLetters({ value: false }) },
     { label: 'MemorySetEmojiPackEnabled', msg: Memory.SetEmojiPackEnabled({ key: 'numbers', value: false }) },
     { label: 'RpsSetGigaChad', msg: Rps.SetGigaChad({ value: true }) },
+    { label: 'MagneticBlocksSetBreakSpeed', msg: MagneticBlocks.SetBreakSpeed({ value: 875 }) },
     { label: 'MusicBoxSetDrumVolume', msg: MusicBox.SetDrumVolume({ value: 0.35 }) },
     { label: 'MusicBoxToggleSongVisibility', msg: MusicBox.ToggleSongVisibility({ index: 1 }) },
     { label: 'MusicBoxSongDroppedOn', msg: MusicBox.SongDroppedOn({ index: 1 }) },

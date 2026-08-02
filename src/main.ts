@@ -66,6 +66,7 @@ const PersistedSettingsSchema = S.Struct({
   drawIncludeNumbers: S.optionalKey(S.Boolean),
   drawIncludeLetters: S.optionalKey(S.Boolean),
   rpsGigaChad: S.optionalKey(S.Boolean),
+  magneticBlocksBreakSpeed: S.optionalKey(S.Number),
   memoryEnabledPacks: S.optionalKey(S.Array(FindIt.EmojiPackKey)),
   musicBoxSongOrder: S.optionalKey(S.Array(S.Number)),
   musicBoxHiddenSongs: S.optionalKey(S.Array(S.Boolean)),
@@ -167,6 +168,7 @@ const buildSettingsData = (model: Model): PersistedSettings => ({
   drawIncludeNumbers: model.draw.includeNumbers,
   drawIncludeLetters: model.draw.includeLetters,
   rpsGigaChad: model.rps.gigaChad,
+  magneticBlocksBreakSpeed: model.magneticBlocks.breakSpeed,
   memoryEnabledPacks: model.memory.enabledPacks,
   musicBoxSongOrder: model.musicBox.songOrder,
   musicBoxHiddenSongs: model.musicBox.hiddenSongs,
@@ -263,6 +265,7 @@ export const Message = S.Union([
   ClickedMagneticBlocks,
   MagneticBlocks.SpawnBlocks,
   MagneticBlocks.RemoveBlock,
+  MagneticBlocks.SetBreakSpeed,
   LandingDragStarted,
   LandingDroppedOn,
   LandingDragEnded,
@@ -466,7 +469,10 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
       pattern: Pattern.init,
       bsl: Bsl.init(),
       rps: Rps.init,
-      magneticBlocks: MagneticBlocks.init,
+      magneticBlocks: {
+        ...MagneticBlocks.init,
+        breakSpeed: MagneticBlocks.normalizeBreakSpeed(saved.magneticBlocksBreakSpeed ?? MagneticBlocks.init.breakSpeed),
+      },
       settingsPanelWidth: 150,
       isDraggingSettings: false,
       settingsDragStartMouseX: 0,
@@ -655,6 +661,10 @@ const applyImportData = (model: Model, s: PersistedSettings): Model => {
       ...model.rps,
       gigaChad: s.rpsGigaChad ?? model.rps.gigaChad,
     },
+    magneticBlocks: {
+      ...model.magneticBlocks,
+      breakSpeed: MagneticBlocks.normalizeBreakSpeed(s.magneticBlocksBreakSpeed ?? model.magneticBlocks.breakSpeed),
+    },
     phonemeGarden: model.phonemeGarden,
     musicBox: {
       ...model.musicBox,
@@ -748,6 +758,7 @@ const _update = (
       ClickedMagneticBlocks: () => [{ ...model, page: PageMagneticBlocks() }, []],
       MagneticBlocksSpawn: (msg) => updateMagneticBlocks(model, msg),
       MagneticBlocksRemove: (msg) => updateMagneticBlocks(model, msg),
+      MagneticBlocksSetBreakSpeed: (msg) => updateMagneticBlocks(model, msg),
       LandingDragStarted: (msg) => [{ ...model, landingDragIndex: msg.index }, []],
       LandingDroppedOn: (msg) => {
         if (model.landingDragIndex < 0 || model.landingDragIndex === msg.index) return [{ ...model, landingDragIndex: -1 }, []]
@@ -950,6 +961,7 @@ export const PERSISTED_SETTINGS_MESSAGE_TAGS = [
   'BubblesSetPopLabel', 'BubblesSetSayColor', 'BubblesSetShapeMode',
   'DrawSetTopN', 'DrawSetRecognitionMode', 'DrawSetTargetOrderMode', 'DrawSetFreeMode', 'DrawSetIncludeSingle', 'DrawSetIncludePairs', 'DrawSetIncludeNumbers', 'DrawSetIncludeLetters',
   'MemorySetEmojiPackEnabled', 'RpsSetGigaChad',
+  'MagneticBlocksSetBreakSpeed',
   'MusicBoxSetDrumVolume', 'MusicBoxToggleSongVisibility', 'MusicBoxSongDroppedOn',
   'LandingSettingsDroppedOn', 'LandingToggleGameVisibility',
 ] as const satisfies ReadonlyArray<Message['_tag']>
@@ -1351,7 +1363,7 @@ export const view = (model: Model): Document => {
       h.h3([], [t('bslTitle', model.language)]),
     ])
     : null,
-  model.page._tag === 'PageRps'
+          model.page._tag === 'PageRps'
             ? h.div([h.Class('setting-section')], [
               h.h3([], [t('rpsTitle', model.language)]),
               h.div([h.Class('lang-buttons')], [
@@ -1363,6 +1375,25 @@ export const view = (model: Model): Document => {
                   [h.Class(model.rps.gigaChad ? 'btn btn-primary' : 'btn btn-secondary'), settingsOnClick(Rps.SetGigaChad({ value: true }))],
                   [t('rpsGigaChad', model.language)],
                 ),
+              ]),
+            ])
+            : null,
+          model.page._tag === 'PageMagneticBlocks'
+            ? h.div([h.Class('setting-section')], [
+              h.h3([], [t('magneticBlocksTitle', model.language)]),
+              h.div([h.Class('setting-row')], [
+                h.label([], [t('magneticBlocksPullSpeed', model.language)]),
+                h.div([h.Class('slider-row')], [
+                  h.input([
+                    h.Type('range'),
+                    h.Min(MagneticBlocks.MIN_BREAK_SPEED.toString()),
+                    h.Max(MagneticBlocks.MAX_BREAK_SPEED.toString()),
+                    h.Step('25'),
+                    h.Value(model.magneticBlocks.breakSpeed.toString()),
+                    settingsOnInput((v) => MagneticBlocks.SetBreakSpeed({ value: parseFloat(v) })),
+                  ]),
+                  h.span([], [`${model.magneticBlocks.breakSpeed} px/s`]),
+                ]),
               ]),
             ])
             : null,

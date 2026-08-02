@@ -1,7 +1,7 @@
 import { Effect, Fiber, Stream } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { componentColor, componentsFor, findClosestSnap, init, mountMagneticBlocks, RemoveBlock, removeBondsFor, snapTogether, SpawnBlocks, splitComponentAtBestBond, update } from './magneticBlocks'
+import { componentColor, componentsFor, DEFAULT_BREAK_SPEED, findClosestSnap, init, mountMagneticBlocks, RemoveBlock, removeBondsFor, SetBreakSpeed, snapTogether, SpawnBlocks, splitComponentAtBestBond, update } from './magneticBlocks'
 
 describe('Magnetic Blocks', () => {
   const blocks = [
@@ -111,7 +111,13 @@ describe('Magnetic Blocks', () => {
   })
 
   it('increments the spawn id through the game message', () => {
-    expect(update(init, SpawnBlocks())[0]).toEqual({ spawnId: 1, removeId: 0 })
-    expect(update(init, RemoveBlock())[0]).toEqual({ spawnId: 0, removeId: 1 })
+    expect(update(init, SpawnBlocks())[0]).toEqual({ spawnId: 1, removeId: 0, breakSpeed: DEFAULT_BREAK_SPEED })
+    expect(update(init, RemoveBlock())[0]).toEqual({ spawnId: 0, removeId: 1, breakSpeed: DEFAULT_BREAK_SPEED })
+  })
+
+  it('starts slightly easier to pull apart and keeps the setting in range', () => {
+    expect(DEFAULT_BREAK_SPEED).toBe(950)
+    expect(update(init, SetBreakSpeed({ value: 100 }))[0].breakSpeed).toBe(500)
+    expect(update(init, SetBreakSpeed({ value: 1800 }))[0].breakSpeed).toBe(1500)
   })
 })
