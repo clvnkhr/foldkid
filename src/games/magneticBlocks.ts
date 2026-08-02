@@ -2,6 +2,7 @@ import { Effect, Schema as S, Stream } from 'effect'
 import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
 
+import { getContext } from '../audio'
 import { t } from '../i18n'
 
 const INITIAL_BLOCKS = 8
@@ -67,6 +68,7 @@ interface DragState {
   lastY: number
   lastTime: number
   brokeApart: boolean
+  separated: boolean
 }
 
 const BLOCK_FACES = ['•ᴗ•', '◕‿◕', '^‿^', '˶ᵔ ᵕ ᵔ˶', 'ᵔᴗᵔ', '•‿•']
@@ -272,6 +274,59 @@ export const snapTogether = (
 
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value))
 
+const playMagnetNoise = (
+  context: AudioContext,
+  start: number,
+  duration: number,
+  volume: number,
+  filterType: BiquadFilterType,
+  filterFrequency: number,
+): void => {
+  const sampleCount = Math.ceil(context.sampleRate * duration)
+  const buffer = context.createBuffer(1, sampleCount, context.sampleRate)
+  const samples = buffer.getChannelData(0)
+  for (let index = 0; index < sampleCount; index++) {
+    const decay = (1 - index / sampleCount) ** 3
+    samples[index] = (Math.random() * 2 - 1) * decay
+  }
+
+  const source = context.createBufferSource()
+  const gain = context.createGain()
+  const filter = context.createBiquadFilter()
+  source.buffer = buffer
+  filter.type = filterType
+  filter.frequency.setValueAtTime(filterFrequency, start)
+  gain.gain.setValueAtTime(0.0001, start)
+  gain.gain.exponentialRampToValueAtTime(volume, start + 0.001)
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + duration)
+  source.connect(filter)
+  filter.connect(gain)
+  gain.connect(context.destination)
+  source.start(start)
+  source.stop(start + duration)
+  source.onended = () => {
+    source.disconnect()
+    filter.disconnect()
+    gain.disconnect()
+  }
+}
+
+const playMagnetClick = (kind: 'join' | 'release', joins: number = 1): void => {
+  const context = getContext()
+  if (!context) return
+
+  try {
+    const now = context.currentTime
+    if (kind === 'join') {
+      playMagnetNoise(context, now, 0.012 + Math.min(joins, 4) * 0.001, 0.085, 'highpass', 950)
+      return
+    }
+    playMagnetNoise(context, now, 0.02, 0.08, 'lowpass', 1250)
+  } catch {
+    // Audio is optional; a browser can deny an audio node even after the gesture.
+  }
+}
+
 const boardCellSize = (bounds: BoardBounds): number =>
   clamp(Math.min(bounds.width / 8.2, bounds.height / 5.6), 42, 76)
 
@@ -309,6 +364,7 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
           const readBreakSpeed = (): number =>
             normalizeBreakSpeed(Number(board.getAttribute('data-magnetic-break-speed') ?? DEFAULT_BREAK_SPEED))
           let breakSpeed = readBreakSpeed()
+          let muted = board.getAttribute('data-magnetic-muted') === 'true'
           const faces = new Map<string, { id: number; face: string }>()
 
           const bounds = (): BoardBounds => {
@@ -456,6 +512,7 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
               lastY: point.y,
               lastTime: event.timeStamp,
               brokeApart: false,
+              separated: false,
             }
             for (const draggedId of ids) blocks.find(block => block.id === draggedId)?.el.classList.add('magnetic-block--dragging')
             board.setPointerCapture(event.pointerId)
@@ -475,6 +532,7 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
                 drag.ids = split.draggedIds
                 drag.offsets = offsetsFor(drag.ids, point.x, point.y)
                 drag.brokeApart = true
+                drag.separated = true
                 blocks.find(block => block.id === drag!.grabbedId)?.el.classList.add('magnetic-block--dragging')
                 colorBlocks()
               }
@@ -487,14 +545,20 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
 
           const finishDrag = (event: PointerEvent): void => {
             if (!drag || drag.pointerId !== event.pointerId) return
+            const separated = drag.separated
             const previousBondCount = bonds.length
             const snapped = snapTogether(blocks, bonds, drag.ids, cell, cell * SNAP_DISTANCE_FACTOR, bounds())
             bonds = snapped.bonds
-            if (bonds.length > previousBondCount) showSnap(snapped.ids)
+            const joins = bonds.length - previousBondCount
+            if (joins > 0) showSnap(snapped.ids)
             for (const id of drag.ids) blocks.find(block => block.id === id)?.el.classList.remove('magnetic-block--dragging')
             if (board.hasPointerCapture(event.pointerId)) board.releasePointerCapture(event.pointerId)
             drag = undefined
             render()
+            if (!muted && event.type === 'pointerup') {
+              if (separated) playMagnetClick('release')
+              if (joins > 0) playMagnetClick('join', joins)
+            }
           }
 
           const onResize = (): void => {
@@ -515,6 +579,7 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
             const nextSpawnId = Number(board.getAttribute('data-magnetic-spawn-id')) || 0
             const nextRemoveId = Number(board.getAttribute('data-magnetic-remove-id')) || 0
             breakSpeed = readBreakSpeed()
+            muted = board.getAttribute('data-magnetic-muted') === 'true'
             if (nextSpawnId !== spawnedFor) {
               spawnedFor = nextSpawnId
               spawn(3 + Math.floor(Math.random() * 4))
@@ -527,7 +592,7 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
           const resizeObserver = new ResizeObserver(onResize)
           const spawnObserver = new MutationObserver(onBoardRequest)
           resizeObserver.observe(board)
-          spawnObserver.observe(board, { attributes: true, attributeFilter: ['data-magnetic-spawn-id', 'data-magnetic-remove-id', 'data-magnetic-break-speed'] })
+          spawnObserver.observe(board, { attributes: true, attributeFilter: ['data-magnetic-spawn-id', 'data-magnetic-remove-id', 'data-magnetic-break-speed', 'data-magnetic-muted'] })
           board.addEventListener('pointerdown', onPointerDown)
           board.addEventListener('pointermove', onPointerMove)
           board.addEventListener('pointerup', finishDrag)
@@ -549,7 +614,7 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
     }),
   )
 
-export const view = (model: Model, language: string = 'en') => {
+export const view = (model: Model, language: string = 'en', muted: boolean = false) => {
   const h = html<Message>()
 
   return h.div(
@@ -571,6 +636,7 @@ export const view = (model: Model, language: string = 'en') => {
           h.Attribute('data-magnetic-spawn-id', model.spawnId.toString()),
           h.Attribute('data-magnetic-remove-id', model.removeId.toString()),
           h.Attribute('data-magnetic-break-speed', model.breakSpeed.toString()),
+          h.Attribute('data-magnetic-muted', muted.toString()),
           h.OnMount({ name: 'magneticBlocks', f: mountMagneticBlocks }),
         ], []),
         h.p([h.Class('magnetic-blocks-key')], ['Same-sized colour = one magnetic shape. Snap blocks edge-to-edge!']),

@@ -1579,7 +1579,7 @@ export const view = (model: Model): Document => {
       PagePattern: () => Pattern.view(model.pattern, model.language),
       PageBsl: () => Bsl.view(model.bsl, model.language),
       PageRps: () => Rps.view(model.rps, model.language),
-      PageMagneticBlocks: () => MagneticBlocks.view(model.magneticBlocks, model.language),
+      PageMagneticBlocks: () => MagneticBlocks.view(model.magneticBlocks, model.language, model.muted),
     }),
           ),
           model.settingsOverlay
