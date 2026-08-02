@@ -70,7 +70,8 @@ interface DragState {
   brokeApart: boolean
 }
 
-const BLOCK_FACES = ['•ᴗ•', '◕‿◕', '^‿^', '˶ᵔ ᵕ ᵔ˶', 'ᵔᴗᵔ', '•‿•']
+const BLOCK_FACES = ['round', 'wide', 'side-eye', 'sleepy', 'cross-eyed', 'surprised'] as const
+type BlockFace = typeof BLOCK_FACES[number]
 const COMPONENT_COLOR_THEMES = [
   { base: '#ef4444', hue: 0, saturation: 84, lightness: 60 }, // red
   { base: '#f97316', hue: 24, saturation: 92, lightness: 59 }, // orange
@@ -98,6 +99,18 @@ export const componentColor = (size: number): string =>
     const saturation = Math.max(0, theme.saturation - variation * 3)
     return `hsl(${theme.hue + variation * 6}deg ${saturation}% ${lightness}%)`
   })()
+
+const RAINBOW_COLORS = COMPONENT_COLOR_THEMES.slice(0, 7).map(theme => theme.base)
+
+export const blockFillColor = (componentSize: number, blockIndex: number): string =>
+  componentSize === 7
+    ? RAINBOW_COLORS[blockIndex % RAINBOW_COLORS.length]!
+    : componentColor(componentSize)
+
+export const componentOutlineColor = (componentSize: number): string | undefined => {
+  const tens = Math.floor(componentSize / 10)
+  return tens >= 1 && tens <= 9 ? COMPONENT_COLOR_THEMES[tens - 1]!.base : undefined
+}
 
 export const componentsFor = (
   blocks: readonly Pick<MagneticBlock, 'id'>[],
@@ -420,6 +433,23 @@ const createBlockElement = (id: number): HTMLElement => {
   el.setAttribute('aria-label', 'Magnetic block')
   const face = document.createElement('span')
   face.className = 'magnetic-block-face'
+  face.setAttribute('aria-hidden', 'true')
+  const eyes = document.createElement('span')
+  eyes.className = 'magnetic-block-eyes'
+  for (const side of ['left', 'right'] as const) {
+    const eye = document.createElement('span')
+    eye.className = `magnetic-block-eye magnetic-block-eye--${side}`
+    const white = document.createElement('span')
+    white.className = 'magnetic-block-eye-white'
+    const pupil = document.createElement('span')
+    pupil.className = 'magnetic-block-eye-pupil'
+    white.append(pupil)
+    eye.append(white)
+    eyes.append(eye)
+  }
+  const mouth = document.createElement('span')
+  mouth.className = 'magnetic-block-mouth'
+  face.append(eyes, mouth)
   const count = document.createElement('span')
   count.className = 'magnetic-block-count'
   el.append(face, count)
@@ -442,7 +472,7 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
             normalizeBreakSpeed(Number(board.getAttribute('data-magnetic-break-speed') ?? DEFAULT_BREAK_SPEED))
           let breakSpeed = readBreakSpeed()
           let muted = board.getAttribute('data-magnetic-muted') === 'true'
-          const faces = new Map<string, { id: number; face: string }>()
+          let faces = new Map<number, BlockFace>()
           let labels = new Map<number, MagneticLabelCorner>()
 
           const bounds = (): BoardBounds => {
@@ -452,22 +482,20 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
 
           const colorBlocks = (): void => {
             const sizes = new Map<number, number>()
-            const faceById = new Map<number, string>()
-            const activeComponents = new Set<string>()
+            const colors = new Map<number, string>()
+            const faceById = new Map<number, BlockFace>()
+            const nextFaces = new Map<number, BlockFace>()
             const nextLabels = new Map<number, MagneticLabelCorner>()
             for (const component of componentsFor(blocks, bonds)) {
-              const key = [...component].sort((a, b) => a - b).join(':')
-              activeComponents.add(key)
-              let featured = faces.get(key)
-              if (!featured || !component.includes(featured.id)) {
-                featured = {
-                  id: component[Math.floor(Math.random() * component.length)]!,
-                  face: BLOCK_FACES[Math.floor(Math.random() * BLOCK_FACES.length)]!,
-                }
-                faces.set(key, featured)
+              const featuredId = [...component].sort((a, b) => a - b).find(id => faces.has(id))
+                ?? component[Math.floor(Math.random() * component.length)]!
+              const featuredFace = faces.get(featuredId) ?? BLOCK_FACES[Math.floor(Math.random() * BLOCK_FACES.length)]!
+              nextFaces.set(featuredId, featuredFace)
+              faceById.set(featuredId, featuredFace)
+              for (const [index, id] of [...component].sort((a, b) => a - b).entries()) {
+                sizes.set(id, component.length)
+                colors.set(id, blockFillColor(component.length, index))
               }
-              faceById.set(featured.id, featured.face)
-              for (const id of component) sizes.set(id, component.length)
 
               const priorLabels = component.flatMap(id => {
                 const corner = labels.get(id)
@@ -479,14 +507,21 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
                 ?? labelPlacementFor(blocks, component, cell)
               if (placement) nextLabels.set(placement.id, placement.corner)
             }
-            for (const key of faces.keys()) if (!activeComponents.has(key)) faces.delete(key)
+            faces = nextFaces
             labels = nextLabels
             for (const block of blocks) {
               const size = sizes.get(block.id) ?? 1
               const labelCorner = labels.get(block.id)
-              block.el.style.setProperty('--magnetic-block-color', componentColor(size))
+              const outline = componentOutlineColor(size)
+              block.el.style.setProperty('--magnetic-block-color', colors.get(block.id) ?? componentColor(size))
+              if (outline) block.el.style.setProperty('--magnetic-block-outline', outline)
+              else block.el.style.removeProperty('--magnetic-block-outline')
               block.el.style.setProperty('--magnetic-block-size', `${cell}px`)
-              block.el.querySelector('.magnetic-block-face')!.textContent = faceById.get(block.id) ?? ''
+              const face = block.el.querySelector('.magnetic-block-face')!
+              const faceVariant = faceById.get(block.id)
+              face.classList.toggle('magnetic-block-face--visible', faceVariant !== undefined)
+              if (faceVariant) face.setAttribute('data-magnetic-face', faceVariant)
+              else face.removeAttribute('data-magnetic-face')
               block.el.querySelector('.magnetic-block-count')!.textContent = labelCorner ? size.toString() : ''
               block.el.classList.toggle('magnetic-block--has-count', labelCorner !== undefined)
               if (labelCorner) block.el.setAttribute('data-magnetic-label-corner', labelCorner)

@@ -1,7 +1,7 @@
 import { Effect, Fiber, Stream } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { componentColor, componentsFor, DEFAULT_BREAK_SPEED, findClosestSnap, init, labelPlacementFor, mountMagneticBlocks, RemoveBlock, removeBondsFor, SetBreakSpeed, snapTogether, SpawnBlocks, splitComponentAtBestBond, update } from './magneticBlocks'
+import { blockFillColor, componentColor, componentOutlineColor, componentsFor, DEFAULT_BREAK_SPEED, findClosestSnap, init, labelPlacementFor, mountMagneticBlocks, RemoveBlock, removeBondsFor, SetBreakSpeed, snapTogether, SpawnBlocks, splitComponentAtBestBond, update } from './magneticBlocks'
 
 describe('Magnetic Blocks', () => {
   const blocks = [
@@ -26,6 +26,18 @@ describe('Magnetic Blocks', () => {
     expect(componentColor(11)).not.toBe(componentColor(1))
     expect(componentColor(18)).not.toBe(componentColor(8))
     expect(componentColor(100)).not.toBe(componentColor(10))
+  })
+
+  it('makes seven-block collections rainbow and outlines each tens group by its leading digit', () => {
+    expect(Array.from({ length: 7 }, (_, index) => blockFillColor(7, index))).toEqual([
+      '#ef4444', '#f97316', '#facc15', '#22c55e', '#3b82f6', '#6366f1', '#a855f7',
+    ])
+    expect(blockFillColor(6, 3)).toBe(componentColor(6))
+    expect(componentOutlineColor(10)).toBe('#ef4444')
+    expect(componentOutlineColor(19)).toBe('#ef4444')
+    expect(componentOutlineColor(20)).toBe('#f97316')
+    expect(componentOutlineColor(99)).toBe('#94a3b8')
+    expect(componentOutlineColor(9)).toBeUndefined()
   })
 
   it('breaks only the bonds touching the fast-moving block', () => {
@@ -108,6 +120,9 @@ describe('Magnetic Blocks', () => {
     await new Promise(resolve => setTimeout(resolve, 0))
     const initialCount = board.querySelectorAll('.magnetic-block').length
     expect([...board.querySelectorAll('.magnetic-block-count')].map(el => el.textContent)).toEqual(new Array(initialCount).fill('1'))
+    expect(board.querySelectorAll('.magnetic-block-face--visible')).toHaveLength(initialCount)
+    expect(board.querySelectorAll('.magnetic-block-eye-white')).toHaveLength(initialCount * 2)
+    expect(board.querySelectorAll('.magnetic-block-eye-pupil')).toHaveLength(initialCount * 2)
     board.setAttribute('data-magnetic-spawn-id', '1')
     await new Promise(resolve => setTimeout(resolve, 0))
 

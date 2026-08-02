@@ -95,7 +95,7 @@
   place-items: center;
   z-index: 2;
   cursor: grab;
-  border: 3px solid color-mix(in srgb, var(--magnetic-block-color), #162238 35%);
+  border: 3px solid var(--magnetic-block-outline, color-mix(in srgb, var(--magnetic-block-color), #162238 35%));
   border-radius: 16%;
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.54), transparent 34%),
@@ -110,13 +110,151 @@
 }
 
 .magnetic-block-face {
+  display: none;
   position: relative;
-  color: rgba(255, 255, 255, 0.88);
-  font-size: calc(var(--magnetic-block-size) * 0.36);
-  font-weight: 900;
-  line-height: 1;
-  letter-spacing: -0.08em;
-  text-shadow: 0 2px 2px rgba(12, 24, 43, 0.35);
+  width: 74%;
+  height: 55%;
+  filter: drop-shadow(0 2px 1px rgba(12, 24, 43, 0.28));
+}
+
+.magnetic-block-face--visible {
+  display: block;
+}
+
+.magnetic-block-eyes {
+  position: absolute;
+  top: 1%;
+  right: 2%;
+  left: 2%;
+  height: 65%;
+}
+
+.magnetic-block-eye {
+  position: absolute;
+  top: 0;
+  width: 38%;
+  height: 100%;
+}
+
+.magnetic-block-eye--left { left: 2%; }
+.magnetic-block-eye--right { right: 2%; }
+
+.magnetic-block-eye-white {
+  position: absolute;
+  inset: 0;
+  display: block;
+  overflow: hidden;
+  background: #fffdf4;
+  border: 2px solid rgba(29, 43, 64, 0.34);
+  border-radius: 50%;
+  box-shadow: inset 0 2px 2px rgba(255, 255, 255, 0.9);
+}
+
+.magnetic-block-eye-pupil {
+  position: absolute;
+  top: 27%;
+  left: 27%;
+  width: 48%;
+  height: 52%;
+  background: #15233b;
+  border-radius: 50%;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.42) inset;
+}
+
+.magnetic-block-mouth {
+  position: absolute;
+  bottom: -4%;
+  left: 50%;
+  width: 34%;
+  height: 19%;
+  border: solid rgba(255, 255, 255, 0.94);
+  border-width: 0 0 3px;
+  border-radius: 0 0 999px 999px;
+  transform: translateX(-50%);
+}
+
+.magnetic-block-face[data-magnetic-face='wide'] .magnetic-block-eye {
+  top: 10%;
+  height: 77%;
+  width: 42%;
+}
+
+.magnetic-block-face[data-magnetic-face='wide'] .magnetic-block-eye-pupil {
+  top: 22%;
+  width: 43%;
+  height: 58%;
+}
+
+.magnetic-block-face[data-magnetic-face='side-eye'] .magnetic-block-eye-pupil {
+  top: 26%;
+  left: 43%;
+}
+
+.magnetic-block-face[data-magnetic-face='side-eye'] .magnetic-block-eye--left .magnetic-block-eye-pupil {
+  left: 12%;
+}
+
+.magnetic-block-face[data-magnetic-face='side-eye'] .magnetic-block-mouth {
+  width: 28%;
+  border-radius: 0;
+}
+
+.magnetic-block-face[data-magnetic-face='sleepy'] .magnetic-block-eye {
+  top: 27%;
+  height: 47%;
+}
+
+.magnetic-block-face[data-magnetic-face='sleepy'] .magnetic-block-eye-pupil {
+  top: 5%;
+  left: 25%;
+  width: 52%;
+  height: 90%;
+}
+
+.magnetic-block-face[data-magnetic-face='sleepy'] .magnetic-block-mouth {
+  bottom: 1%;
+  border-width: 3px 0 0;
+  border-radius: 999px 999px 0 0;
+}
+
+.magnetic-block-face[data-magnetic-face='cross-eyed'] .magnetic-block-eye-pupil {
+  top: 38%;
+}
+
+.magnetic-block-face[data-magnetic-face='cross-eyed'] .magnetic-block-eye--left .magnetic-block-eye-pupil {
+  left: 52%;
+}
+
+.magnetic-block-face[data-magnetic-face='cross-eyed'] .magnetic-block-eye--right .magnetic-block-eye-pupil {
+  left: 2%;
+}
+
+.magnetic-block-face[data-magnetic-face='cross-eyed'] .magnetic-block-mouth {
+  width: 22%;
+  height: 27%;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.94);
+}
+
+.magnetic-block-face[data-magnetic-face='surprised'] .magnetic-block-eye {
+  top: -9%;
+  height: 112%;
+}
+
+.magnetic-block-face[data-magnetic-face='surprised'] .magnetic-block-eye-pupil {
+  top: 18%;
+  left: 29%;
+  width: 43%;
+  height: 43%;
+}
+
+.magnetic-block-face[data-magnetic-face='surprised'] .magnetic-block-mouth {
+  width: 20%;
+  height: 29%;
+  border: 0;
+  border-radius: 50%;
+  background: #fffdf4;
 }
 
 .magnetic-block-count {
