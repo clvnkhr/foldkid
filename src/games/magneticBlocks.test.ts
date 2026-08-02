@@ -1,7 +1,7 @@
 import { Effect, Fiber, Stream } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { componentColor, componentsFor, DEFAULT_BREAK_SPEED, findClosestSnap, init, mountMagneticBlocks, RemoveBlock, removeBondsFor, SetBreakSpeed, snapTogether, SpawnBlocks, splitComponentAtBestBond, update } from './magneticBlocks'
+import { componentColor, componentsFor, DEFAULT_BREAK_SPEED, findClosestSnap, init, labelPlacementFor, mountMagneticBlocks, RemoveBlock, removeBondsFor, SetBreakSpeed, snapTogether, SpawnBlocks, splitComponentAtBestBond, update } from './magneticBlocks'
 
 describe('Magnetic Blocks', () => {
   const blocks = [
@@ -83,6 +83,18 @@ describe('Magnetic Blocks', () => {
 
     expect(componentsFor(magneticBlocks, snapped.bonds)[0]).toEqual(expect.arrayContaining([1, 2, 3, 4, 5]))
     expect(snapped.ids).toHaveLength(5)
+  })
+
+  it('keeps a collection label on its outer boundary corner as blocks are added', () => {
+    const pair = [
+      { id: 1, x: 100, y: 100 },
+      { id: 2, x: 150, y: 100 },
+    ]
+    const firstPlacement = labelPlacementFor(pair, [1, 2], 50)
+    expect(firstPlacement).toEqual({ id: 1, corner: 'top-left' })
+
+    const grown = [...pair, { id: 3, x: 200, y: 100 }]
+    expect(labelPlacementFor(grown, [1, 2, 3], 50, firstPlacement)).toEqual(firstPlacement)
   })
 
   it('creates initial blocks and adds another random batch when the spawn id changes', async () => {

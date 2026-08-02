@@ -120,9 +120,8 @@
 }
 
 .magnetic-block-count {
+  display: none;
   position: absolute;
-  right: -0.28em;
-  bottom: -0.42em;
   min-width: 1.25em;
   padding: 0.08em 0.28em;
   color: #182238;
@@ -134,6 +133,30 @@
   border: 2px solid #53627b;
   border-radius: 999px;
   box-shadow: 0 2px 3px rgba(32, 43, 62, 0.24);
+}
+
+.magnetic-block--has-count .magnetic-block-count {
+  display: block;
+}
+
+.magnetic-block[data-magnetic-label-corner='top-left'] .magnetic-block-count {
+  top: -0.42em;
+  left: -0.28em;
+}
+
+.magnetic-block[data-magnetic-label-corner='top-right'] .magnetic-block-count {
+  top: -0.42em;
+  right: -0.28em;
+}
+
+.magnetic-block[data-magnetic-label-corner='bottom-right'] .magnetic-block-count {
+  right: -0.28em;
+  bottom: -0.42em;
+}
+
+.magnetic-block[data-magnetic-label-corner='bottom-left'] .magnetic-block-count {
+  bottom: -0.42em;
+  left: -0.28em;
 }
 
 .magnetic-block--dragging {

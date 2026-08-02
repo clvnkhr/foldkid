@@ -273,6 +273,84 @@ export const snapTogether = (
 
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value))
 
+type BlockSide = 'top' | 'right' | 'bottom' | 'left'
+export type MagneticLabelCorner = 'top-left' | 'top-right' | 'bottom-right' | 'bottom-left'
+export interface MagneticLabelPlacement {
+  readonly id: number
+  readonly corner: MagneticLabelCorner
+}
+
+const LABEL_CORNERS: ReadonlyArray<{ readonly corner: MagneticLabelCorner; readonly sides: readonly [BlockSide, BlockSide] }> = [
+  { corner: 'top-left', sides: ['top', 'left'] },
+  { corner: 'top-right', sides: ['top', 'right'] },
+  { corner: 'bottom-right', sides: ['bottom', 'right'] },
+  { corner: 'bottom-left', sides: ['bottom', 'left'] },
+]
+
+const exposedSidesFor = (
+  block: MagneticBlock,
+  component: readonly MagneticBlock[],
+  cell: number,
+): ReadonlySet<BlockSide> => {
+  const tolerance = cell * 0.16
+  const occupied = (x: number, y: number): boolean =>
+    component.some(candidate => candidate.id !== block.id && Math.abs(candidate.x - x) < tolerance && Math.abs(candidate.y - y) < tolerance)
+
+  return new Set<BlockSide>([
+    ...(occupied(block.x, block.y - cell) ? [] : ['top' as const]),
+    ...(occupied(block.x + cell, block.y) ? [] : ['right' as const]),
+    ...(occupied(block.x, block.y + cell) ? [] : ['bottom' as const]),
+    ...(occupied(block.x - cell, block.y) ? [] : ['left' as const]),
+  ])
+}
+
+export const labelPlacementFor = (
+  blocks: readonly MagneticBlock[],
+  ids: readonly number[],
+  cell: number,
+  previous?: MagneticLabelPlacement,
+): MagneticLabelPlacement | undefined => {
+  const component = ids.flatMap(id => {
+    const block = blocks.find(candidate => candidate.id === id)
+    return block ? [block] : []
+  })
+  if (component.length === 0) return undefined
+
+  const candidates = component.flatMap(block => {
+    const exposed = exposedSidesFor(block, component, cell)
+    const corners = LABEL_CORNERS.filter(({ sides }) => sides.every(side => exposed.has(side)))
+    return corners.length > 0 ? [{ block, corners }] : []
+  })
+  if (candidates.length === 0) return undefined
+
+  const retained = previous && candidates.find(candidate => candidate.block.id === previous.id)
+  const selected = retained ?? [...candidates].sort((a, b) =>
+    a.block.y - b.block.y || a.block.x - b.block.x || a.block.id - b.block.id,
+  )[0]!
+  const corner = retained?.corners.find(candidate => candidate.corner === previous?.corner)
+    ?? (() => {
+      const centreX = component.reduce((sum, block) => sum + block.x, 0) / component.length
+      const centreY = component.reduce((sum, block) => sum + block.y, 0) / component.length
+      const signFor = (candidate: MagneticLabelCorner): readonly [number, number] => {
+        switch (candidate) {
+          case 'top-left': return [-1, -1]
+          case 'top-right': return [1, -1]
+          case 'bottom-right': return [1, 1]
+          case 'bottom-left': return [-1, 1]
+        }
+      }
+      return [...selected.corners].sort((a, b) => {
+        const [ax, ay] = signFor(a.corner)
+        const [bx, by] = signFor(b.corner)
+        const aDistance = (selected.block.x + ax * cell / 2 - centreX) ** 2 + (selected.block.y + ay * cell / 2 - centreY) ** 2
+        const bDistance = (selected.block.x + bx * cell / 2 - centreX) ** 2 + (selected.block.y + by * cell / 2 - centreY) ** 2
+        return bDistance - aDistance
+      })[0]!
+    })()
+
+  return { id: selected.block.id, corner: corner.corner }
+}
+
 const playMagnetNoise = (
   context: AudioContext,
   start: number,
@@ -365,6 +443,7 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
           let breakSpeed = readBreakSpeed()
           let muted = board.getAttribute('data-magnetic-muted') === 'true'
           const faces = new Map<string, { id: number; face: string }>()
+          let labels = new Map<number, MagneticLabelCorner>()
 
           const bounds = (): BoardBounds => {
             const rect = board.getBoundingClientRect()
@@ -375,6 +454,7 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
             const sizes = new Map<number, number>()
             const faceById = new Map<number, string>()
             const activeComponents = new Set<string>()
+            const nextLabels = new Map<number, MagneticLabelCorner>()
             for (const component of componentsFor(blocks, bonds)) {
               const key = [...component].sort((a, b) => a - b).join(':')
               activeComponents.add(key)
@@ -388,14 +468,29 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
               }
               faceById.set(featured.id, featured.face)
               for (const id of component) sizes.set(id, component.length)
+
+              const priorLabels = component.flatMap(id => {
+                const corner = labels.get(id)
+                return corner ? [{ id, corner }] : []
+              }).sort((a, b) => a.id - b.id)
+              const placement = priorLabels
+                .map(previous => labelPlacementFor(blocks, component, cell, previous))
+                .find((candidate, index) => candidate?.id === priorLabels[index]?.id)
+                ?? labelPlacementFor(blocks, component, cell)
+              if (placement) nextLabels.set(placement.id, placement.corner)
             }
             for (const key of faces.keys()) if (!activeComponents.has(key)) faces.delete(key)
+            labels = nextLabels
             for (const block of blocks) {
               const size = sizes.get(block.id) ?? 1
+              const labelCorner = labels.get(block.id)
               block.el.style.setProperty('--magnetic-block-color', componentColor(size))
               block.el.style.setProperty('--magnetic-block-size', `${cell}px`)
               block.el.querySelector('.magnetic-block-face')!.textContent = faceById.get(block.id) ?? ''
-              block.el.querySelector('.magnetic-block-count')!.textContent = size.toString()
+              block.el.querySelector('.magnetic-block-count')!.textContent = labelCorner ? size.toString() : ''
+              block.el.classList.toggle('magnetic-block--has-count', labelCorner !== undefined)
+              if (labelCorner) block.el.setAttribute('data-magnetic-label-corner', labelCorner)
+              else block.el.removeAttribute('data-magnetic-label-corner')
               block.el.title = size > 1 ? `${size} blocks snapped together` : '1 block'
             }
           }
