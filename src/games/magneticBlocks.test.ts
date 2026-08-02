@@ -1,7 +1,7 @@
 import { Effect, Fiber, Stream } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { componentColor, componentsFor, findClosestSnap, init, mountMagneticBlocks, RemoveBlock, removeBondsFor, SpawnBlocks, update } from './magneticBlocks'
+import { componentColor, componentsFor, findClosestSnap, init, mountMagneticBlocks, RemoveBlock, removeBondsFor, snapTogether, SpawnBlocks, update } from './magneticBlocks'
 
 describe('Magnetic Blocks', () => {
   const blocks = [
@@ -56,6 +56,20 @@ describe('Magnetic Blocks', () => {
     ], [1], 50, 30, { width: 300, height: 250 })
 
     expect(snap).toBeUndefined()
+  })
+
+  it('keeps snapping until every touching component has joined the moving shape', () => {
+    const magneticBlocks = [
+      { id: 1, x: 100, y: 100 },
+      { id: 2, x: 150, y: 100 },
+      { id: 3, x: 200, y: 100 },
+      { id: 4, x: 260, y: 100 },
+      { id: 5, x: 160, y: 150 },
+    ]
+    const snapped = snapTogether(magneticBlocks, [{ a: 1, b: 2 }, { a: 2, b: 3 }], [1, 2, 3], 50, 20, { width: 400, height: 300 })
+
+    expect(componentsFor(magneticBlocks, snapped.bonds)[0]).toEqual(expect.arrayContaining([1, 2, 3, 4, 5]))
+    expect(snapped.ids).toHaveLength(5)
   })
 
   it('creates initial blocks and adds another random batch when the spawn id changes', async () => {

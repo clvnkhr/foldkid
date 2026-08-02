@@ -40,7 +40,7 @@ interface MountedBlock extends MagneticBlock {
   readonly el: HTMLElement
 }
 
-interface BoardBounds {
+export interface BoardBounds {
   readonly width: number
   readonly height: number
 }
@@ -191,6 +191,41 @@ export const findClosestSnap = (
     }
   }
   return closest
+}
+
+export const snapTogether = (
+  blocks: MagneticBlock[],
+  bonds: readonly MagneticBond[],
+  movingIds: readonly number[],
+  cell: number,
+  snapDistance: number,
+  bounds: BoardBounds,
+): { bonds: MagneticBond[]; ids: number[] } => {
+  let nextBonds = [...bonds]
+  let joinedIds = [...movingIds]
+
+  // Each loop either adds a new component to the moving shape or stops. The
+  // bound guarantees that a malformed board can never create a snap loop.
+  for (let step = 0; step < blocks.length; step++) {
+    const snap = findClosestSnap(blocks, joinedIds, cell, snapDistance, bounds)
+    if (!snap) break
+    const key = bondKey(snap.bond.a, snap.bond.b)
+    if (nextBonds.some(bond => bondKey(bond.a, bond.b) === key)) break
+
+    for (const id of joinedIds) {
+      const block = blocks.find(candidate => candidate.id === id)
+      if (block) {
+        block.x += snap.dx
+        block.y += snap.dy
+      }
+    }
+    nextBonds = [...nextBonds, snap.bond]
+    const expanded = componentsFor(blocks, nextBonds).find(component => component.includes(snap.bond.a))
+    if (!expanded || expanded.length <= joinedIds.length) break
+    joinedIds = expanded
+  }
+
+  return { bonds: nextBonds, ids: joinedIds }
 }
 
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value))
@@ -404,18 +439,10 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
 
           const finishDrag = (event: PointerEvent): void => {
             if (!drag || drag.pointerId !== event.pointerId) return
-            const snap = findClosestSnap(blocks, drag.ids, cell, cell * SNAP_DISTANCE_FACTOR, bounds())
-            if (snap) {
-              for (const id of drag.ids) {
-                const block = blocks.find(candidate => candidate.id === id)
-                if (block) {
-                  block.x += snap.dx
-                  block.y += snap.dy
-                }
-              }
-              if (!bonds.some(bond => bondKey(bond.a, bond.b) === bondKey(snap.bond.a, snap.bond.b))) bonds = [...bonds, snap.bond]
-              showSnap([...drag.ids, snap.bond.b])
-            }
+            const previousBondCount = bonds.length
+            const snapped = snapTogether(blocks, bonds, drag.ids, cell, cell * SNAP_DISTANCE_FACTOR, bounds())
+            bonds = snapped.bonds
+            if (bonds.length > previousBondCount) showSnap(snapped.ids)
             for (const id of drag.ids) blocks.find(block => block.id === id)?.el.classList.remove('magnetic-block--dragging')
             if (board.hasPointerCapture(event.pointerId)) board.releasePointerCapture(event.pointerId)
             drag = undefined
