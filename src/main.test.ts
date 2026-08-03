@@ -11,7 +11,7 @@ import * as MusicBox from './games/musicbox'
 import * as Rps from './games/rps/main'
 import * as MagneticBlocks from './games/magneticBlocks'
 import { LANDING_GAME_COUNT, LANDING_GAMES } from './pages/landing'
-import { ApplyImport, ClickedLanding, ClickedCounter, ClickedFindIt, ClickedBubbles, ClickedDarkMode, ClickedMagneticBlocks, ClickedMemory, ConfirmResetSettings, ExportSettings, ImportedSettings, LandingDragStarted, LandingDroppedOn, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsPersisted, ToggleMute } from './message'
+import { ApplyImport, ClickedLanding, ClickedCounter, ClickedFindIt, ClickedBubbles, ClickedDarkMode, ClickedMagneticBlocks, ClickedMemory, ClickedTalkingKeyboard, ConfirmResetSettings, ExportSettings, ImportedSettings, LandingDragStarted, LandingDroppedOn, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsPersisted, ToggleMute } from './message'
 
 const resolveSettings = [{ name: 'PersistSettings' }, SettingsPersisted()] as const
 const resolveBubblesChime = [{ name: 'PlayChime' }, Bubbles.SoundPlayed()] as const
@@ -405,6 +405,18 @@ describe('Main', () => {
       Story.message(ClickedMagneticBlocks()),
       Story.model((model) => {
         expect(model.page._tag).toBe('PageMagneticBlocks')
+      }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('ClickedTalkingKeyboard opens Talking Keyboard', () => {
+    Story.story(
+      Main.update,
+      Story.with(createModel()),
+      Story.message(ClickedTalkingKeyboard()),
+      Story.model((model) => {
+        expect(model.page._tag).toBe('PageTalkingKeyboard')
       }),
       Story.Command.expectNone(),
     )

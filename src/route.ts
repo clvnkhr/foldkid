@@ -16,6 +16,7 @@ export const PagePattern = ts('PagePattern')
 export const PageBsl = ts('PageBsl')
 export const PageRps = ts('PageRps')
 export const PageMagneticBlocks = ts('PageMagneticBlocks')
+export const PageTalkingKeyboard = ts('PageTalkingKeyboard')
 
 export const Page = S.Union([
   PageLanding,
@@ -33,5 +34,6 @@ export const Page = S.Union([
   PageBsl,
   PageRps,
   PageMagneticBlocks,
+  PageTalkingKeyboard,
 ])
 export type Page = typeof Page.Type
