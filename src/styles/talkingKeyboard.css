@@ -47,6 +47,29 @@
   animation: talking-keyboard-bob 1.5s ease-in-out infinite alternate;
 }
 
+.talking-keyboard-map-with-x {
+  position: relative;
+  display: inline-block;
+  line-height: 1;
+}
+
+.talking-keyboard-map {
+  display: block;
+}
+
+.talking-keyboard-map-x {
+  position: absolute;
+  top: 42%;
+  left: 50%;
+  color: #e11d48;
+  font-family: Arial, sans-serif;
+  font-size: 0.19em;
+  font-weight: 1000;
+  line-height: 1;
+  text-shadow: 0.04em 0.04em 0 #ffffff, -0.04em -0.04em 0 #ffffff;
+  transform: translate(-50%, -50%) rotate(-10deg);
+}
+
 .talking-keyboard-sentence {
   grid-area: sentence;
   align-self: end;

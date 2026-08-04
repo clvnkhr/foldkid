@@ -10,6 +10,7 @@ import { speak, type SpeechOptions } from '../speech'
 export type LetterWord = Readonly<{
   word: string
   emoji: string
+  illustration?: 'map-with-x'
 }>
 
 export const KEYBOARD_ROWS = [
@@ -19,32 +20,32 @@ export const KEYBOARD_ROWS = [
 ] as const
 
 export const LETTER_WORDS: Readonly<Record<string, readonly LetterWord[]>> = {
-  A: [{ word: 'apple', emoji: '🍎' }, { word: 'astronaut', emoji: '🧑‍🚀' }, { word: 'ant', emoji: '🐜' }],
-  B: [{ word: 'balloon', emoji: '🎈' }, { word: 'bear', emoji: '🐻' }, { word: 'banana', emoji: '🍌' }],
-  C: [{ word: 'cat', emoji: '🐈' }, { word: 'cake', emoji: '🍰' }, { word: 'car', emoji: '🚗' }],
-  D: [{ word: 'dinosaur', emoji: '🦕' }, { word: 'dog', emoji: '🐕' }, { word: 'drum', emoji: '🥁' }],
-  E: [{ word: 'elephant', emoji: '🐘' }, { word: 'egg', emoji: '🥚' }, { word: 'eagle', emoji: '🦅' }],
-  F: [{ word: 'fish', emoji: '🐟' }, { word: 'frog', emoji: '🐸' }, { word: 'flower', emoji: '🌼' }],
-  G: [{ word: 'giraffe', emoji: '🦒' }, { word: 'guitar', emoji: '🎸' }, { word: 'grapes', emoji: '🍇' }],
-  H: [{ word: 'helicopter', emoji: '🚁' }, { word: 'hippo', emoji: '🦛' }, { word: 'hat', emoji: '🎩' }],
-  I: [{ word: 'igloo', emoji: '🧊' }, { word: 'ice cream', emoji: '🍦' }, { word: 'insect', emoji: '🐞' }],
-  J: [{ word: 'jellyfish', emoji: '🪼' }, { word: 'juice', emoji: '🧃' }, { word: 'jigsaw', emoji: '🧩' }],
-  K: [{ word: 'kite', emoji: '🪁' }, { word: 'kangaroo', emoji: '🦘' }, { word: 'key', emoji: '🔑' }],
-  L: [{ word: 'lion', emoji: '🦁' }, { word: 'lemon', emoji: '🍋' }, { word: 'leaf', emoji: '🍃' }],
-  M: [{ word: 'moon', emoji: '🌙' }, { word: 'monkey', emoji: '🐒' }, { word: 'music', emoji: '🎵' }],
-  N: [{ word: 'nest', emoji: '🪺' }, { word: 'noodles', emoji: '🍜' }, { word: 'night', emoji: '🌃' }],
-  O: [{ word: 'octopus', emoji: '🐙' }, { word: 'orange', emoji: '🍊' }, { word: 'owl', emoji: '🦉' }],
-  P: [{ word: 'penguin', emoji: '🐧' }, { word: 'pizza', emoji: '🍕' }, { word: 'paint', emoji: '🎨' }],
-  Q: [{ word: 'queen', emoji: '👑' }, { word: 'quiet', emoji: '🤫' }, { word: 'quilt', emoji: '🧵' }],
-  R: [{ word: 'rainbow', emoji: '🌈' }, { word: 'robot', emoji: '🤖' }, { word: 'rocket', emoji: '🚀' }],
-  S: [{ word: 'sun', emoji: '☀️' }, { word: 'snake', emoji: '🐍' }, { word: 'star', emoji: '⭐' }],
-  T: [{ word: 'tiger', emoji: '🐯' }, { word: 'train', emoji: '🚂' }, { word: 'turtle', emoji: '🐢' }],
-  U: [{ word: 'umbrella', emoji: '☂️' }, { word: 'unicorn', emoji: '🦄' }, { word: 'up', emoji: '⬆️' }],
-  V: [{ word: 'violin', emoji: '🎻' }, { word: 'volcano', emoji: '🌋' }, { word: 'van', emoji: '🚐' }],
-  W: [{ word: 'whale', emoji: '🐋' }, { word: 'watermelon', emoji: '🍉' }, { word: 'window', emoji: '🪟' }],
-  X: [{ word: 'xylophone', emoji: '🎶' }, { word: 'x-ray', emoji: '🩻' }],
-  Y: [{ word: 'yak', emoji: '🐂' }, { word: 'yacht', emoji: '⛵' }, { word: 'yoyo', emoji: '🪀' }],
-  Z: [{ word: 'zebra', emoji: '🦓' }, { word: 'zoo', emoji: '🦒🐘🦁' }, { word: 'zip', emoji: '🤐' }],
+  A: [{ word: 'apple', emoji: '🍎' }, { word: 'astronaut', emoji: '🧑‍🚀' }, { word: 'ant', emoji: '🐜' }, { word: 'avocado', emoji: '🥑' }, { word: 'airplane', emoji: '✈️' }],
+  B: [{ word: 'balloon', emoji: '🎈' }, { word: 'bear', emoji: '🐻' }, { word: 'banana', emoji: '🍌' }, { word: 'book', emoji: '📘' }, { word: 'butterfly', emoji: '🦋' }],
+  C: [{ word: 'cat', emoji: '🐈' }, { word: 'cake', emoji: '🍰' }, { word: 'car', emoji: '🚗' }, { word: 'cookie', emoji: '🍪' }, { word: 'crown', emoji: '👑' }],
+  D: [{ word: 'dinosaur', emoji: '🦕' }, { word: 'dog', emoji: '🐕' }, { word: 'drum', emoji: '🥁' }, { word: 'duck', emoji: '🦆' }, { word: 'donut', emoji: '🍩' }],
+  E: [{ word: 'elephant', emoji: '🐘' }, { word: 'egg', emoji: '🥚' }, { word: 'eagle', emoji: '🦅' }, { word: 'engine', emoji: '🚂' }, { word: 'envelope', emoji: '✉️' }],
+  F: [{ word: 'fish', emoji: '🐟' }, { word: 'frog', emoji: '🐸' }, { word: 'flower', emoji: '🌼' }, { word: 'feather', emoji: '🪶' }, { word: 'fire', emoji: '🔥' }],
+  G: [{ word: 'giraffe', emoji: '🦒' }, { word: 'guitar', emoji: '🎸' }, { word: 'grapes', emoji: '🍇' }, { word: 'ghost', emoji: '👻' }, { word: 'globe', emoji: '🌍' }],
+  H: [{ word: 'helicopter', emoji: '🚁' }, { word: 'hippo', emoji: '🦛' }, { word: 'hat', emoji: '🎩' }, { word: 'hamburger', emoji: '🍔' }, { word: 'honey', emoji: '🍯' }],
+  I: [{ word: 'igloo', emoji: '🧊' }, { word: 'ice cream', emoji: '🍦' }, { word: 'insect', emoji: '🐞' }, { word: 'island', emoji: '🏝️' }, { word: 'ink', emoji: '🖋️' }],
+  J: [{ word: 'jellyfish', emoji: '🪼' }, { word: 'juice', emoji: '🧃' }, { word: 'jigsaw', emoji: '🧩' }, { word: 'jam', emoji: '🫙' }, { word: 'jacket', emoji: '🧥' }],
+  K: [{ word: 'kite', emoji: '🪁' }, { word: 'kangaroo', emoji: '🦘' }, { word: 'key', emoji: '🔑' }, { word: 'koala', emoji: '🐨' }, { word: 'king', emoji: '👑' }],
+  L: [{ word: 'lion', emoji: '🦁' }, { word: 'lemon', emoji: '🍋' }, { word: 'leaf', emoji: '🍃' }, { word: 'lamp', emoji: '💡' }, { word: 'ladder', emoji: '🪜' }],
+  M: [{ word: 'moon', emoji: '🌙' }, { word: 'monkey', emoji: '🐒' }, { word: 'music', emoji: '🎵' }, { word: 'map', emoji: '🗺️' }, { word: 'mushroom', emoji: '🍄' }],
+  N: [{ word: 'nest', emoji: '🪺' }, { word: 'noodles', emoji: '🍜' }, { word: 'night', emoji: '🌃' }, { word: 'nurse', emoji: '🧑‍⚕️' }, { word: 'nose', emoji: '👃' }],
+  O: [{ word: 'octopus', emoji: '🐙' }, { word: 'orange', emoji: '🍊' }, { word: 'owl', emoji: '🦉' }, { word: 'ocean', emoji: '🌊' }, { word: 'onion', emoji: '🧅' }],
+  P: [{ word: 'penguin', emoji: '🐧' }, { word: 'pizza', emoji: '🍕' }, { word: 'paint', emoji: '🎨' }, { word: 'parrot', emoji: '🦜' }, { word: 'pencil', emoji: '✏️' }],
+  Q: [{ word: 'queen', emoji: '👑' }, { word: 'quiet', emoji: '🤫' }, { word: 'question', emoji: '❓' }, { word: 'quarter', emoji: '🪙' }],
+  R: [{ word: 'rainbow', emoji: '🌈' }, { word: 'robot', emoji: '🤖' }, { word: 'rocket', emoji: '🚀' }, { word: 'rabbit', emoji: '🐇' }, { word: 'ring', emoji: '💍' }],
+  S: [{ word: 'sun', emoji: '☀️' }, { word: 'snake', emoji: '🐍' }, { word: 'star', emoji: '⭐' }, { word: 'sandwich', emoji: '🥪' }, { word: 'socks', emoji: '🧦' }],
+  T: [{ word: 'tiger', emoji: '🐯' }, { word: 'train', emoji: '🚂' }, { word: 'turtle', emoji: '🐢' }, { word: 'tomato', emoji: '🍅' }, { word: 'telephone', emoji: '☎️' }],
+  U: [{ word: 'umbrella', emoji: '☂️' }, { word: 'unicorn', emoji: '🦄' }, { word: 'up', emoji: '⬆️' }, { word: 'uniform', emoji: '🥋' }, { word: 'ukulele', emoji: '🎸' }],
+  V: [{ word: 'violin', emoji: '🎻' }, { word: 'volcano', emoji: '🌋' }, { word: 'van', emoji: '🚐' }, { word: 'vegetables', emoji: '🥦' }, { word: 'vase', emoji: '🏺' }],
+  W: [{ word: 'whale', emoji: '🐋' }, { word: 'watermelon', emoji: '🍉' }, { word: 'window', emoji: '🪟' }, { word: 'watch', emoji: '⌚' }, { word: 'worm', emoji: '🪱' }],
+  X: [{ word: 'xylophone', emoji: '🎶' }, { word: 'x-ray', emoji: '🩻' }, { word: 'xmas tree', emoji: '🎄' }, { word: 'xenops', emoji: '🐦' }, { word: 'x marks the spot', emoji: '🗺️', illustration: 'map-with-x' }],
+  Y: [{ word: 'yak', emoji: '🐂' }, { word: 'yacht', emoji: '⛵' }, { word: 'yoyo', emoji: '🪀' }, { word: 'yogurt', emoji: '🥣' }, { word: 'yellow', emoji: '💛' }],
+  Z: [{ word: 'zebra', emoji: '🦓' }, { word: 'zoo', emoji: '🦒🐘🦁' }, { word: 'zero', emoji: '0️⃣' }, { word: 'zipper', emoji: '🤐' }, { word: 'zigzag', emoji: '⚡' }],
 }
 
 const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')
@@ -213,6 +214,13 @@ export const view = (model: Model, language: string = 'en') => {
   const restOfWord = word.word.slice(1)
   const questionWord = selectedWordFor(model.questionLetter, model.questionWordIndex) ?? selectedWordFor('A', 0)!
   const questionActive = model.questionState !== 'idle'
+  const pictureFor = (entry: LetterWord) =>
+    entry.illustration === 'map-with-x'
+      ? h.span([h.Class('talking-keyboard-map-with-x')], [
+          h.span([h.Class('talking-keyboard-map')], [entry.emoji]),
+          h.span([h.Class('talking-keyboard-map-x'), h.Attribute('aria-hidden', 'true')], ['X']),
+        ])
+      : entry.emoji
 
   return h.div([h.Class('page talking-keyboard-page')], [
     h.div([h.Class('card talking-keyboard-card')], [
@@ -232,7 +240,7 @@ export const view = (model: Model, language: string = 'en') => {
           h.Key(`question-${model.pressCount}`),
           h.Attribute('aria-live', 'polite'),
         ], [
-          h.div([h.Class('talking-keyboard-emoji'), h.Attribute('aria-hidden', 'true')], [questionWord.emoji]),
+          h.div([h.Class('talking-keyboard-emoji'), h.Attribute('aria-hidden', 'true')], [pictureFor(questionWord)]),
           h.div([h.Class('talking-keyboard-question')], [t('talkingKeyboardWhichLetter', language)]),
           model.questionState === 'correct' || model.questionState === 'failed'
             ? h.div([h.Class('talking-keyboard-answer')], [
@@ -250,7 +258,7 @@ export const view = (model: Model, language: string = 'en') => {
               : null,
         ])
         : h.div([h.Class('talking-keyboard-showcase'), h.Key(`word-${model.pressCount}`)], [
-          h.div([h.Class('talking-keyboard-emoji'), h.Attribute('aria-hidden', 'true')], [word.emoji]),
+          h.div([h.Class('talking-keyboard-emoji'), h.Attribute('aria-hidden', 'true')], [pictureFor(word)]),
           h.div([h.Class('talking-keyboard-sentence')], [
             h.span([h.Class('talking-keyboard-letter')], [model.selectedLetter]),
             h.span([h.Class('talking-keyboard-is-for')], [' is for']),

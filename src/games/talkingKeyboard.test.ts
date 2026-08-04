@@ -8,7 +8,7 @@ describe('Talking Keyboard', () => {
     expect(model.selectedLetter).toBe('A')
     expect(TalkingKeyboard.selectedWordFor(model.selectedLetter, model.selectedWordIndex)?.word).toBe('apple')
     expect(Object.keys(TalkingKeyboard.LETTER_WORDS)).toHaveLength(26)
-    expect(Object.values(TalkingKeyboard.LETTER_WORDS).every(words => words.length >= 2)).toBe(true)
+    expect(Object.values(TalkingKeyboard.LETTER_WORDS).every(words => words.length >= 4)).toBe(true)
   })
 
   it('speaks the letter prompt and cycles through that letter’s words', () => {
