@@ -270,6 +270,7 @@ export const Message = S.Union([
   MagneticBlocks.RemoveBlock,
   MagneticBlocks.SetBreakSpeed,
   TalkingKeyboard.PressedLetter,
+  TalkingKeyboard.AskQuestion,
   TalkingKeyboard.SoundPlayed,
   LandingDragStarted,
   LandingDroppedOn,
@@ -776,6 +777,7 @@ const _update = (
       MagneticBlocksRemove: (msg) => updateMagneticBlocks(model, msg),
       MagneticBlocksSetBreakSpeed: (msg) => updateMagneticBlocks(model, msg),
       TalkingKeyboardPressedLetter: (msg) => updateTalkingKeyboard(model, msg),
+      TalkingKeyboardAskQuestion: (msg) => updateTalkingKeyboard(model, msg),
       TalkingKeyboardSoundPlayed: (msg) => updateTalkingKeyboard(model, msg),
       LandingDragStarted: (msg) => [{ ...model, landingDragIndex: msg.index }, []],
       LandingDroppedOn: (msg) => {

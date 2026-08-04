@@ -10,6 +10,7 @@ import * as Memory from './games/memory'
 import * as MusicBox from './games/musicbox'
 import * as Rps from './games/rps/main'
 import * as MagneticBlocks from './games/magneticBlocks'
+import * as TalkingKeyboard from './games/talkingKeyboard'
 import { LANDING_GAME_COUNT, LANDING_GAMES } from './pages/landing'
 import { ApplyImport, ClickedLanding, ClickedCounter, ClickedFindIt, ClickedBubbles, ClickedDarkMode, ClickedMagneticBlocks, ClickedMemory, ClickedTalkingKeyboard, ConfirmResetSettings, ExportSettings, ImportedSettings, LandingDragStarted, LandingDroppedOn, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsPersisted, ToggleMute } from './message'
 
@@ -151,6 +152,7 @@ describe('settings persistence', () => {
     { label: 'MusicBoxDrumPadHit', msg: MusicBox.DrumPadHit({ kind: 'kick' }) },
     { label: 'MagneticBlocksSpawn', msg: MagneticBlocks.SpawnBlocks() },
     { label: 'MagneticBlocksRemove', msg: MagneticBlocks.RemoveBlock() },
+    { label: 'TalkingKeyboardAskQuestion', msg: TalkingKeyboard.AskQuestion(), resolves: [[{ name: 'Speak' }, TalkingKeyboard.SoundPlayed()]] },
   ]
 
   it('keeps the persisted message tag list aligned with persistence tests', () => {
