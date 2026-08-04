@@ -184,6 +184,7 @@ const clockMount = {
           let dragHour = 0
           let dragMinute = 0
           let dragSecond = 0
+          let dragStart = { hour: 0, minute: 0, second: 0 }
           const frameState = { id: 0, running: true }
           const updateFromPointer = (event: PointerEvent): void => {
             if (!dragging) return
@@ -223,14 +224,18 @@ const clockMount = {
             dragHour = Number(face.dataset.hour ?? 0)
             dragMinute = Number(face.dataset.minute ?? 0)
             dragSecond = Number(face.dataset.second ?? 0)
+            dragStart = { hour: dragHour, minute: dragMinute, second: dragSecond }
             face.classList.add('clock-face--dragging')
             face.setPointerCapture(event.pointerId)
             updateFromPointer(event)
           }
           const up = (event: PointerEvent): void => {
-            if (dragging && face.hasPointerCapture(event.pointerId)) face.releasePointerCapture(event.pointerId)
+            const hadDrag = dragging !== null
+            if (hadDrag && face.hasPointerCapture(event.pointerId)) face.releasePointerCapture(event.pointerId)
             dragging = null
             face.classList.remove('clock-face--dragging')
+            const changed = dragHour !== dragStart.hour || dragMinute !== dragStart.minute || dragSecond !== dragStart.second
+            if (hadDrag && changed && event.type === 'pointerup') Queue.offerUnsafe(queue, SpeakTime())
           }
           const move = (event: PointerEvent): void => updateFromPointer(event)
           const check = (): void => {
