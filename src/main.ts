@@ -2,9 +2,9 @@ import { Effect, Match as M, Option, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { Document, html } from 'foldkit/html'
 
-import { ApplyImport, CancelResetSettings, ClickedAudioTest, ClickedBsl, ClickedBubbles, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedLanding, ClickedDraw, ClickedMagneticBlocks, ClickedMemory, ClickedMusicBox, ClickedPhonemeGarden, ClickedRps, ClickedSpeakerCalculator, ClickedSettings, ClickedTalkingKeyboard, ClickedWhackamole, ClickedPattern, ConfirmResetSettings, CopyExportData, DismissMessage, ExportSettings, ImportSettings, ImportedSettings, LandingDragEnded, LandingDragStarted, LandingDroppedOn, LandingSettingsDragEnded, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, ResetSettings, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsDragEnded, SettingsDragMoved, SettingsDragStarted, SettingsImportFailed, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
+import { ApplyImport, CancelResetSettings, ClickedAudioTest, ClickedBsl, ClickedBubbles, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedLanding, ClickedDraw, ClickedMagneticBlocks, ClickedMemory, ClickedMusicBox, ClickedPhonemeGarden, ClickedRps, ClickedSpeakerCalculator, ClickedSettings, ClickedTalkingClock, ClickedTalkingKeyboard, ClickedWhackamole, ClickedPattern, ConfirmResetSettings, CopyExportData, DismissMessage, ExportSettings, ImportSettings, ImportedSettings, LandingDragEnded, LandingDragStarted, LandingDroppedOn, LandingSettingsDragEnded, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, ResetSettings, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsDragEnded, SettingsDragMoved, SettingsDragStarted, SettingsImportFailed, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
 
-import { Page, PageAudioTest, PageBsl, PageBubbles, PageCounter, PageFindIt, PageLanding, PageDraw, PageMagneticBlocks, PageMemory, PageMusicBox, PagePhonemeGarden, PageRps, PageSpeakerCalculator, PageTalkingKeyboard, PageWhackamole, PagePattern } from './route'
+import { Page, PageAudioTest, PageBsl, PageBubbles, PageCounter, PageFindIt, PageLanding, PageDraw, PageMagneticBlocks, PageMemory, PageMusicBox, PagePhonemeGarden, PageRps, PageSpeakerCalculator, PageTalkingClock, PageTalkingKeyboard, PageWhackamole, PagePattern } from './route'
 
 import * as FindIt from './games/findit'
 import * as MusicBox from './games/musicbox'
@@ -20,6 +20,7 @@ import * as Bsl from './games/bsl/main'
 import * as Rps from './games/rps/main'
 import * as MagneticBlocks from './games/magneticBlocks'
 import * as TalkingKeyboard from './games/talkingKeyboard'
+import * as TalkingClock from './games/talkingClock'
 import { LANDING_GAME_COUNT, LANDING_GAMES, view as landingView } from './pages/landing'
 import { view as audioTestView } from './pages/audiotest'
 import { Language, normalizeLanguage, t, tf } from './i18n'
@@ -226,6 +227,7 @@ export const Model = S.Struct({
   rps: Rps.Model,
   magneticBlocks: MagneticBlocks.Model,
   talkingKeyboard: TalkingKeyboard.Model,
+  talkingClock: TalkingClock.Model,
   settingsPanelWidth: S.Number,
   isDraggingSettings: S.Boolean,
   settingsDragStartMouseX: S.Number,
@@ -266,12 +268,21 @@ export const Message = S.Union([
   ClickedRps,
   ClickedMagneticBlocks,
   ClickedTalkingKeyboard,
+  ClickedTalkingClock,
   MagneticBlocks.SpawnBlocks,
   MagneticBlocks.RemoveBlock,
   MagneticBlocks.SetBreakSpeed,
   TalkingKeyboard.PressedLetter,
   TalkingKeyboard.AskQuestion,
   TalkingKeyboard.SoundPlayed,
+  TalkingClock.SetTime,
+  TalkingClock.WindToNow,
+  TalkingClock.FinishWinding,
+  TalkingClock.FinishWindSettling,
+  TalkingClock.SpeakTime,
+  TalkingClock.SetPhraseStyle,
+  TalkingClock.CheckCurrentTime,
+  TalkingClock.SoundPlayed,
   LandingDragStarted,
   LandingDroppedOn,
   LandingDragEnded,
@@ -480,6 +491,7 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
         breakSpeed: MagneticBlocks.normalizeBreakSpeed(saved.magneticBlocksBreakSpeed ?? MagneticBlocks.init.breakSpeed),
       },
       talkingKeyboard: TalkingKeyboard.init(),
+      talkingClock: TalkingClock.init(),
       settingsPanelWidth: 150,
       isDraggingSettings: false,
       settingsDragStartMouseX: 0,
@@ -593,6 +605,14 @@ const updateTalkingKeyboard = (
 ): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
   const [next, cmds] = TalkingKeyboard.update(model.talkingKeyboard, message, model.muted, { rate: model.speechRate, pitch: model.speechPitch })
   return [{ ...model, talkingKeyboard: next }, cmds]
+}
+
+const updateTalkingClock = (
+  model: Model,
+  message: TalkingClock.Message,
+): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
+  const [next, cmds] = TalkingClock.update(model.talkingClock, message, model.muted, { rate: model.speechRate, pitch: model.speechPitch })
+  return [{ ...model, talkingClock: next }, cmds]
 }
 
 const updateBsl = (
@@ -773,12 +793,21 @@ const _update = (
       ClickedRps: () => [{ ...model, page: PageRps() }, []],
       ClickedMagneticBlocks: () => [{ ...model, page: PageMagneticBlocks() }, []],
       ClickedTalkingKeyboard: () => [{ ...model, page: PageTalkingKeyboard() }, []],
+      ClickedTalkingClock: () => [{ ...model, page: PageTalkingClock() }, []],
       MagneticBlocksSpawn: (msg) => updateMagneticBlocks(model, msg),
       MagneticBlocksRemove: (msg) => updateMagneticBlocks(model, msg),
       MagneticBlocksSetBreakSpeed: (msg) => updateMagneticBlocks(model, msg),
       TalkingKeyboardPressedLetter: (msg) => updateTalkingKeyboard(model, msg),
       TalkingKeyboardAskQuestion: (msg) => updateTalkingKeyboard(model, msg),
       TalkingKeyboardSoundPlayed: (msg) => updateTalkingKeyboard(model, msg),
+      TalkingClockSetTime: (msg) => updateTalkingClock(model, msg),
+      TalkingClockWindToNow: (msg) => updateTalkingClock(model, msg),
+      TalkingClockFinishWinding: (msg) => updateTalkingClock(model, msg),
+      TalkingClockFinishWindSettling: (msg) => updateTalkingClock(model, msg),
+      TalkingClockSpeakTime: (msg) => updateTalkingClock(model, msg),
+      TalkingClockSetPhraseStyle: (msg) => updateTalkingClock(model, msg),
+      TalkingClockCheckCurrentTime: (msg) => updateTalkingClock(model, msg),
+      TalkingClockSoundPlayed: (msg) => updateTalkingClock(model, msg),
       LandingDragStarted: (msg) => [{ ...model, landingDragIndex: msg.index }, []],
       LandingDroppedOn: (msg) => {
         if (model.landingDragIndex < 0 || model.landingDragIndex === msg.index) return [{ ...model, landingDragIndex: -1 }, []]
@@ -1027,6 +1056,7 @@ const pageTitle = (model: Model): string =>
       PageRps: () => t('pageTitleRps', model.language),
       PageMagneticBlocks: () => t('pageTitleMagneticBlocks', model.language),
       PageTalkingKeyboard: () => t('pageTitleTalkingKeyboard', model.language),
+      PageTalkingClock: () => t('pageTitleTalkingClock', model.language),
     }),
   )
 
@@ -1602,6 +1632,7 @@ export const view = (model: Model): Document => {
       PageRps: () => Rps.view(model.rps, model.language),
       PageMagneticBlocks: () => MagneticBlocks.view(model.magneticBlocks, model.language, model.muted),
       PageTalkingKeyboard: () => TalkingKeyboard.view(model.talkingKeyboard, model.language),
+      PageTalkingClock: () => TalkingClock.view(model.talkingClock),
     }),
           ),
           model.settingsOverlay
