@@ -341,7 +341,6 @@ const clockMount = {
             dragStart = { hour: dragHour, minute: dragMinute, second: dragSecond }
             face.classList.add('clock-face--dragging')
             face.setPointerCapture(event.pointerId)
-            updateFromPointer(event)
           }
           const up = (event: PointerEvent): void => {
             const hadDrag = dragging !== null
