@@ -67,6 +67,16 @@ const generatedClassNames = new Set([
   'bubble--heart',
   'bubble--triangle',
   'bubble--oval',
+  'bubble--semicircle',
+  'bubble--donut',
+  'bubble--rectangle',
+  'bubble--diamond',
+  'bubble--trapezoid',
+  'bubble--square',
+  'bubble--pentagon',
+  'bubble--hexagon',
+  'bubble--heptagon',
+  'bubble--octagon',
 ])
 
 const stripDataUrls = (css: string): string =>
@@ -145,6 +155,42 @@ describe('styles.css invariants', () => {
     expect(emojiCell).toContain('font-size: var(--findit-emoji-size)')
     expect(pairsCell).toContain('--findit-emoji-size: clamp(1.3rem, 6vw, 3rem)')
     expect(pairsCell).toContain('font-size: var(--findit-emoji-size)')
+  })
+
+  it('keeps every paged Bubble shape visible and its dark-mode selection readable', () => {
+    for (const shape of ['semicircle', 'rectangle', 'diamond', 'trapezoid', 'square', 'pentagon', 'hexagon', 'heptagon', 'octagon']) {
+      expect(cssRule(`.bubble--${shape}`), shape).toContain('clip-path:')
+    }
+
+    const donut = cssRule('.bubble--donut')
+    expect(donut).toContain('-webkit-mask: radial-gradient')
+    expect(donut).toContain('mask: radial-gradient')
+
+    const active = cssRule('.shape-btn--active')
+    expect(active).toContain('background: #4f46e5')
+    expect(active).toContain('color: #fff')
+
+    const darkActive = cssRule('.dark .shape-btn--active')
+    expect(darkActive).toContain('background: #818cf8')
+    expect(darkActive).toContain('color: #111827')
+
+    const darkNext = cssRule('.dark .shape-btn--next')
+    expect(darkNext).toContain('background: #334155')
+    expect(darkNext).toContain('color: #f8fafc')
+
+    const darkNextPressed = cssRule('.dark .shape-btn--next:active')
+    expect(darkNextPressed).toContain('background: #1e293b')
+    expect(darkNextPressed).toContain('color: #f8fafc')
+  })
+
+  it('gives the Bubble star a broad sheen without centre or single-lobe artifacts', () => {
+    const starShading = cssRule('.bubble--star::before')
+    const starHighlight = cssRule('.bubble--star::after')
+
+    expect(starShading).toContain('radial-gradient(ellipse 85% 65%')
+    expect(starShading).toContain('linear-gradient')
+    expect(starShading).not.toContain('conic-gradient')
+    expect(starHighlight).toContain('display: none')
   })
 
   it('keeps the Talking Keyboard zoo trio within one emoji footprint', () => {

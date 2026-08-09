@@ -16,7 +16,78 @@ describe('Bubbles', () => {
     expect(model.nextId).toBe(0)
     expect(model.shapeMode).toBe(false)
     expect(model.selectedShape).toBe('circle')
+    expect(model.shapePage).toBe(0)
   })
+
+  it('defines the original, irregular, and regular shape pages', () => {
+    expect(Bubbles.SHAPE_PAGES).toStrictEqual([
+      ['circle', 'star', 'heart', 'triangle', 'oval'],
+      ['semicircle', 'donut', 'rectangle', 'diamond', 'trapezoid'],
+      ['square', 'pentagon', 'hexagon', 'heptagon', 'octagon'],
+    ])
+  })
+
+  it('cycles through shape pages without changing the selected shape', () => {
+    Story.story(
+      Bubbles.update,
+      Story.with({ ...Bubbles.init(), shapeMode: true, selectedShape: 'heart' }),
+      Story.message(Bubbles.NextShapePage()),
+      Story.model((model) => {
+        expect(model.shapePage).toBe(1)
+        expect(model.selectedShape).toBe('heart')
+      }),
+      Story.Command.expectNone(),
+      Story.message(Bubbles.NextShapePage()),
+      Story.model((model) => {
+        expect(model.shapePage).toBe(2)
+        expect(model.selectedShape).toBe('heart')
+      }),
+      Story.Command.expectNone(),
+      Story.message(Bubbles.NextShapePage()),
+      Story.model((model) => {
+        expect(model.shapePage).toBe(0)
+        expect(model.selectedShape).toBe('heart')
+      }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('uses a newly selected shape for the next bubble', () => {
+    Story.story(
+      Bubbles.update,
+      Story.with({ ...Bubbles.init(), shapeMode: true, shapePage: 1 }),
+      Story.message(Bubbles.SetSelectedShape({ value: 'diamond' })),
+      Story.model((model) => {
+        expect(model.selectedShape).toBe('diamond')
+      }),
+      Story.Command.expectNone(),
+      Story.message(Bubbles.ClickedColor({ color: '#FF4757', duration: 500 })),
+      Story.model((model) => {
+        expect(model.bubbles[0]?.shape).toBe('diamond')
+      }),
+      Story.Command.resolveAll(resolveChime, resolveSpeak),
+      Story.Command.expectNone(),
+    )
+  })
+
+  for (const [shapePage, labels] of [
+    [0, ['Circle', 'Star', 'Heart', 'Triangle', 'Oval']],
+    [1, ['Semicircle', 'Donut', 'Rectangle', 'Diamond', 'Trapezoid']],
+    [2, ['Square', 'Pentagon', 'Hexagon', 'Heptagon', 'Octagon']],
+  ] as const) {
+    it(`renders the five choices and Next button on shape page ${shapePage + 1}`, () => {
+      Scene.scene(
+        { update: Bubbles.update, view: Bubbles.view },
+        Scene.with({ ...Bubbles.init(), shapeMode: true, shapePage }),
+        ...labels.map(label => Scene.expect(Scene.text(label)).toExist()),
+        Scene.expect(Scene.text('Next ➡')).toExist(),
+        Scene.expectAll(Scene.all.selector('.shape-btn')).toHaveCount(6),
+        Scene.Mount.resolveAll(resolveAnim, resolveColorSelector),
+        Scene.Command.resolveAll(resolveChime, resolveSpeak),
+        Scene.Command.expectNone(),
+      )
+    })
+  }
 
   it('init includes selectedColor', () => {
     const model = Bubbles.init()

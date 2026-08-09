@@ -147,6 +147,7 @@ describe('settings persistence', () => {
     { label: 'MemoryClickedCard', msg: Memory.ClickedCard({ id: 0 }) },
     { label: 'BubblesClickedColor', msg: Bubbles.ClickedColor({ color: 'rainbow', duration: 500 }), resolves: [resolveBubblesChime, resolveBubblesSpeak] },
     { label: 'BubblesSetRainbowMode', msg: Bubbles.SetRainbowMode({ value: true }) },
+    { label: 'BubblesNextShapePage', msg: Bubbles.NextShapePage() },
     { label: 'MusicBoxNoteOn', msg: MusicBox.NoteOn({ pitch: 'C4' }) },
     { label: 'MusicBoxSetBottomPanelMode', msg: MusicBox.SetBottomPanelMode({ value: 'drums' }) },
     { label: 'MusicBoxDrumPadHit', msg: MusicBox.DrumPadHit({ kind: 'kick' }) },
@@ -206,7 +207,7 @@ describe('Main', () => {
     expect(model.speechPitch).toBe(1.1)
     expect(model.counter.count).toBe(0)
     expect(model.findIt.enabledPacks).toEqual(FindIt.DEFAULT_EMOJI_PACK_KEYS)
-    expect(model.bubbles).toStrictEqual({ bubbles: [], score: 0, nextId: 0, rainbowMode: false, popLabel: false, sayColor: false, selectedColor: '', shapeMode: false, selectedShape: 'circle' })
+    expect(model.bubbles).toStrictEqual({ bubbles: [], score: 0, nextId: 0, rainbowMode: false, popLabel: false, sayColor: false, selectedColor: '', shapeMode: false, selectedShape: 'circle', shapePage: 0 })
   })
 
   it('init loads persisted Find It emoji packs', () => {

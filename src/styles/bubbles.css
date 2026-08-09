@@ -94,6 +94,47 @@
   border-radius: 50%;
 }
 
+.bubble--semicircle {
+  clip-path: inset(0 0 50% 0);
+}
+
+.bubble--donut {
+  -webkit-mask: radial-gradient(circle, transparent 0 29%, #000 31%);
+  mask: radial-gradient(circle, transparent 0 29%, #000 31%);
+}
+
+.bubble--rectangle {
+  clip-path: polygon(4% 22%, 96% 22%, 96% 78%, 4% 78%);
+}
+
+.bubble--diamond {
+  clip-path: polygon(50% 2%, 90% 50%, 50% 98%, 10% 50%);
+}
+
+.bubble--trapezoid {
+  clip-path: polygon(20% 15%, 80% 15%, 96% 85%, 4% 85%);
+}
+
+.bubble--square {
+  clip-path: polygon(4% 4%, 96% 4%, 96% 96%, 4% 96%);
+}
+
+.bubble--pentagon {
+  clip-path: polygon(50% 2%, 95.65% 35.17%, 78.21% 88.83%, 21.79% 88.83%, 4.35% 35.17%);
+}
+
+.bubble--hexagon {
+  clip-path: polygon(50% 2%, 91.57% 26%, 91.57% 74%, 50% 98%, 8.43% 74%, 8.43% 26%);
+}
+
+.bubble--heptagon {
+  clip-path: polygon(50% 2%, 87.53% 20.07%, 96.8% 60.68%, 70.83% 93.25%, 29.17% 93.25%, 3.2% 60.68%, 12.47% 20.07%);
+}
+
+.bubble--octagon {
+  clip-path: polygon(50% 2%, 83.94% 16.06%, 98% 50%, 83.94% 83.94%, 50% 98%, 16.06% 83.94%, 2% 50%, 16.06% 16.06%);
+}
+
 .shape-selector {
   display: flex;
   flex-direction: column;
@@ -126,9 +167,30 @@
 }
 
 .shape-btn--active {
-  border-color: var(--text-primary);
-  background: var(--btn-primary-bg);
-  color: var(--btn-primary-text);
+  border-color: #c7d2fe;
+  background: #4f46e5;
+  color: #fff;
+}
+
+.shape-btn--next {
+  border-color: var(--text-secondary);
+}
+
+.dark .shape-btn--active {
+  border-color: #c7d2fe;
+  background: #818cf8;
+  color: #111827;
+}
+
+.dark .shape-btn--next {
+  border-color: #94a3b8;
+  background: #334155;
+  color: #f8fafc;
+}
+
+.dark .shape-btn--next:active {
+  background: #1e293b;
+  color: #f8fafc;
 }
 
 .bubbles-container {
@@ -174,7 +236,15 @@
 
 .bubble--star,
 .bubble--heart,
-.bubble--triangle {
+.bubble--triangle,
+.bubble--rectangle,
+.bubble--diamond,
+.bubble--trapezoid,
+.bubble--square,
+.bubble--pentagon,
+.bubble--hexagon,
+.bubble--heptagon,
+.bubble--octagon {
   border-radius: 0;
   box-shadow:
     0 3px 12px rgba(0, 0, 0, 0.1),
@@ -189,15 +259,8 @@
 
 .bubble--star::before {
   background:
-    conic-gradient(
-      from -18deg at 50% 48%,
-      rgba(255, 255, 255, 0.42),
-      rgba(255, 255, 255, 0.08) 18%,
-      rgba(0, 0, 0, 0.08) 38%,
-      rgba(0, 0, 0, 0.16) 58%,
-      rgba(255, 255, 255, 0.04) 78%,
-      rgba(255, 255, 255, 0.42)
-    );
+    radial-gradient(ellipse 85% 65% at 26% 18%, rgba(255, 255, 255, 0.38) 0%, rgba(255, 255, 255, 0.12) 42%, transparent 72%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.12) 0%, transparent 52%, rgba(0, 0, 0, 0.16) 100%);
 }
 
 .bubble--heart::before {
@@ -236,11 +299,7 @@
 }
 
 .bubble--star::after {
-  width: 20%;
-  height: 14%;
-  top: 18%;
-  left: 39%;
-  transform: rotate(-12deg);
+  display: none;
 }
 
 .bubble--heart::after {

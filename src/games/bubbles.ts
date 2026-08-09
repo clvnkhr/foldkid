@@ -25,7 +25,11 @@ const COLOR_NAME_KEYS: Record<string, StringKey> = {
   '#666666': 'colorGrey',
 }
 
-const SHAPES = ['circle', 'star', 'heart', 'triangle', 'oval'] as const
+export const SHAPE_PAGES = [
+  ['circle', 'star', 'heart', 'triangle', 'oval'],
+  ['semicircle', 'donut', 'rectangle', 'diamond', 'trapezoid'],
+  ['square', 'pentagon', 'hexagon', 'heptagon', 'octagon'],
+] as const
 
 const SHAPE_NAME_KEYS: Record<string, StringKey> = {
   circle: 'shapeCircle',
@@ -33,6 +37,16 @@ const SHAPE_NAME_KEYS: Record<string, StringKey> = {
   heart: 'shapeHeart',
   triangle: 'shapeTriangle',
   oval: 'shapeOval',
+  semicircle: 'shapeSemicircle',
+  donut: 'shapeDonut',
+  rectangle: 'shapeRectangle',
+  diamond: 'shapeDiamond',
+  trapezoid: 'shapeTrapezoid',
+  square: 'shapeSquare',
+  pentagon: 'shapePentagon',
+  hexagon: 'shapeHexagon',
+  heptagon: 'shapeHeptagon',
+  octagon: 'shapeOctagon',
 }
 
 const getColorName = (color: string): StringKey => COLOR_NAME_KEYS[color] ?? 'colorRainbow'
@@ -53,7 +67,7 @@ const getPoofContainer = (): HTMLElement => {
   return poofContainer
 }
 
-export const Model = S.Struct({ bubbles: S.Array(Bubble), score: S.Number, nextId: S.Number, rainbowMode: S.Boolean, popLabel: S.Boolean, sayColor: S.Boolean, selectedColor: S.String, shapeMode: S.Boolean, selectedShape: S.String })
+export const Model = S.Struct({ bubbles: S.Array(Bubble), score: S.Number, nextId: S.Number, rainbowMode: S.Boolean, popLabel: S.Boolean, sayColor: S.Boolean, selectedColor: S.String, shapeMode: S.Boolean, selectedShape: S.String, shapePage: S.Number })
 export type Model = typeof Model.Type
 
 export const ClickedPop = m('BubblesClickedPop', { id: S.Number })
@@ -67,11 +81,12 @@ export const SetPopLabel = m('BubblesSetPopLabel', { value: S.Boolean })
 export const SetSayColor = m('BubblesSetSayColor', { value: S.Boolean })
 export const SetShapeMode = m('BubblesSetShapeMode', { value: S.Boolean })
 export const SetSelectedShape = m('BubblesSetSelectedShape', { value: S.String })
+export const NextShapePage = m('BubblesNextShapePage')
 
-export const Message = S.Union([ClickedPop, ClickedReset, ClearBubble, ClearCompleted, ClickedColor, SoundPlayed, SetRainbowMode, SetPopLabel, SetSayColor, SetShapeMode, SetSelectedShape])
+export const Message = S.Union([ClickedPop, ClickedReset, ClearBubble, ClearCompleted, ClickedColor, SoundPlayed, SetRainbowMode, SetPopLabel, SetSayColor, SetShapeMode, SetSelectedShape, NextShapePage])
 export type Message = typeof Message.Type
 
-export const init = (): Model => ({ bubbles: [], score: 0, nextId: 0, rainbowMode: false, popLabel: false, sayColor: false, selectedColor: '', shapeMode: false, selectedShape: 'circle' })
+export const init = (): Model => ({ bubbles: [], score: 0, nextId: 0, rainbowMode: false, popLabel: false, sayColor: false, selectedColor: '', shapeMode: false, selectedShape: 'circle', shapePage: 0 })
 
 const clearCommands = (bubbles: ReadonlyArray<Bubble>): ReadonlyArray<Command.Command<Message>> => {
   const ids = bubbles.map((bubble) => bubble.id)
@@ -381,12 +396,14 @@ export const update = (
       BubblesSetSayColor: (msg) => [{ ...model, sayColor: msg.value, popLabel: false }, []],
       BubblesSetShapeMode: (msg) => [{ ...model, shapeMode: msg.value }, []],
       BubblesSetSelectedShape: (msg) => [{ ...model, selectedShape: msg.value }, []],
+      BubblesNextShapePage: () => [{ ...model, shapePage: (model.shapePage + 1) % SHAPE_PAGES.length }, []],
       BubblesSoundPlayed: () => [model, []],
     }),
   )
 
 export const view = (model: Model, language: string = 'en') => {
   const h = html<Message>()
+  const visibleShapes = SHAPE_PAGES[model.shapePage] ?? SHAPE_PAGES[0]
 
   return h.div(
     [h.Class('page')],
@@ -397,15 +414,26 @@ export const view = (model: Model, language: string = 'en') => {
         model.shapeMode
           ? h.div([h.Class('shape-selector'), h.Key('shape-selector')], [
             h.div([h.Class('shape-selector-row')], [
-              ...SHAPES.map((s) =>
+              ...visibleShapes.map((s) =>
                 h.button(
                   [
                     h.Class(s === model.selectedShape ? 'shape-btn shape-btn--active' : 'shape-btn'),
                     h.OnClick(SetSelectedShape({ value: s })),
+                    h.Attribute('aria-pressed', String(s === model.selectedShape)),
+                    h.Attribute('type', 'button'),
                     h.Key(s),
                   ],
                   [t(getShapeName(s), language)],
                 ),
+              ),
+              h.button(
+                [
+                  h.Class('shape-btn shape-btn--next'),
+                  h.OnClick(NextShapePage()),
+                  h.Attribute('type', 'button'),
+                  h.Key('next-shape-page'),
+                ],
+                [t('next', language)],
               ),
             ]),
           ])
