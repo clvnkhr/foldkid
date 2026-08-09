@@ -4,7 +4,7 @@
 .talking-clock-heading h1 { font-family: Georgia, serif; font-size: clamp(2rem, 4vw, 3.3rem); color: var(--text-primary); }
 .talking-clock-heading > p { max-width: 330px; color: var(--text-secondary); text-align: right; line-height: 1.5; }
 .talking-clock-kicker { color: #667eea; font-weight: 900; font-size: .73rem; letter-spacing: .18em; margin-bottom: .3rem; }
-.talking-clock-layout { display: grid; place-items: center; padding: 2.25rem 1rem 1.25rem; }
+.talking-clock-layout { display: grid; place-items: center; padding: 2.25rem 1rem 2.75rem; }
 .clock-stage { display: grid; place-items: center; }
 .clock-face { position: relative; width: min(70vw, 600px); aspect-ratio: 1; border-radius: 50%; touch-action: none; cursor: grab; background: radial-gradient(circle, #fff 0 60%, #eef0ff 61% 68%, #667eea 69% 72%, #a78bfa 73% 75%, #3f3b73 76%); box-shadow: inset 0 0 0 2px #b8b9dc, inset 0 0 28px rgba(70,63,130,.18), 0 18px 35px var(--shadow-color); }
 .clock-face:active { cursor: grabbing; }
@@ -36,9 +36,9 @@
 .clock-hand--second::before { display: none; }
 .clock-hand--second::after { content: ''; position: absolute; left: 50%; top: 0; width: 4px; height: 100%; transform: translateX(-50%); border-radius: 4px; background: #f2b84b; filter: drop-shadow(1px 2px 1px rgba(0,0,0,.35)); pointer-events: none; }
 .clock-pin { position: absolute; z-index: 5; left: 50%; top: 50%; width: 27px; height: 27px; transform: translate(-50%, -50%); border-radius: 50%; background: #f2b84b; border: 6px solid #403b73; box-shadow: 0 2px 4px #0005; }
-.clock-face-readout { position: absolute; z-index: 6; left: 50%; top: 57%; transform: translateX(-50%); width: 48%; padding: .65rem .7rem .55rem; text-align: center; pointer-events: none; background: rgba(25,24,61,.72); border: 1px solid rgba(190,196,255,.42); border-radius: 18px; box-shadow: 0 7px 18px rgba(14,13,40,.2); backdrop-filter: blur(5px); }
+.clock-face-readout { position: absolute; z-index: 3; left: 50%; top: 57%; transform: translateX(-50%); width: 48%; padding: .65rem .7rem .55rem; text-align: center; pointer-events: none; background: rgba(25,24,61,.72); border: 1px solid rgba(190,196,255,.42); border-radius: 18px; box-shadow: 0 7px 18px rgba(14,13,40,.2); backdrop-filter: blur(5px); }
 .clock-digital { font: 900 clamp(1.65rem, 4.8vw, 2.65rem)/1 'Courier New', 'Roboto Mono', monospace; color: #f5f3ff; font-variant-numeric: tabular-nums; letter-spacing: .08em; text-shadow: 0 2px 0 #5e62a0, 0 0 14px rgba(183,190,255,.28); }
-.clock-face-speak { position: absolute; z-index: 7; left: 50%; bottom: 10%; transform: translateX(-50%); width: 44px; height: 44px; border: 3px solid #fff; border-radius: 50%; background: linear-gradient(145deg, #7c8dff, #5968d5); color: #fff; box-shadow: 0 5px 12px #37306a66; cursor: pointer; font-size: 1.05rem; }
+.clock-face-speak { position: absolute; z-index: 7; left: 50%; bottom: -25px; transform: translateX(-50%); width: 44px; height: 44px; border: 3px solid #fff; border-radius: 50%; background: linear-gradient(145deg, #7c8dff, #5968d5); color: #fff; box-shadow: 0 5px 12px #37306a66; cursor: pointer; font-size: 1.05rem; }
 .clock-face-speak:active { transform: translateX(-50%) scale(.92); }
 .clock-crown { position: absolute; z-index: 7; right: -22px; top: 50%; transform: translateY(-50%); width: 46px; height: 72px; border: 3px solid #4d4a76; border-left: 0; border-radius: 0 15px 15px 0; background: repeating-linear-gradient(90deg, #9eaaff 0 5px, #b8c0ff 5px 9px); color: #292654; box-shadow: 4px 5px 9px #37306a33; cursor: pointer; font-size: 1.35rem; }
 .clock-crown::after { content: 'WIND'; position: absolute; right: -4px; top: 50%; transform: translate(100%, -50%) rotate(90deg); color: #667eea; font-size: .55rem; font-weight: 900; letter-spacing: .12em; }

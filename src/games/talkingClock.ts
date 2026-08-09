@@ -423,7 +423,7 @@ export const view = (model: Model) => {
             ...Array.from({ length: 60 }, (_, i) => h.span([h.Class(i % 5 === 0 ? 'clock-tick clock-tick--hour' : 'clock-tick'), h.Style({ transform: `rotate(${i * 6}deg)` })], [])),
             ...Array.from({ length: 12 }, (_, i) => {
               const angle = (i + 1) * Math.PI / 6
-              return h.span([h.Class('clock-number'), h.Style({ left: `${50 + Math.sin(angle) * 40}%`, top: `${50 - Math.cos(angle) * 40}%` })], [(i + 1).toString()])
+              return h.span([h.Class('clock-number'), h.Style({ left: `${50 + Math.sin(angle) * 36}%`, top: `${50 - Math.cos(angle) * 36}%` })], [(i + 1).toString()])
             }),
             h.div([
               h.Class('clock-hand clock-hand--hour'),
