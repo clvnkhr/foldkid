@@ -1,6 +1,7 @@
 import { Effect, MutableRef } from 'effect'
 
 const sharedCtx = MutableRef.make<AudioContext | undefined>(undefined)
+let speechWarm = false
 
 const isRetiredContext = (ctx: AudioContext): boolean =>
   ctx.state === 'closed' || ctx.state === 'interrupted'
@@ -11,6 +12,28 @@ export const resetContext = (): void => {
     try { ctx.close() } catch { /* ignore */ }
   }
   MutableRef.set(sharedCtx, undefined)
+  speechWarm = false
+}
+
+/** Unlock browser audio and speech while still inside a qualifying gesture. */
+export const warmAudio = (): void => {
+  const ctx = getContext()
+  if (ctx?.state === 'suspended') ctx.resume().catch(() => {})
+  if (speechWarm || typeof globalThis.speechSynthesis === 'undefined' || typeof globalThis.SpeechSynthesisUtterance === 'undefined') return
+  const synth = globalThis.speechSynthesis
+  try {
+    synth.getVoices()
+    synth.resume()
+    const unlock = new SpeechSynthesisUtterance(' ')
+    unlock.volume = 0
+    unlock.rate = 10
+    unlock.pitch = 1
+    unlock.onend = () => {}
+    synth.speak(unlock)
+    speechWarm = true
+  } catch {
+    // A browser may expose speech APIs but still reject the unlock utterance.
+  }
 }
 
 // NOTE (iOS Safari): AudioContext.resume() and osc.start() only actually

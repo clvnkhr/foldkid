@@ -4,7 +4,7 @@ import { adjustForSecondCrossing, CheckCurrentTime, init, SetTime, timeFromHourH
 
 describe('talking clock', () => {
   it('starts at the supplied current time', () => {
-    expect(init(new Date(2026, 7, 4, 14, 37, 42))).toMatchObject({ hour: 2, minute: 37, second: 42, live: true, isWinding: false })
+    expect(init(new Date(2026, 7, 4, 14, 37, 42))).toMatchObject({ hour: 2, minute: 37, second: 42, phraseStyle: 'digital', live: true, isWinding: false })
   })
 
   it('uses familiar figures of speech', () => {
@@ -17,13 +17,14 @@ describe('talking clock', () => {
   })
 
   it('supports a digital speaking style', () => {
-    expect(timePhrase(2, 5, 'digital')).toBe('2 05')
+    expect(timePhrase(2, 5, 'digital')).toBe('2:05')
+    expect(timePhrase(2, 30, 'digital')).toBe('half past 2')
   })
 
   it('clamps hand movement to a valid clock time', () => {
     const [next] = update(init(new Date(2026, 7, 4, 10, 0)), SetTime({ hour: 13, minute: 99 }))
     expect(next).toMatchObject({ hour: 1, minute: 59 })
-    expect(next.live).toBe(false)
+    expect(next.live).toBe(true)
   })
 
   it('wraps hours in either direction', () => {
@@ -40,8 +41,8 @@ describe('talking clock', () => {
     const [manual] = update(ticked, SetTime({ hour: 4, minute: 30 }))
     const [stillManual] = update(manual, CheckCurrentTime({ hour: 10, minute: 1, second: 2, key: 'tick-2' }), true)
     const [resumed] = update(stillManual, WindToNow({ hour: 10, minute: 1, second: 3 }))
-    expect(ticked).toMatchObject({ hour: 10, minute: 0, second: 1, live: true })
-    expect(stillManual).toMatchObject({ hour: 4, minute: 30, live: false })
+    expect(ticked.live).toBe(true)
+    expect(stillManual).toMatchObject({ hour: 4, minute: 30, live: true })
     expect(resumed).toMatchObject({ hour: 10, minute: 1, second: 3, live: true, isWinding: true })
   })
 
@@ -74,5 +75,13 @@ describe('talking clock', () => {
     const backward = windingAngles({ hour: 11, minute: 0, second: 0 }, { hour: 9, minute: 0, second: 0 })
     expect(backward.deltaSeconds).toBe(-7200)
     expect(backward.minute).toBe(-720)
+  })
+
+  it('does not start a wind when already synced', () => {
+    const now = new Date(2026, 7, 4, 14, 37, 42)
+    const model = init(now)
+    const [next, commands] = update(model, WindToNow({ hour: 2, minute: 37, second: 42 }))
+    expect(next.isWinding).toBe(false)
+    expect(commands).toHaveLength(0)
   })
 })

@@ -4,7 +4,7 @@ import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
 
 import { t } from '../i18n'
-import { getContext } from '../audio'
+import { getContext, warmAudio } from '../audio'
 import { speak, type SpeechOptions } from '../speech'
 
 export type LetterWord = Readonly<{
@@ -292,10 +292,13 @@ export const view = (model: Model, language: string = 'en') => {
                   h.Attribute('aria-label', letter === '?'
                     ? t('talkingKeyboardAskQuestion', language)
                     : promptFor(letter, selectedWordFor(letter, model.nextWordIndices[letterIndex(letter)] ?? 0) ?? selectedWordFor('A', 0)!)),
-                  h.OnPointerUp(() => Option.some(letter === '?' ? AskQuestion() : PressedLetter({ letter }))),
+                  h.OnPointerUp(() => {
+                    warmAudio()
+                    return Option.some(letter === '?' ? AskQuestion() : PressedLetter({ letter }))
+                  }),
                   h.OnKeyUpPreventDefault((key) =>
                     key === 'Enter' || key === ' '
-                      ? Option.some(letter === '?' ? AskQuestion() : PressedLetter({ letter }))
+                      ? (warmAudio(), Option.some(letter === '?' ? AskQuestion() : PressedLetter({ letter })))
                       : Option.none(),
                   ),
                 ],
