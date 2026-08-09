@@ -47,6 +47,20 @@
   animation: talking-keyboard-bob 1.5s ease-in-out infinite alternate;
 }
 
+.talking-keyboard-emoji-trio {
+  display: inline-grid;
+  grid-template-columns: repeat(2, 1em);
+  grid-template-rows: repeat(2, 1em);
+  place-items: center;
+  font-size: 0.5em;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.talking-keyboard-emoji-trio > span:first-child {
+  grid-column: 1 / -1;
+}
+
 .talking-keyboard-map-with-x {
   position: relative;
   display: inline-block;

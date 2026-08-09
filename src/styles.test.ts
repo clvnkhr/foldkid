@@ -147,6 +147,17 @@ describe('styles.css invariants', () => {
     expect(pairsCell).toContain('font-size: var(--findit-emoji-size)')
   })
 
+  it('keeps the Talking Keyboard zoo trio within one emoji footprint', () => {
+    const trio = cssRule('.talking-keyboard-emoji-trio')
+    const firstAnimal = cssRule('.talking-keyboard-emoji-trio > span:first-child')
+
+    expect(trio).toContain('display: inline-grid')
+    expect(trio).toContain('grid-template-columns: repeat(2, 1em)')
+    expect(trio).toContain('grid-template-rows: repeat(2, 1em)')
+    expect(trio).toContain('font-size: 0.5em')
+    expect(firstAnimal).toContain('grid-column: 1 / -1')
+  })
+
   it('does not keep unused keyframes', () => {
     const keyframes = [...styles.matchAll(/@keyframes\s+([-_a-zA-Z0-9]+)/g)].map(match => match[1]!)
 

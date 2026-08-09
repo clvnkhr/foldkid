@@ -10,7 +10,7 @@ import { speak, type SpeechOptions } from '../speech'
 export type LetterWord = Readonly<{
   word: string
   emoji: string
-  illustration?: 'map-with-x'
+  illustration?: 'map-with-x' | 'emoji-trio'
 }>
 
 export const KEYBOARD_ROWS = [
@@ -45,7 +45,7 @@ export const LETTER_WORDS: Readonly<Record<string, readonly LetterWord[]>> = {
   W: [{ word: 'whale', emoji: '🐋' }, { word: 'watermelon', emoji: '🍉' }, { word: 'window', emoji: '🪟' }, { word: 'watch', emoji: '⌚' }, { word: 'worm', emoji: '🪱' }],
   X: [{ word: 'xylophone', emoji: '🎶' }, { word: 'x-ray', emoji: '🩻' }, { word: 'xmas tree', emoji: '🎄' }, { word: 'xenops', emoji: '🐦' }, { word: 'x marks the spot', emoji: '🗺️', illustration: 'map-with-x' }],
   Y: [{ word: 'yak', emoji: '🐂' }, { word: 'yacht', emoji: '⛵' }, { word: 'yoyo', emoji: '🪀' }, { word: 'yogurt', emoji: '🥣' }, { word: 'yellow', emoji: '💛' }],
-  Z: [{ word: 'zebra', emoji: '🦓' }, { word: 'zoo', emoji: '🦒🐘🦁' }, { word: 'zero', emoji: '0️⃣' }, { word: 'zipper', emoji: '🤐' }, { word: 'zigzag', emoji: '⚡' }],
+  Z: [{ word: 'zebra', emoji: '🦓' }, { word: 'zoo', emoji: '🦒🐘🦁', illustration: 'emoji-trio' }, { word: 'zero', emoji: '0️⃣' }, { word: 'zipper', emoji: '🤐' }, { word: 'zigzag', emoji: '⚡' }],
 }
 
 const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')
@@ -214,13 +214,20 @@ export const view = (model: Model, language: string = 'en') => {
   const restOfWord = word.word.slice(1)
   const questionWord = selectedWordFor(model.questionLetter, model.questionWordIndex) ?? selectedWordFor('A', 0)!
   const questionActive = model.questionState !== 'idle'
-  const pictureFor = (entry: LetterWord) =>
-    entry.illustration === 'map-with-x'
-      ? h.span([h.Class('talking-keyboard-map-with-x')], [
-          h.span([h.Class('talking-keyboard-map')], [entry.emoji]),
-          h.span([h.Class('talking-keyboard-map-x'), h.Attribute('aria-hidden', 'true')], ['X']),
-        ])
-      : entry.emoji
+  const pictureFor = (entry: LetterWord) => {
+    if (entry.illustration === 'map-with-x') {
+      return h.span([h.Class('talking-keyboard-map-with-x')], [
+        h.span([h.Class('talking-keyboard-map')], [entry.emoji]),
+        h.span([h.Class('talking-keyboard-map-x'), h.Attribute('aria-hidden', 'true')], ['X']),
+      ])
+    }
+    if (entry.illustration === 'emoji-trio') {
+      return h.span([h.Class('talking-keyboard-emoji-trio')], [
+        ...[...new Intl.Segmenter().segment(entry.emoji)].map(({ segment }) => h.span([], [segment])),
+      ])
+    }
+    return entry.emoji
+  }
 
   return h.div([h.Class('page talking-keyboard-page')], [
     h.div([h.Class('card talking-keyboard-card')], [

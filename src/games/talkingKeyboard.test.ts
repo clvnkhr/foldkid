@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { Scene } from 'foldkit/test'
 import * as TalkingKeyboard from './talkingKeyboard'
 
 describe('Talking Keyboard', () => {
@@ -46,6 +47,16 @@ describe('Talking Keyboard', () => {
     expect(mutedCommands).toEqual([])
     expect(unchanged).toEqual(model)
     expect(invalidCommands).toEqual([])
+  })
+
+  it('renders the zoo animals as a three-piece picture', () => {
+    Scene.scene(
+      { update: TalkingKeyboard.update, view: TalkingKeyboard.view },
+      Scene.with({ ...TalkingKeyboard.init(), selectedLetter: 'Z', selectedWordIndex: 1 }),
+      Scene.expect(Scene.selector('.talking-keyboard-emoji-trio')).toExist(),
+      Scene.expectAll(Scene.all.selector('.talking-keyboard-emoji-trio span')).toHaveCount(3),
+      Scene.Command.expectNone(),
+    )
   })
 
   it('shows the answer after a wrong letter, then returns to normal keyboard behavior', () => {
