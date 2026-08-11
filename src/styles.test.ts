@@ -204,6 +204,22 @@ describe('styles.css invariants', () => {
     expect(firstAnimal).toContain('grid-column: 1 / -1')
   })
 
+  it('gives Talking Keyboard long words two lines and lets its keys fill the play area', () => {
+    const card = cssRule('.talking-keyboard-card')
+    const showcase = cssRule('.talking-keyboard-showcase')
+    const word = cssRule('.talking-keyboard-word')
+    const keys = cssRule('.talking-keyboard-keys')
+    const key = cssRule('.talking-keyboard-key')
+
+    expect(card).toContain('max-width: none')
+    expect(showcase).toContain('min-height: clamp(14rem, 29dvh, 17rem)')
+    expect(word).toContain('min-height: 2.04em')
+    expect(keys).toContain('flex: 1 1 auto')
+    expect(keys).toContain('width: 100%')
+    expect(key).toContain('max-width: none')
+    expect(key).toContain('height: 100%')
+  })
+
   it('does not keep unused keyframes', () => {
     const keyframes = [...styles.matchAll(/@keyframes\s+([-_a-zA-Z0-9]+)/g)].map(match => match[1]!)
 

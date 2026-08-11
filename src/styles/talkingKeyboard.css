@@ -1,10 +1,15 @@
 .talking-keyboard-page {
-  padding-top: 4.5rem;
+  justify-content: flex-start;
+  min-height: 100dvh;
+  padding: 4.25rem clamp(0.35rem, 1vw, 1rem) 0.5rem;
 }
 
 .talking-keyboard-card {
-  width: min(840px, calc(100vw - 2rem));
-  padding: clamp(1rem, 3vw, 2rem);
+  width: 100%;
+  max-width: none;
+  min-height: calc(100vh - 4.75rem);
+  min-height: calc(100dvh - 4.75rem);
+  padding: clamp(0.65rem, 1.5vw, 1.25rem);
   text-align: center;
 }
 
@@ -17,16 +22,17 @@
 .talking-keyboard-showcase {
   position: relative;
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto minmax(0, 1fr);
   grid-template-areas:
     'emoji sentence'
     'emoji word'
     'emoji choices';
   align-items: center;
   column-gap: clamp(0.75rem, 3vw, 1.75rem);
-  max-width: 620px;
-  min-height: 12.5rem;
-  margin: 0 auto 1.4rem;
+  width: min(100%, 900px);
+  max-width: none;
+  min-height: clamp(14rem, 29dvh, 17rem);
+  margin: 0 auto clamp(0.65rem, 1.5vh, 1rem);
   padding: 1.2rem clamp(1rem, 4vw, 2rem);
   overflow: hidden;
   border: 3px solid #bfdbfe;
@@ -118,10 +124,13 @@
 .talking-keyboard-word {
   grid-area: word;
   align-self: start;
+  min-width: 0;
+  min-height: 2.04em;
   font-size: clamp(2.25rem, 8vw, 4rem);
   font-weight: 950;
   line-height: 1.02;
   letter-spacing: -0.04em;
+  overflow-wrap: anywhere;
   text-align: left;
   color: #1e3a8a;
 }
@@ -166,10 +175,12 @@
 .talking-keyboard-answer {
   grid-area: answer;
   align-self: start;
+  min-width: 0;
   color: #1e3a8a;
   font-size: clamp(1.55rem, 5.5vw, 2.65rem);
   font-weight: 950;
   line-height: 1.05;
+  overflow-wrap: anywhere;
   text-align: left;
 }
 
@@ -213,9 +224,12 @@
 
 .talking-keyboard-keys {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   align-items: center;
   gap: 0.5rem;
+  width: 100%;
+  min-height: clamp(10.5rem, 34dvh, 24rem);
   padding: clamp(0.65rem, 2vw, 1rem);
   border-radius: 1.25rem;
   background: #dbeafe;
@@ -223,9 +237,11 @@
 
 .talking-keyboard-row {
   display: flex;
+  flex: 1 1 0;
   justify-content: center;
   gap: clamp(0.23rem, 1vw, 0.55rem);
   width: 100%;
+  min-height: 0;
 }
 
 .talking-keyboard-row--1 {
@@ -239,8 +255,9 @@
 .talking-keyboard-key {
   flex: 1 1 0;
   min-width: 0;
-  max-width: 4rem;
-  min-height: clamp(2.6rem, 8vw, 4rem);
+  max-width: none;
+  min-height: 3rem;
+  height: 100%;
   padding: 0.25rem;
   border: 0;
   border-bottom: 0.28rem solid #1d4ed8;
@@ -249,7 +266,7 @@
   color: #1e3a8a;
   cursor: pointer;
   font-family: inherit;
-  font-size: clamp(1rem, 4vw, 1.75rem);
+  font-size: clamp(1.25rem, 4vmin, 2.35rem);
   font-weight: 950;
   line-height: 1;
   touch-action: manipulation;
@@ -396,21 +413,22 @@
 
 @media (max-width: 520px) {
   .talking-keyboard-page {
-    padding-top: 3.75rem;
+    padding: 3.75rem 0.3rem 0.3rem;
   }
 
   .talking-keyboard-card {
-    width: min(100%, calc(100vw - 1rem));
-    padding: 0.8rem;
+    min-height: calc(100vh - 4.05rem);
+    min-height: calc(100dvh - 4.05rem);
+    padding: 0.55rem;
   }
 
   .talking-keyboard-showcase {
-    min-height: 10.5rem;
-    padding: 0.9rem;
+    min-height: 13rem;
+    padding: 0.75rem;
     border-radius: 1rem;
   }
 
   .talking-keyboard-key {
-    min-height: 2.7rem;
+    min-height: 3rem;
   }
 }
