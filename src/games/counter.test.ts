@@ -12,7 +12,7 @@ describe('Counter', () => {
   it('init state', () => {
     expect(Counter.init).toStrictEqual({
       count: 0, fontSize: 3, holding: false, displayMode: 'number',
-      pointerDownTime: 0, pressedButton: null,
+      pointerDownTime: 0, pressedButton: null, tiltGravity: false,
     })
   })
 
@@ -291,6 +291,18 @@ describe('Counter', () => {
     )
   })
 
+  it('only enables tilt gravity through its explicit setting', () => {
+    Story.story(
+      Counter.update,
+      Story.with(Counter.init),
+      Story.message(Counter.SetTiltGravity({ value: true })),
+      Story.model((model) => {
+        expect(model.tiltGravity).toBe(true)
+      }),
+      Story.Command.expectNone(),
+    )
+  })
+
   it('renders word mode', () => {
     Scene.scene(
       { update: Counter.update, view: Counter.view },
@@ -399,6 +411,10 @@ describe('counter ball attribute parsing', () => {
 })
 
 describe('counter orientation gravity', () => {
+  it('uses one-and-a-half times the previous base gravity', () => {
+    expect(Counter.BASE_GRAVITY).toBe(3900 * 1.5)
+  })
+
   it('maps portrait device tilt to screen gravity', () => {
     expect(Counter.orientationGravity(90, 0)).toEqual([0, 1])
     expect(Counter.orientationGravity(0, 90)).toEqual([1, 0])

@@ -56,6 +56,7 @@ export const Model = S.Struct({
   pointerDownTime: S.Number,
   pressedButton: S.Union([PressedButton, S.Null]),
   displayMode: DisplayMode,
+  tiltGravity: S.Boolean,
 })
 export type Model = typeof Model.Type
 
@@ -64,12 +65,13 @@ export const PressedIncrement = m('CounterPressedIncrement', { duration: S.Numbe
 export const PressedDecrement = m('CounterPressedDecrement', { duration: S.Number, button: S.optionalKey(PressedButton) })
 export const ClickedReset = m('CounterClickedReset')
 export const SetDisplayMode = m('CounterSetDisplayMode', { value: DisplayMode })
+export const SetTiltGravity = m('CounterSetTiltGravity', { value: S.Boolean })
 export const SoundPlayed = m('CounterSoundPlayed')
 
-export const Message = S.Union([PointerDown, PressedIncrement, PressedDecrement, ClickedReset, SetDisplayMode, SoundPlayed])
+export const Message = S.Union([PointerDown, PressedIncrement, PressedDecrement, ClickedReset, SetDisplayMode, SetTiltGravity, SoundPlayed])
 export type Message = typeof Message.Type
 
-export const init: Model = { count: 0, fontSize: 3, holding: false, pointerDownTime: 0, pressedButton: null, displayMode: 'number' }
+export const init: Model = { count: 0, fontSize: 3, holding: false, pointerDownTime: 0, pressedButton: null, displayMode: 'number', tiltGravity: false }
 
 const calcFontSize = (duration: number): number => {
   const safeDuration = Number.isFinite(duration) ? Math.max(0, duration) : 0
@@ -130,6 +132,10 @@ export const update = (
         { ...model, displayMode: msg.value },
         [],
       ],
+      CounterSetTiltGravity: (msg) => [
+        model.tiltGravity === msg.value ? model : { ...model, tiltGravity: msg.value },
+        [],
+      ],
       CounterSoundPlayed: () => [model, []],
     }),
   )
@@ -172,7 +178,7 @@ interface BallState {
 // A deliberately inelastic, fixed-step solver. Counter balls are decorative,
 // so losing energy is more useful than preserving a physically perfect bounce:
 // crowded piles should always settle rather than feed tiny collisions forever.
-const GRAVITY = 3900
+export const BASE_GRAVITY = 5850
 const FIXED_DT = 1 / 120
 const MAX_FRAME_DT = 0.1
 const MAX_STEPS_PER_FRAME = 8
@@ -187,16 +193,19 @@ type PermissionedDeviceOrientationEvent = typeof DeviceOrientationEvent & {
   requestPermission?: () => Promise<'granted' | 'denied'>
 }
 
-let orientationPermissionRequested = false
+let orientationPermissionRequest: Promise<boolean> | undefined
 
-const requestCounterOrientationPermission = (): void => {
-  if (orientationPermissionRequested || typeof DeviceOrientationEvent === 'undefined') return
+export const requestCounterOrientationPermission = (): Promise<boolean> => {
+  if (typeof DeviceOrientationEvent === 'undefined') return Promise.resolve(false)
   const orientationEvent = DeviceOrientationEvent as PermissionedDeviceOrientationEvent
-  if (typeof orientationEvent.requestPermission !== 'function') return
-  orientationPermissionRequested = true
-  void orientationEvent.requestPermission.call(orientationEvent).catch(() => {
-    orientationPermissionRequested = false
-  })
+  if (typeof orientationEvent.requestPermission !== 'function') return Promise.resolve(true)
+  orientationPermissionRequest ??= orientationEvent.requestPermission.call(orientationEvent)
+    .then(permission => permission === 'granted')
+    .catch(() => {
+      orientationPermissionRequest = undefined
+      return false
+    })
+  return orientationPermissionRequest
 }
 
 export const orientationGravity = (
@@ -312,6 +321,7 @@ interface TickState {
   nextHue: number
   gravityX: number
   gravityY: number
+  tiltGravity: boolean
 }
 
 const constrainToBounds = (ball: BallState, w: number, h: number): void => {
@@ -399,8 +409,8 @@ const simulate = (balls: BallState[], w: number, h: number, gravityX: number, gr
     if (!ball) continue
     previousX[i] = ball.x
     previousY[i] = ball.y
-    ball.vx = (ball.vx + gravityX * GRAVITY * FIXED_DT) * damping
-    ball.vy = (ball.vy + gravityY * GRAVITY * FIXED_DT) * damping
+    ball.vx = (ball.vx + gravityX * BASE_GRAVITY * FIXED_DT) * damping
+    ball.vy = (ball.vy + gravityY * BASE_GRAVITY * FIXED_DT) * damping
     ball.x += ball.vx * FIXED_DT
     ball.y += ball.vy * FIXED_DT
     constrainToBounds(ball, w, h)
@@ -504,7 +514,6 @@ export const view = (model: Model, language: string = 'en') => {
       return O.some(PointerDown({ timeStamp: ts, button: btn }))
     }),
     h.OnPointerUp((_sx, _sy, _pt, ts) => {
-      requestCounterOrientationPermission()
       return O.some(msg(ts - model.pointerDownTime, btn))
     }),
     h.OnPointerLeave(() => {
@@ -538,6 +547,7 @@ export const view = (model: Model, language: string = 'en') => {
             h.Class('balls-container'),
             h.Attribute('data-count', model.count.toString()),
             h.Attribute('data-fontsize', model.fontSize.toString()),
+            h.Attribute('data-tilt-gravity', String(model.tiltGravity)),
             h.OnMount({
               name: 'counterBalls',
               f: (element) => Stream.callback<never>(_queue =>
@@ -562,15 +572,22 @@ export const view = (model: Model, language: string = 'en') => {
                         nextHue: 0,
                         gravityX: 0,
                         gravityY: 1,
+                        tiltGravity: model.tiltGravity,
                       }
                       const ro = new ResizeObserver(() => { state.dirty = true })
                       ro.observe(parent)
                       const mo = new MutationObserver(() => {
                         state.target = parseBallCount(parent.getAttribute('data-count'))
                         state.fontSize = parseBallFontSize(parent.getAttribute('data-fontsize'))
+                        state.tiltGravity = parent.getAttribute('data-tilt-gravity') === 'true'
+                        if (!state.tiltGravity) {
+                          state.gravityX = 0
+                          state.gravityY = 1
+                        }
                       })
-                      mo.observe(parent, { attributes: true, attributeFilter: ['data-count', 'data-fontsize'] })
+                      mo.observe(parent, { attributes: true, attributeFilter: ['data-count', 'data-fontsize', 'data-tilt-gravity'] })
                       const onOrientation = (event: DeviceOrientationEvent): void => {
+                        if (!state.tiltGravity) return
                         const gravity = orientationGravity(event.beta, event.gamma, currentScreenAngle())
                         if (!gravity) return
                         const nextX = state.gravityX * (1 - ORIENTATION_SMOOTHING) + gravity[0] * ORIENTATION_SMOOTHING

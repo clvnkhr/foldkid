@@ -145,6 +145,7 @@ describe('settings persistence', () => {
     { label: 'FindItClickedCell', msg: FindIt.ClickedCell({ id: 0 }) },
     { label: 'BubblesClickedPop', msg: Bubbles.ClickedPop({ id: 0 }) },
     { label: 'MemoryClickedCard', msg: Memory.ClickedCard({ id: 0 }) },
+    { label: 'CounterSetTiltGravity', msg: Counter.SetTiltGravity({ value: true }) },
     { label: 'BubblesClickedColor', msg: Bubbles.ClickedColor({ color: 'rainbow', duration: 500 }), resolves: [resolveBubblesChime, resolveBubblesSpeak] },
     { label: 'BubblesSetRainbowMode', msg: Bubbles.SetRainbowMode({ value: true }) },
     { label: 'BubblesNextShapePage', msg: Bubbles.NextShapePage() },
