@@ -9,7 +9,7 @@ import { speakNow, type SpeechOptions } from '../speech'
 
 const INITIAL_BLOCKS = 8
 const MAX_BLOCKS = 48
-const SNAP_DISTANCE_FACTOR = 0.46
+const SNAP_DISTANCE_FACTOR = 0.42
 export const DEFAULT_BREAK_SPEED = 950
 export const MIN_BREAK_SPEED = 500
 export const MAX_BREAK_SPEED = 1500
@@ -205,6 +205,14 @@ const overlapsAt = (
   Math.abs(movingBlock.x + dx - stationaryBlock.x) < cell - 0.01
   && Math.abs(movingBlock.y + dy - stationaryBlock.y) < cell - 0.01
 
+const intersectionArea = (
+  first: MagneticBlock,
+  second: MagneticBlock,
+  cell: number,
+): number =>
+  Math.max(0, cell - Math.abs(first.x - second.x))
+  * Math.max(0, cell - Math.abs(first.y - second.y))
+
 const wouldOverlap = (
   blocks: readonly MagneticBlock[],
   moving: ReadonlySet<number>,
@@ -219,42 +227,6 @@ const wouldOverlap = (
       if (overlapsAt(movingBlock, stationaryBlock, dx, dy, cell)) return true
     }
   }
-  return false
-}
-
-const canReachOutsideComponent = (
-  movingBlocks: readonly MagneticBlock[],
-  stationaryBlocks: readonly MagneticBlock[],
-  cell: number,
-): boolean => {
-  // A finite component cannot enclose a path that has travelled farther than
-  // its total number of unit blocks. Until then, test every possible unit
-  // translation against every individual stationary block.
-  const escapeSteps = stationaryBlocks.length + movingBlocks.length + 2
-  const queue: Array<readonly [number, number]> = [[0, 0]]
-  const visited = new Set(['0:0'])
-
-  for (let index = 0; index < queue.length; index++) {
-    const [stepX, stepY] = queue[index]!
-    if (Math.abs(stepX) + Math.abs(stepY) > escapeSteps) return true
-
-    for (const [nextX, nextY] of [
-      [stepX - 1, stepY],
-      [stepX + 1, stepY],
-      [stepX, stepY - 1],
-      [stepX, stepY + 1],
-    ] as const) {
-      const key = `${nextX}:${nextY}`
-      if (visited.has(key)) continue
-      const nextDx = nextX * cell
-      const nextDy = nextY * cell
-      if (movingBlocks.some(movingBlock => stationaryBlocks.some(stationaryBlock =>
-        overlapsAt(movingBlock, stationaryBlock, nextDx, nextDy, cell)))) continue
-      visited.add(key)
-      queue.push([nextX, nextY])
-    }
-  }
-
   return false
 }
 
@@ -273,9 +245,9 @@ const fitsBoard = (
 ))
 
 /**
- * Finds a collision-free exterior edge for a component that overlaps another
- * component, or is trapped by its individual unit blocks. Unlike normal
- * magnetic snapping, this correction is not distance-limited.
+ * Finds the closest collision-free component edge when the specifically held
+ * unit is more than half covered. Unlike normal snapping, this correction is
+ * not distance-limited.
  */
 export const findOverlapSnap = (
   blocks: readonly MagneticBlock[],
@@ -283,26 +255,25 @@ export const findOverlapSnap = (
   movingIds: readonly number[],
   cell: number,
   bounds?: BoardBounds,
+  heldId: number = movingIds[0] ?? -1,
 ): SnapResult | undefined => {
   const moving = new Set(movingIds)
   const movingBlocks = blocks.filter(block => moving.has(block.id))
+  const held = blocks.find(block => block.id === heldId)
+  const stationaryBlocks = blocks.filter(block => !moving.has(block.id))
+  if (!held || stationaryBlocks.reduce((area, block) => area + intersectionArea(held, block, cell), 0) <= cell * cell / 2) {
+    return undefined
+  }
   let closest: (SnapResult & { readonly distance: number }) | undefined
 
   for (const ids of componentsFor(blocks, bonds)) {
     if (ids.some(id => moving.has(id))) continue
     const stationary = new Set(ids)
-    const stationaryBlocks = blocks.filter(block => stationary.has(block.id))
-    if (stationaryBlocks.length === 0) continue
-
-    const overlaps = movingBlocks.some(movingBlock =>
-      stationaryBlocks.some(stationaryBlock => overlapsAt(movingBlock, stationaryBlock, 0, 0, cell)))
-    const enclosed = !overlaps
-      && stationaryBlocks.length > movingBlocks.length
-      && !canReachOutsideComponent(movingBlocks, stationaryBlocks, cell)
-    if (!overlaps && !enclosed) continue
+    const componentBlocks = blocks.filter(block => stationary.has(block.id))
+    if (componentBlocks.length === 0) continue
 
     for (const movingBlock of movingBlocks) {
-      for (const stationaryBlock of stationaryBlocks) {
+      for (const stationaryBlock of componentBlocks) {
         const targets = [
           { x: stationaryBlock.x - cell, y: stationaryBlock.y },
           { x: stationaryBlock.x + cell, y: stationaryBlock.y },
@@ -314,11 +285,6 @@ export const findOverlapSnap = (
           const dy = target.y - movingBlock.y
           if (!fitsBoard(blocks, moving, dx, dy, cell, bounds)) continue
           if (wouldOverlap(blocks, moving, dx, dy, cell)) continue
-          if (enclosed && !canReachOutsideComponent(
-            movingBlocks.map(block => ({ ...block, x: block.x + dx, y: block.y + dy })),
-            stationaryBlocks,
-            cell,
-          )) continue
           const distance = Math.hypot(dx, dy)
           if (!closest || distance < closest.distance) {
             closest = {
@@ -377,98 +343,108 @@ export const findClosestSnap = (
   return closest
 }
 
-interface UnitBridgeSnap {
-  readonly first: MagneticBlock
-  readonly firstTarget: { readonly x: number; readonly y: number }
-  readonly second: MagneticBlock
-  readonly secondTarget: { readonly x: number; readonly y: number }
-  readonly score: number
+interface LocalJoinCandidate {
+  readonly ids: number[]
+  readonly dx: number
+  readonly dy: number
+  readonly distance: number
+  readonly bond: MagneticBond
 }
 
-const findUnitBridgeSnap = (
+interface LocalJoinPlan {
+  readonly candidates: readonly LocalJoinCandidate[]
+  readonly distance: number
+}
+
+const findLocalJoinPlan = (
   blocks: readonly MagneticBlock[],
   bonds: readonly MagneticBond[],
   movingIds: readonly number[],
   cell: number,
   snapDistance: number,
   bounds: BoardBounds,
-): UnitBridgeSnap | undefined => {
-  if (movingIds.length !== 1 || snapDistance < 0) return undefined
-  const moving = blocks.find(block => block.id === movingIds[0])
-  if (!moving) return undefined
-  const stationary = componentsFor(blocks, bonds).flatMap(component => {
-    if (component.length !== 1 || component.includes(moving.id)) return []
-    const block = blocks.find(candidate => candidate.id === component[0])
-    return block ? [block] : []
+): LocalJoinPlan | undefined => {
+  if (snapDistance < 0) return undefined
+  const moving = new Set(movingIds)
+  const movingBlocks = blocks.filter(block => moving.has(block.id))
+  const groups = componentsFor(blocks, bonds).flatMap(ids => {
+    if (ids.some(id => moving.has(id))) return []
+    const component = new Set(ids)
+    const stationaryBlocks = blocks.filter(block => component.has(block.id))
+    const translations = new Map<string, LocalJoinCandidate>()
+    for (const movingBlock of movingBlocks) {
+      for (const stationaryBlock of stationaryBlocks) {
+        for (const target of [
+          { x: movingBlock.x - cell, y: movingBlock.y },
+          { x: movingBlock.x + cell, y: movingBlock.y },
+          { x: movingBlock.x, y: movingBlock.y - cell },
+          { x: movingBlock.x, y: movingBlock.y + cell },
+        ]) {
+          const dx = target.x - stationaryBlock.x
+          const dy = target.y - stationaryBlock.y
+          const distance = Math.hypot(dx, dy)
+          if (distance > snapDistance) continue
+          const key = `${dx.toFixed(4)}:${dy.toFixed(4)}`
+          const candidate = { ids, dx, dy, distance, bond: { a: movingBlock.id, b: stationaryBlock.id } }
+          const previous = translations.get(key)
+          if (!previous || bondKey(candidate.bond.a, candidate.bond.b) < bondKey(previous.bond.a, previous.bond.b)) {
+            translations.set(key, candidate)
+          }
+        }
+      }
+    }
+    const candidates = [...translations.values()].sort((a, b) =>
+      a.distance - b.distance || bondKey(a.bond.a, a.bond.b).localeCompare(bondKey(b.bond.a, b.bond.b)))
+    return candidates.length > 0 ? [{ candidates }] : []
   })
-  const candidates: UnitBridgeSnap[] = []
 
-  const addCandidate = (
-    first: MagneticBlock,
-    firstTarget: { readonly x: number; readonly y: number },
-    second: MagneticBlock,
-    secondTarget: { readonly x: number; readonly y: number },
-    score: number,
-  ): void => {
-    const bridgeIds = new Set([moving.id, first.id, second.id])
-    const planned = [
-      moving,
-      { ...first, ...firstTarget },
-      { ...second, ...secondTarget },
-    ]
-    const insideBoard = planned.every(block =>
-      block.x >= cell / 2 && block.y >= cell / 2
-      && block.x <= bounds.width - cell / 2 && block.y <= bounds.height - cell / 2)
-    const clearOfOtherBlocks = planned.every(block => blocks.every(other =>
-      bridgeIds.has(other.id) || !overlapsAt(block, other, 0, 0, cell)))
-    if (insideBoard && clearOfOtherBlocks) candidates.push({ first, firstTarget, second, secondTarget, score })
+  let best: LocalJoinPlan | undefined
+  const consider = (candidates: readonly LocalJoinCandidate[]): void => {
+    const translations = new Map<number, LocalJoinCandidate>()
+    for (const candidate of candidates) {
+      for (const id of candidate.ids) translations.set(id, candidate)
+    }
+    const affected = new Set([...movingIds, ...translations.keys()])
+    const atPlannedPosition = (block: MagneticBlock): MagneticBlock => {
+      const translation = translations.get(block.id)
+      return translation ? { ...block, x: block.x + translation.dx, y: block.y + translation.dy } : block
+    }
+    const insideBoard = blocks.every(block => {
+      if (!affected.has(block.id)) return true
+      const planned = atPlannedPosition(block)
+      return planned.x >= cell / 2 && planned.y >= cell / 2
+        && planned.x <= bounds.width - cell / 2 && planned.y <= bounds.height - cell / 2
+    })
+    if (!insideBoard) return
+    for (let firstIndex = 0; firstIndex < blocks.length; firstIndex++) {
+      for (let secondIndex = firstIndex + 1; secondIndex < blocks.length; secondIndex++) {
+        const first = blocks[firstIndex]!
+        const second = blocks[secondIndex]!
+        if (!affected.has(first.id) && !affected.has(second.id)) continue
+        if (overlapsAt(atPlannedPosition(first), atPlannedPosition(second), 0, 0, cell)) return
+      }
+    }
+    const distance = candidates.reduce((total, candidate) => total + candidate.distance, 0)
+    if (!best || candidates.length > best.candidates.length
+      || (candidates.length === best.candidates.length && distance < best.distance)) {
+      best = { candidates, distance }
+    }
   }
 
-  for (const first of stationary) {
-    for (const second of stationary) {
-      if (first.id === second.id) continue
-      const leftDistance = moving.x - first.x
-      const rightDistance = second.x - moving.x
-      const topDistance = moving.y - first.y
-      const bottomDistance = second.y - moving.y
-
-      if (
-        leftDistance > 0 && rightDistance > 0
-        && Math.abs(leftDistance - cell) <= snapDistance
-        && Math.abs(rightDistance - cell) <= snapDistance
-        && Math.abs(first.y - moving.y) <= snapDistance
-        && Math.abs(second.y - moving.y) <= snapDistance
-      ) {
-        addCandidate(
-          first,
-          { x: moving.x - cell, y: moving.y },
-          second,
-          { x: moving.x + cell, y: moving.y },
-          Math.abs(leftDistance - cell) + Math.abs(rightDistance - cell)
-            + Math.abs(first.y - moving.y) + Math.abs(second.y - moving.y),
-        )
-      }
-
-      if (
-        topDistance > 0 && bottomDistance > 0
-        && Math.abs(topDistance - cell) <= snapDistance
-        && Math.abs(bottomDistance - cell) <= snapDistance
-        && Math.abs(first.x - moving.x) <= snapDistance
-        && Math.abs(second.x - moving.x) <= snapDistance
-      ) {
-        addCandidate(
-          first,
-          { x: moving.x, y: moving.y - cell },
-          second,
-          { x: moving.x, y: moving.y + cell },
-          Math.abs(topDistance - cell) + Math.abs(bottomDistance - cell)
-            + Math.abs(first.x - moving.x) + Math.abs(second.x - moving.x),
-        )
+  for (let firstGroup = 0; firstGroup < groups.length; firstGroup++) {
+    for (const first of groups[firstGroup]!.candidates) {
+      for (let secondGroup = firstGroup + 1; secondGroup < groups.length; secondGroup++) {
+        for (const second of groups[secondGroup]!.candidates) {
+          consider([first, second])
+          for (let thirdGroup = secondGroup + 1; thirdGroup < groups.length; thirdGroup++) {
+            for (const third of groups[thirdGroup]!.candidates) consider([first, second, third])
+          }
+        }
       }
     }
   }
 
-  return candidates.sort((a, b) => a.score - b.score || a.first.id - b.first.id || a.second.id - b.second.id)[0]
+  return best
 }
 
 export const snapTogether = (
@@ -478,34 +454,38 @@ export const snapTogether = (
   cell: number,
   snapDistance: number,
   bounds: BoardBounds,
+  heldId: number = movingIds[0] ?? -1,
 ): { bonds: MagneticBond[]; ids: number[]; joins: MagneticJoin[]; summands: number[] } => {
   const originalComponents = componentsFor(blocks, bonds)
   let nextBonds = [...bonds]
   let joinedIds = [...movingIds]
   const joins: MagneticJoin[] = []
 
-  const bridge = findUnitBridgeSnap(blocks, nextBonds, joinedIds, cell, snapDistance, bounds)
-  if (bridge) {
-    bridge.first.x = bridge.firstTarget.x
-    bridge.first.y = bridge.firstTarget.y
-    bridge.second.x = bridge.secondTarget.x
-    bridge.second.y = bridge.secondTarget.y
-    nextBonds = [
-      ...nextBonds,
-      { a: movingIds[0]!, b: bridge.first.id },
-      { a: movingIds[0]!, b: bridge.second.id },
-    ]
-    joins.push(
-      { left: 1, right: 1, total: 2 },
-      { left: 2, right: 1, total: 3 },
-    )
-    joinedIds = componentsFor(blocks, nextBonds).find(component => component.includes(movingIds[0]!)) ?? joinedIds
+  const applyLocalPlan = (): boolean => {
+    const localPlan = findLocalJoinPlan(blocks, nextBonds, joinedIds, cell, snapDistance, bounds)
+    if (!localPlan) return false
+    let total = joinedIds.length
+    for (const candidate of localPlan.candidates) {
+      for (const id of candidate.ids) {
+        const block = blocks.find(current => current.id === id)
+        if (block) {
+          block.x += candidate.dx
+          block.y += candidate.dy
+        }
+      }
+      nextBonds.push(candidate.bond)
+      joins.push({ left: total, right: candidate.ids.length, total: total + candidate.ids.length })
+      total += candidate.ids.length
+    }
+    joinedIds = componentsFor(blocks, nextBonds).find(component => component.includes(heldId)) ?? joinedIds
+    return true
   }
 
   // Each loop either adds a new component to the moving shape or stops. The
   // bound guarantees that a malformed board can never create a snap loop.
   for (let step = 0; step < blocks.length; step++) {
-    const snap = findOverlapSnap(blocks, nextBonds, joinedIds, cell, bounds)
+    if (applyLocalPlan()) continue
+    const snap = findOverlapSnap(blocks, nextBonds, joinedIds, cell, bounds, heldId)
       ?? findClosestSnap(blocks, joinedIds, cell, snapDistance, bounds)
     if (!snap) break
     const key = bondKey(snap.bond.a, snap.bond.b)
@@ -981,7 +961,7 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
 
           const finishDrag = (event: PointerEvent): void => {
             if (!drag || drag.pointerId !== event.pointerId) return
-            const snapped = snapTogether(blocks, bonds, drag.ids, cell, cell * SNAP_DISTANCE_FACTOR, bounds())
+            const snapped = snapTogether(blocks, bonds, drag.ids, cell, cell * SNAP_DISTANCE_FACTOR, bounds(), drag.grabbedId)
             bonds = snapped.bonds
             const joins = snapped.joins.length
             const equation = joins > 0 ? joinEquation(snapped.summands) : undefined

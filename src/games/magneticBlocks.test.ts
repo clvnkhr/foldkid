@@ -2,7 +2,7 @@ import { Effect, Fiber, Stream } from 'effect'
 import { describe, expect, it, vi } from 'vitest'
 
 import { arithmeticExpressionForSpeech } from '../arithmeticSpeech'
-import { blockFillColor, componentColor, componentOutlineColor, componentsFor, DEFAULT_BREAK_SPEED, findClosestSnap, init, joinEquation, labelPlacementFor, mountMagneticBlocks, RemoveBlock, removeBondsFor, SetBreakSpeed, snapTogether, SpawnBlocks, splitComponentAtBestBond, splitEquation, update } from './magneticBlocks'
+import { blockFillColor, componentColor, componentOutlineColor, componentsFor, DEFAULT_BREAK_SPEED, findClosestSnap, findOverlapSnap, init, joinEquation, labelPlacementFor, mountMagneticBlocks, RemoveBlock, removeBondsFor, SetBreakSpeed, snapTogether, SpawnBlocks, splitComponentAtBestBond, splitEquation, update } from './magneticBlocks'
 
 describe('Magnetic Blocks', () => {
   const blocks = [
@@ -93,10 +93,39 @@ describe('Magnetic Blocks', () => {
 
     expect(snapped.ids).toHaveLength(2)
     expect(snapped.joins).toEqual([{ left: 1, right: 1, total: 2 }])
+    expect(overlapping[0]).toMatchObject({ x: 100, y: 100 })
     expect(Math.abs(overlapping[0]!.x - overlapping[1]!.x) === 50
       || Math.abs(overlapping[0]!.y - overlapping[1]!.y) === 50).toBe(true)
     expect(Math.abs(overlapping[0]!.x - overlapping[1]!.x) < 50
       && Math.abs(overlapping[0]!.y - overlapping[1]!.y) < 50).toBe(false)
+  })
+
+  it('only ejects the held unit above 50% coverage and chooses its closest boundary edge', () => {
+    expect(findOverlapSnap([
+      { id: 1, x: 125, y: 100 },
+      { id: 2, x: 150, y: 100 },
+    ], [], [1], 50, { width: 300, height: 220 }, 1)).toBeUndefined()
+
+    expect(findOverlapSnap([
+      { id: 1, x: 126, y: 100 },
+      { id: 2, x: 150, y: 100 },
+    ], [], [1], 50, { width: 300, height: 220 }, 1)).toMatchObject({
+      dx: -26,
+      dy: 0,
+      bond: { a: 1, b: 2 },
+    })
+  })
+
+  it('does not eject a component when an unheld unit is covered', () => {
+    const magneticBlocks = [
+      { id: 1, x: 50, y: 100 },
+      { id: 2, x: 100, y: 100 },
+      { id: 3, x: 120, y: 100 },
+    ]
+    const bonds = [{ a: 1, b: 2 }]
+
+    expect(findOverlapSnap(magneticBlocks, bonds, [1, 2], 50, { width: 300, height: 220 }, 1)).toBeUndefined()
+    expect(findOverlapSnap(magneticBlocks, bonds, [1, 2], 50, { width: 300, height: 220 }, 2)).toBeDefined()
   })
 
   it('keeps a dropped unit block between two near-aligned unit blocks and joins all three', () => {
@@ -116,7 +145,26 @@ describe('Magnetic Blocks', () => {
     expect(snapped.summands).toEqual([1, 1, 1])
   })
 
-  it('moves a block out of a larger component boundary before joining its outer edge', () => {
+  it('perturbs whole joining components to bridge a two-plus-one-plus-one row', () => {
+    const magneticBlocks = [
+      { id: 1, x: 50, y: 100 },
+      { id: 2, x: 100, y: 100 },
+      { id: 3, x: 195, y: 102 },
+      { id: 4, x: 148, y: 101 },
+    ]
+    const snapped = snapTogether(magneticBlocks, [{ a: 1, b: 2 }], [4], 50, 23, { width: 300, height: 220 })
+
+    expect(snapped.ids).toHaveLength(4)
+    expect(magneticBlocks).toEqual([
+      { id: 1, x: 48, y: 101 },
+      { id: 2, x: 98, y: 101 },
+      { id: 3, x: 198, y: 101 },
+      { id: 4, x: 148, y: 101 },
+    ])
+    expect(snapped.summands).toEqual([2, 1, 1])
+  })
+
+  it('does not eject a block from an empty enclosed space when it is not covered', () => {
     const ring = [
       { id: 1, x: 100, y: 100 },
       { id: 2, x: 150, y: 100 },
@@ -137,7 +185,7 @@ describe('Magnetic Blocks', () => {
 
     expect(snapped.ids).toHaveLength(9)
     expect(snapped.joins).toEqual([{ left: 1, right: 8, total: 9 }])
-    expect(moved.x < 100 || moved.x > 200 || moved.y < 100 || moved.y > 200).toBe(true)
+    expect(moved).toMatchObject({ x: 150, y: 150 })
     expect(ring.slice(0, 8).some(block =>
       (Math.abs(moved.x - block.x) === 50 && moved.y === block.y)
       || (Math.abs(moved.y - block.y) === 50 && moved.x === block.x))).toBe(true)
