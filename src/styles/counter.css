@@ -81,7 +81,7 @@
 
 .balls-container {
   position: absolute;
-  inset: 0;
+  inset: 0 0 max(3.5rem, calc(env(safe-area-inset-bottom, 0px) + 1.25rem)) 0;
   pointer-events: auto;
   touch-action: none;
   overscroll-behavior: none;
