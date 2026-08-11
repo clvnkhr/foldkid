@@ -398,6 +398,39 @@ describe('counter ball attribute parsing', () => {
   })
 })
 
+describe('counter orientation gravity', () => {
+  it('maps portrait device tilt to screen gravity', () => {
+    expect(Counter.orientationGravity(90, 0)).toEqual([0, 1])
+    expect(Counter.orientationGravity(0, 90)).toEqual([1, 0])
+    expect(Counter.orientationGravity(-90, 0)).toEqual([0, -1])
+  })
+
+  it('preserves the projected magnitude of gravity', () => {
+    const gentleTilt = Counter.orientationGravity(30, 0)
+    const diagonalTilt = Counter.orientationGravity(45, 45)
+
+    expect(gentleTilt?.[0]).toBeCloseTo(0)
+    expect(gentleTilt?.[1]).toBeCloseTo(0.5)
+    expect(Math.hypot(...diagonalTilt!)).toBeCloseTo(Math.sqrt(0.75))
+  })
+
+  it('rotates device axes into both iPhone landscape orientations', () => {
+    const landscapeRight = Counter.orientationGravity(0, 90, 90)
+    const landscapeLeft = Counter.orientationGravity(0, -90, -90)
+
+    expect(landscapeRight?.[0]).toBeCloseTo(0)
+    expect(landscapeRight?.[1]).toBeCloseTo(1)
+    expect(landscapeLeft?.[0]).toBeCloseTo(0)
+    expect(landscapeLeft?.[1]).toBeCloseTo(1)
+  })
+
+  it('ignores unavailable readings and near-flat sensor noise', () => {
+    expect(Counter.orientationGravity(null, 0)).toBeUndefined()
+    expect(Counter.orientationGravity(0, null)).toBeUndefined()
+    expect(Counter.orientationGravity(0, 0)).toEqual([0, 0])
+  })
+})
+
 describe('Counter global state', () => {
   it('PointerDown then PressedIncrement works without module-level state', () => {
     Story.story(

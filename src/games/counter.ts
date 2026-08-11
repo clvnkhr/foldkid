@@ -180,6 +180,49 @@ const COLLISION_ITERATIONS = 5
 const AIR_DAMPING = 4
 const REST_EPSILON = 0.01
 const SPAWN_INTERVAL = 0.14
+const ORIENTATION_DEAD_ZONE = 0.03
+const ORIENTATION_SMOOTHING = 0.18
+
+type PermissionedDeviceOrientationEvent = typeof DeviceOrientationEvent & {
+  requestPermission?: () => Promise<'granted' | 'denied'>
+}
+
+let orientationPermissionRequested = false
+
+const requestCounterOrientationPermission = (): void => {
+  if (orientationPermissionRequested || typeof DeviceOrientationEvent === 'undefined') return
+  const orientationEvent = DeviceOrientationEvent as PermissionedDeviceOrientationEvent
+  if (typeof orientationEvent.requestPermission !== 'function') return
+  orientationPermissionRequested = true
+  void orientationEvent.requestPermission.call(orientationEvent).catch(() => {
+    orientationPermissionRequested = false
+  })
+}
+
+export const orientationGravity = (
+  beta: number | null,
+  gamma: number | null,
+  screenAngle: number = 0,
+): readonly [number, number] | undefined => {
+  if (beta === null || gamma === null || !Number.isFinite(beta) || !Number.isFinite(gamma)) return undefined
+  const radians = Math.PI / 180
+  const betaRadians = Math.max(-90, Math.min(90, beta)) * radians
+  const gammaRadians = Math.max(-90, Math.min(90, gamma)) * radians
+  const deviceX = Math.sin(gammaRadians) * Math.cos(betaRadians)
+  const deviceY = Math.sin(betaRadians)
+  const angle = screenAngle * radians
+  const screenX = deviceX * Math.cos(angle) - deviceY * Math.sin(angle)
+  const screenY = deviceX * Math.sin(angle) + deviceY * Math.cos(angle)
+  const magnitude = Math.hypot(screenX, screenY)
+  return magnitude < ORIENTATION_DEAD_ZONE ? [0, 0] : [screenX, screenY]
+}
+
+const currentScreenAngle = (): number => {
+  const angle = globalThis.screen?.orientation?.angle
+  if (Number.isFinite(angle)) return angle
+  const legacyAngle = (window as Window & { orientation?: number }).orientation
+  return Number.isFinite(legacyAngle) ? legacyAngle! : 0
+}
 
 const poof = (el: HTMLElement, activeParticles: Set<HTMLElement>): void => {
   const rect = el.getBoundingClientRect()
@@ -230,15 +273,29 @@ const makeBall = (
   hue: number,
   w: number,
   h: number,
-  gravityDirection: number,
-): Omit<BallState, 'el'> => ({
-  x: r + Math.random() * Math.max(0, w - r * 2),
-  y: gravityDirection > 0 ? r : Math.max(r, h - r),
-  vx: 0,
-  vy: 0,
-  hue,
-  r,
-})
+  gravityX: number,
+  gravityY: number,
+): Omit<BallState, 'el'> => {
+  const randomX = r + Math.random() * Math.max(0, w - r * 2)
+  const randomY = r + Math.random() * Math.max(0, h - r * 2)
+  const gravityMagnitude = Math.hypot(gravityX, gravityY)
+  return {
+    x: gravityMagnitude < ORIENTATION_DEAD_ZONE
+      ? randomX
+      : Math.abs(gravityX) > Math.abs(gravityY)
+        ? (gravityX > 0 ? r : Math.max(r, w - r))
+        : randomX,
+    y: gravityMagnitude < ORIENTATION_DEAD_ZONE
+      ? randomY
+      : Math.abs(gravityX) > Math.abs(gravityY)
+        ? randomY
+        : (gravityY > 0 ? r : Math.max(r, h - r)),
+    vx: 0,
+    vy: 0,
+    hue,
+    r,
+  }
+}
 
 interface TickState {
   rendered: BallState[]
@@ -253,6 +310,8 @@ interface TickState {
   lastTime: number
   accumulator: number
   nextHue: number
+  gravityX: number
+  gravityY: number
 }
 
 const constrainToBounds = (ball: BallState, w: number, h: number): void => {
@@ -330,7 +389,7 @@ const solveCollisions = (balls: BallState[], w: number, h: number): void => {
   }
 }
 
-const simulate = (balls: BallState[], w: number, h: number, gravityDirection: number): void => {
+const simulate = (balls: BallState[], w: number, h: number, gravityX: number, gravityY: number): void => {
   const previousX = new Float64Array(balls.length)
   const previousY = new Float64Array(balls.length)
   const damping = Math.exp(-AIR_DAMPING * FIXED_DT)
@@ -340,8 +399,8 @@ const simulate = (balls: BallState[], w: number, h: number, gravityDirection: nu
     if (!ball) continue
     previousX[i] = ball.x
     previousY[i] = ball.y
-    ball.vx *= damping
-    ball.vy = (ball.vy + gravityDirection * GRAVITY * FIXED_DT) * damping
+    ball.vx = (ball.vx + gravityX * GRAVITY * FIXED_DT) * damping
+    ball.vy = (ball.vy + gravityY * GRAVITY * FIXED_DT) * damping
     ball.x += ball.vx * FIXED_DT
     ball.y += ball.vy * FIXED_DT
     constrainToBounds(ball, w, h)
@@ -355,19 +414,25 @@ const simulate = (balls: BallState[], w: number, h: number, gravityDirection: nu
     ball.vx = (ball.x - previousX[i]!) / FIXED_DT * damping
     ball.vy = (ball.y - previousY[i]!) / FIXED_DT * damping
 
-    const restingAtGravityWall = gravityDirection > 0
+    const restingAtHorizontalWall = gravityX > 0
+      ? ball.x >= w - ball.r - REST_EPSILON
+      : gravityX < 0 && ball.x <= ball.r + REST_EPSILON
+    const restingAtVerticalWall = gravityY > 0
       ? ball.y >= h - ball.r - REST_EPSILON
-      : ball.y <= ball.r + REST_EPSILON
-    if (restingAtGravityWall) ball.vy = 0
+      : gravityY < 0 && ball.y <= ball.r + REST_EPSILON
+    if (restingAtHorizontalWall) ball.vx = 0
+    if (restingAtVerticalWall) ball.vy = 0
     if (Math.abs(ball.vx) < REST_EPSILON) ball.vx = 0
     if (Math.abs(ball.vy) < REST_EPSILON) ball.vy = 0
   }
 }
 
 const addBall = (state: TickState, parent: HTMLElement, negative: boolean): void => {
-  const gravityDirection = negative ? -1 : 1
+  const direction = negative ? -1 : 1
+  const gravityX = state.gravityX * direction
+  const gravityY = state.gravityY * direction
   const r = ballRadius(state.fontSize)
-  const ball = makeBall(r, state.nextHue, state.w, state.h, gravityDirection)
+  const ball = makeBall(r, state.nextHue, state.w, state.h, gravityX, gravityY)
   state.nextHue = (state.nextHue + 137.508) % 360
   const element = document.createElement('div')
   element.className = `ball${negative ? ' neg' : ''}`
@@ -409,9 +474,11 @@ const tick = (state: TickState, parent: HTMLElement, activeParticles: Set<HTMLEl
 
   state.accumulator = Math.min(state.accumulator + elapsed, FIXED_DT * MAX_STEPS_PER_FRAME)
   let steps = 0
-  const gravityDirection = negative ? -1 : 1
+  const direction = negative ? -1 : 1
+  const gravityX = state.gravityX * direction
+  const gravityY = state.gravityY * direction
   while (state.accumulator >= FIXED_DT && steps < MAX_STEPS_PER_FRAME) {
-    simulate(state.rendered, state.w, state.h, gravityDirection)
+    simulate(state.rendered, state.w, state.h, gravityX, gravityY)
     state.accumulator -= FIXED_DT
     steps++
   }
@@ -437,6 +504,7 @@ export const view = (model: Model, language: string = 'en') => {
       return O.some(PointerDown({ timeStamp: ts, button: btn }))
     }),
     h.OnPointerUp((_sx, _sy, _pt, ts) => {
+      requestCounterOrientationPermission()
       return O.some(msg(ts - model.pointerDownTime, btn))
     }),
     h.OnPointerLeave(() => {
@@ -492,6 +560,8 @@ export const view = (model: Model, language: string = 'en') => {
                         lastTime: performance.now(),
                         accumulator: 0,
                         nextHue: 0,
+                        gravityX: 0,
+                        gravityY: 1,
                       }
                       const ro = new ResizeObserver(() => { state.dirty = true })
                       ro.observe(parent)
@@ -500,19 +570,29 @@ export const view = (model: Model, language: string = 'en') => {
                         state.fontSize = parseBallFontSize(parent.getAttribute('data-fontsize'))
                       })
                       mo.observe(parent, { attributes: true, attributeFilter: ['data-count', 'data-fontsize'] })
+                      const onOrientation = (event: DeviceOrientationEvent): void => {
+                        const gravity = orientationGravity(event.beta, event.gamma, currentScreenAngle())
+                        if (!gravity) return
+                        const nextX = state.gravityX * (1 - ORIENTATION_SMOOTHING) + gravity[0] * ORIENTATION_SMOOTHING
+                        const nextY = state.gravityY * (1 - ORIENTATION_SMOOTHING) + gravity[1] * ORIENTATION_SMOOTHING
+                        state.gravityX = Math.abs(nextX) < ORIENTATION_DEAD_ZONE ? 0 : nextX
+                        state.gravityY = Math.abs(nextY) < ORIENTATION_DEAD_ZONE ? 0 : nextY
+                      }
+                      window.addEventListener('deviceorientation', onOrientation)
                       const loop = (now: number) => {
                         if (!state.running) return
                         tick(state, parent, activeParticles, now)
                         state.id = requestAnimationFrame(loop)
                       }
                       state.id = requestAnimationFrame(loop)
-                      return { state, ro, mo }
+                      return { state, ro, mo, onOrientation }
                     }),
-                    ({ state, ro, mo }) => Effect.sync(() => {
+                    ({ state, ro, mo, onOrientation }) => Effect.sync(() => {
                       state.running = false
                       cancelAnimationFrame(state.id)
                       ro.disconnect()
                       mo.disconnect()
+                      window.removeEventListener('deviceorientation', onOrientation)
                       state.rendered.forEach(b => b.el.remove())
                       activeParticles.forEach(el => el.remove())
                       activeParticles.clear()
