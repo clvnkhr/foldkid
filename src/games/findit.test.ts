@@ -31,6 +31,23 @@ describe('FindIt', () => {
     expect(numbers.has(game.target)).toBe(true)
   })
 
+  it('offers substantial, non-overlapping themed emoji packs with localized names', () => {
+    expect(FindIt.EMOJI_PACKS.map(({ key }) => key)).toEqual([
+      'fun', 'numbers', 'animals', 'food', 'vehicles', 'nature',
+    ])
+    expect(FindIt.DEFAULT_EMOJI_PACK_KEYS).toEqual(FindIt.EMOJI_PACKS.map(({ key }) => key))
+
+    const everyEmoji = FindIt.EMOJI_PACKS.flatMap(({ key }) => FindIt.emojiPoolForPacks([key]))
+    expect(new Set(everyEmoji).size).toBe(everyEmoji.length)
+    expect(everyEmoji).toHaveLength(FindIt.EMOJI_COUNT)
+    for (const { key } of FindIt.EMOJI_PACKS) {
+      expect(FindIt.emojiPoolForPacks([key]).length, key).toBeGreaterThanOrEqual(9)
+    }
+    for (const names of Object.values(FindIt.EMOJI_NAMES_BY_LANG)) {
+      expect(names).toHaveLength(FindIt.EMOJI_COUNT)
+    }
+  })
+
   it('toggles emoji packs and regenerates from enabled packs', () => {
     const game = FindIt.init(false, ['numbers', 'animals'])
     const numbers = new Set(FindIt.emojiPoolForPacks(['numbers']))
@@ -63,10 +80,8 @@ describe('FindIt', () => {
   })
 
   it('pack combinations generate valid single and pairs games', () => {
-    const packCombos = [
-      ['fun'],
-      ['numbers'],
-      ['animals'],
+    const packCombos: ReadonlyArray<readonly FindIt.EmojiPackKey[]> = [
+      ...FindIt.EMOJI_PACKS.map(({ key }) => [key]),
       ['fun', 'numbers'],
       ['numbers', 'animals'],
       FindIt.DEFAULT_EMOJI_PACK_KEYS,

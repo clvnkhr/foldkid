@@ -1,4 +1,4 @@
-import { Effect, Match as M, Option, Queue, Schema as S, Stream } from 'effect'
+import { Effect, Match as M, Option, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { Document, html } from 'foldkit/html'
 
@@ -1250,35 +1250,16 @@ export const view = (model: Model): Document => {
                 h.button(
                   [
                     h.Class(model.counter.tiltGravity ? 'btn btn-primary' : 'btn btn-secondary'),
-                    h.Attribute('data-tilt-gravity-enabled', String(model.counter.tiltGravity)),
-                    h.OnMount({
-                      name: 'counterTiltGravityPermission',
-                      f: (element) => Stream.callback<Message>(queue =>
-                        Effect.gen(function* () {
-                          yield* Effect.acquireRelease(
-                            Effect.sync(() => {
-                              const button = element as HTMLButtonElement
-                              let active = true
-                              const onClick = (): void => {
-                                if (button.getAttribute('data-tilt-gravity-enabled') === 'true') {
-                                  Queue.offerUnsafe(queue, Counter.SetTiltGravity({ value: false }))
-                                  return
-                                }
-                                void Counter.requestCounterOrientationPermission().then(granted => {
-                                  if (active && granted) Queue.offerUnsafe(queue, Counter.SetTiltGravity({ value: true }))
-                                })
-                              }
-                              button.addEventListener('click', onClick)
-                              return { button, onClick, stop: () => { active = false } }
-                            }),
-                            ({ button, onClick, stop }) => Effect.sync(() => {
-                              stop()
-                              button.removeEventListener('click', onClick)
-                            }),
-                          )
-                          return yield* Effect.never
-                        }),
-                      ),
+                    h.OnPointerUp(() => {
+                      const value = !model.counter.tiltGravity
+                      if (value) void Counter.requestCounterOrientationPermission()
+                      return Option.some(Counter.SetTiltGravity({ value }))
+                    }),
+                    h.OnKeyUpPreventDefault((key) => {
+                      if (key !== 'Enter' && key !== ' ') return Option.none()
+                      const value = !model.counter.tiltGravity
+                      if (value) void Counter.requestCounterOrientationPermission()
+                      return Option.some(Counter.SetTiltGravity({ value }))
                     }),
                   ],
                   [t('counterTiltGravity', model.language)],

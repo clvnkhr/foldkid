@@ -192,15 +192,27 @@ const ORIENTATION_SMOOTHING = 0.18
 type PermissionedDeviceOrientationEvent = typeof DeviceOrientationEvent & {
   requestPermission?: () => Promise<'granted' | 'denied'>
 }
+type PermissionedDeviceMotionEvent = typeof DeviceMotionEvent & {
+  requestPermission?: () => Promise<'granted' | 'denied'>
+}
 
 let orientationPermissionRequest: Promise<boolean> | undefined
 
 export const requestCounterOrientationPermission = (): Promise<boolean> => {
   if (typeof DeviceOrientationEvent === 'undefined') return Promise.resolve(false)
+  if (orientationPermissionRequest) return orientationPermissionRequest
   const orientationEvent = DeviceOrientationEvent as PermissionedDeviceOrientationEvent
-  if (typeof orientationEvent.requestPermission !== 'function') return Promise.resolve(true)
-  orientationPermissionRequest ??= orientationEvent.requestPermission.call(orientationEvent)
-    .then(permission => permission === 'granted')
+  const orientationPermission = typeof orientationEvent.requestPermission === 'function'
+    ? orientationEvent.requestPermission.call(orientationEvent).catch(() => 'denied' as const)
+    : Promise.resolve('granted' as const)
+  const motionEvent = typeof DeviceMotionEvent === 'undefined'
+    ? undefined
+    : DeviceMotionEvent as PermissionedDeviceMotionEvent
+  const motionPermission = typeof motionEvent?.requestPermission === 'function'
+    ? motionEvent.requestPermission.call(motionEvent).catch(() => 'denied' as const)
+    : Promise.resolve('granted' as const)
+  orientationPermissionRequest = Promise.all([orientationPermission, motionPermission])
+    .then(([permission]) => permission === 'granted')
     .catch(() => {
       orientationPermissionRequest = undefined
       return false
