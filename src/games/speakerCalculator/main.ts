@@ -2,6 +2,7 @@ import { Match as M, Schema as S } from 'effect'
 import { Command } from 'foldkit'
 import { Html, html } from 'foldkit/html'
 import { m } from 'foldkit/message'
+import { arithmeticOperatorWord } from '../../arithmeticSpeech'
 import { speak, type SpeechOptions } from '../../speech'
 import { t } from '../../i18n'
 
@@ -60,14 +61,6 @@ const speakButton = (
   speech: SpeechOptions,
 ): ReadonlyArray<Command.Command<Message>> =>
   muted ? [] : [speak(text, SpeakCompleted(), { ...speech, lang: language })]
-
-const opWord = (op: string, language: string): string => {
-  if (op === '+') return t('calcPlus', language)
-  if (op === '-') return t('calcMinus', language)
-  if (op === '*') return t('calcTimes', language)
-  if (op === '/') return t('calcDivide', language)
-  return op
-}
 
 const evaluate = (display: string): string => {
   if (!/^[0-9+\-*/.\s]+$/.test(display)) return 'Error'
@@ -172,7 +165,7 @@ export const update = (
       },
       ClickedOperator: (msg) => {
         const op = msg.operator
-        const word = opWord(op, language)
+        const word = arithmeticOperatorWord(op, language)
         const trimmed = model.display.trimEnd()
         if (trimmed === '' || trimmed === '-' || trimmed === '+' || trimmed === '*' || trimmed === '/') {
           return [model, speakButton(word, language, muted, speech)]

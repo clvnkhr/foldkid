@@ -2,6 +2,7 @@ import { Effect, Schema as S, Stream } from 'effect'
 import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
 
+import { arithmeticExpressionForSpeech } from '../arithmeticSpeech'
 import { getContext, warmAudio } from '../audio'
 import { t } from '../i18n'
 import { speakNow, type SpeechOptions } from '../speech'
@@ -69,7 +70,6 @@ interface DragState {
   lastY: number
   lastTime: number
   brokeApart: boolean
-  equations: string[]
 }
 
 export interface MagneticJoin {
@@ -78,7 +78,8 @@ export interface MagneticJoin {
   readonly total: number
 }
 
-export const joinEquation = (left: number, right: number): string => `${left}+${right}=${left + right}`
+export const joinEquation = (summands: readonly number[]): string =>
+  `${summands.join('+')}=${summands.reduce((total, value) => total + value, 0)}`
 export const splitEquation = (whole: number, removed: number): string => `${whole}-${removed}=${whole - removed}`
 
 const BLOCK_FACES = ['round', 'wide', 'side-eye', 'sleepy', 'cross-eyed', 'surprised'] as const
@@ -376,6 +377,100 @@ export const findClosestSnap = (
   return closest
 }
 
+interface UnitBridgeSnap {
+  readonly first: MagneticBlock
+  readonly firstTarget: { readonly x: number; readonly y: number }
+  readonly second: MagneticBlock
+  readonly secondTarget: { readonly x: number; readonly y: number }
+  readonly score: number
+}
+
+const findUnitBridgeSnap = (
+  blocks: readonly MagneticBlock[],
+  bonds: readonly MagneticBond[],
+  movingIds: readonly number[],
+  cell: number,
+  snapDistance: number,
+  bounds: BoardBounds,
+): UnitBridgeSnap | undefined => {
+  if (movingIds.length !== 1 || snapDistance < 0) return undefined
+  const moving = blocks.find(block => block.id === movingIds[0])
+  if (!moving) return undefined
+  const stationary = componentsFor(blocks, bonds).flatMap(component => {
+    if (component.length !== 1 || component.includes(moving.id)) return []
+    const block = blocks.find(candidate => candidate.id === component[0])
+    return block ? [block] : []
+  })
+  const candidates: UnitBridgeSnap[] = []
+
+  const addCandidate = (
+    first: MagneticBlock,
+    firstTarget: { readonly x: number; readonly y: number },
+    second: MagneticBlock,
+    secondTarget: { readonly x: number; readonly y: number },
+    score: number,
+  ): void => {
+    const bridgeIds = new Set([moving.id, first.id, second.id])
+    const planned = [
+      moving,
+      { ...first, ...firstTarget },
+      { ...second, ...secondTarget },
+    ]
+    const insideBoard = planned.every(block =>
+      block.x >= cell / 2 && block.y >= cell / 2
+      && block.x <= bounds.width - cell / 2 && block.y <= bounds.height - cell / 2)
+    const clearOfOtherBlocks = planned.every(block => blocks.every(other =>
+      bridgeIds.has(other.id) || !overlapsAt(block, other, 0, 0, cell)))
+    if (insideBoard && clearOfOtherBlocks) candidates.push({ first, firstTarget, second, secondTarget, score })
+  }
+
+  for (const first of stationary) {
+    for (const second of stationary) {
+      if (first.id === second.id) continue
+      const leftDistance = moving.x - first.x
+      const rightDistance = second.x - moving.x
+      const topDistance = moving.y - first.y
+      const bottomDistance = second.y - moving.y
+
+      if (
+        leftDistance > 0 && rightDistance > 0
+        && Math.abs(leftDistance - cell) <= snapDistance
+        && Math.abs(rightDistance - cell) <= snapDistance
+        && Math.abs(first.y - moving.y) <= snapDistance
+        && Math.abs(second.y - moving.y) <= snapDistance
+      ) {
+        addCandidate(
+          first,
+          { x: moving.x - cell, y: moving.y },
+          second,
+          { x: moving.x + cell, y: moving.y },
+          Math.abs(leftDistance - cell) + Math.abs(rightDistance - cell)
+            + Math.abs(first.y - moving.y) + Math.abs(second.y - moving.y),
+        )
+      }
+
+      if (
+        topDistance > 0 && bottomDistance > 0
+        && Math.abs(topDistance - cell) <= snapDistance
+        && Math.abs(bottomDistance - cell) <= snapDistance
+        && Math.abs(first.x - moving.x) <= snapDistance
+        && Math.abs(second.x - moving.x) <= snapDistance
+      ) {
+        addCandidate(
+          first,
+          { x: moving.x, y: moving.y - cell },
+          second,
+          { x: moving.x, y: moving.y + cell },
+          Math.abs(topDistance - cell) + Math.abs(bottomDistance - cell)
+            + Math.abs(first.x - moving.x) + Math.abs(second.x - moving.x),
+        )
+      }
+    }
+  }
+
+  return candidates.sort((a, b) => a.score - b.score || a.first.id - b.first.id || a.second.id - b.second.id)[0]
+}
+
 export const snapTogether = (
   blocks: MagneticBlock[],
   bonds: readonly MagneticBond[],
@@ -383,10 +478,29 @@ export const snapTogether = (
   cell: number,
   snapDistance: number,
   bounds: BoardBounds,
-): { bonds: MagneticBond[]; ids: number[]; joins: MagneticJoin[] } => {
+): { bonds: MagneticBond[]; ids: number[]; joins: MagneticJoin[]; summands: number[] } => {
+  const originalComponents = componentsFor(blocks, bonds)
   let nextBonds = [...bonds]
   let joinedIds = [...movingIds]
   const joins: MagneticJoin[] = []
+
+  const bridge = findUnitBridgeSnap(blocks, nextBonds, joinedIds, cell, snapDistance, bounds)
+  if (bridge) {
+    bridge.first.x = bridge.firstTarget.x
+    bridge.first.y = bridge.firstTarget.y
+    bridge.second.x = bridge.secondTarget.x
+    bridge.second.y = bridge.secondTarget.y
+    nextBonds = [
+      ...nextBonds,
+      { a: movingIds[0]!, b: bridge.first.id },
+      { a: movingIds[0]!, b: bridge.second.id },
+    ]
+    joins.push(
+      { left: 1, right: 1, total: 2 },
+      { left: 2, right: 1, total: 3 },
+    )
+    joinedIds = componentsFor(blocks, nextBonds).find(component => component.includes(movingIds[0]!)) ?? joinedIds
+  }
 
   // Each loop either adds a new component to the moving shape or stops. The
   // bound guarantees that a malformed board can never create a snap loop.
@@ -413,7 +527,24 @@ export const snapTogether = (
     joinedIds = expanded
   }
 
-  return { bonds: nextBonds, ids: joinedIds, joins }
+  const joined = new Set(joinedIds)
+  const summands = joins.length === 0
+    ? []
+    : originalComponents
+      .filter(component => component.some(id => joined.has(id)))
+      .map(component => {
+        const componentBlocks = blocks.filter(block => component.includes(block.id))
+        return {
+          size: component.length,
+          top: Math.min(...componentBlocks.map(block => block.y)),
+          left: Math.min(...componentBlocks.map(block => block.x)),
+          firstId: Math.min(...component),
+        }
+      })
+      .sort((a, b) => a.top - b.top || a.left - b.left || a.firstId - b.firstId)
+      .map(component => component.size)
+
+  return { bonds: nextBonds, ids: joinedIds, joins, summands }
 }
 
 export const settleOverlappingBlocks = (
@@ -813,7 +944,6 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
               lastY: point.y,
               lastTime: event.timeStamp,
               brokeApart: false,
-              equations: [],
             }
             for (const draggedId of ids) blocks.find(block => block.id === draggedId)?.el.classList.add('magnetic-block--dragging')
             board.setPointerCapture(event.pointerId)
@@ -828,7 +958,7 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
             if (speed > breakSpeed && drag.ids.length > 1 && !drag.brokeApart) {
               const split = splitComponentAtBestBond(blocks, bonds, drag.grabbedId, point.x - drag.lastX, point.y - drag.lastY)
               if (split) {
-                drag.equations.push(splitEquation(drag.ids.length, split.draggedIds.length))
+                const equation = splitEquation(drag.ids.length, split.draggedIds.length)
                 bonds = split.bonds
                 for (const id of drag.ids) blocks.find(block => block.id === id)?.el.classList.remove('magnetic-block--dragging')
                 drag.ids = split.draggedIds
@@ -836,7 +966,11 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
                 drag.brokeApart = true
                 blocks.find(block => block.id === drag!.grabbedId)?.el.classList.add('magnetic-block--dragging')
                 colorBlocks()
-                if (!muted) playMagnetClick('release')
+                if (!muted) {
+                  playMagnetClick('release')
+                  const options = speechOptions()
+                  speakNow(arithmeticExpressionForSpeech(equation, options.lang ?? 'en'), options)
+                }
               }
             }
             moveDraggedBlocks(point)
@@ -847,14 +981,10 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
 
           const finishDrag = (event: PointerEvent): void => {
             if (!drag || drag.pointerId !== event.pointerId) return
-            const previousBondCount = bonds.length
             const snapped = snapTogether(blocks, bonds, drag.ids, cell, cell * SNAP_DISTANCE_FACTOR, bounds())
             bonds = snapped.bonds
-            const joins = bonds.length - previousBondCount
-            const equations = [
-              ...drag.equations,
-              ...snapped.joins.map(join => joinEquation(join.left, join.right)),
-            ]
+            const joins = snapped.joins.length
+            const equation = joins > 0 ? joinEquation(snapped.summands) : undefined
             if (joins > 0) showSnap(snapped.ids)
             for (const id of drag.ids) blocks.find(block => block.id === id)?.el.classList.remove('magnetic-block--dragging')
             if (board.hasPointerCapture(event.pointerId)) board.releasePointerCapture(event.pointerId)
@@ -863,7 +993,11 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
             if (!muted && event.type === 'pointerup') {
               warmAudio()
               if (joins > 0) playMagnetClick('join', joins)
-              if (equations.length > 0) speakNow(equations.join('. '), speechOptions())
+              if (equation) {
+                const options = speechOptions()
+                const language = options.lang ?? 'en'
+                speakNow(arithmeticExpressionForSpeech(equation, language), options)
+              }
             }
           }
 

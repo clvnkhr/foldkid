@@ -1,6 +1,7 @@
 import { Effect, Fiber, Stream } from 'effect'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
+import { arithmeticExpressionForSpeech } from '../arithmeticSpeech'
 import { blockFillColor, componentColor, componentOutlineColor, componentsFor, DEFAULT_BREAK_SPEED, findClosestSnap, init, joinEquation, labelPlacementFor, mountMagneticBlocks, RemoveBlock, removeBondsFor, SetBreakSpeed, snapTogether, SpawnBlocks, splitComponentAtBestBond, splitEquation, update } from './magneticBlocks'
 
 describe('Magnetic Blocks', () => {
@@ -98,6 +99,23 @@ describe('Magnetic Blocks', () => {
       && Math.abs(overlapping[0]!.y - overlapping[1]!.y) < 50).toBe(false)
   })
 
+  it('keeps a dropped unit block between two near-aligned unit blocks and joins all three', () => {
+    const magneticBlocks = [
+      { id: 1, x: 100, y: 100 },
+      { id: 2, x: 195, y: 102 },
+      { id: 3, x: 148, y: 101 },
+    ]
+    const snapped = snapTogether(magneticBlocks, [], [3], 50, 23, { width: 300, height: 220 })
+
+    expect(snapped.ids).toHaveLength(3)
+    expect(magneticBlocks).toEqual([
+      { id: 1, x: 98, y: 101 },
+      { id: 2, x: 198, y: 101 },
+      { id: 3, x: 148, y: 101 },
+    ])
+    expect(snapped.summands).toEqual([1, 1, 1])
+  })
+
   it('moves a block out of a larger component boundary before joining its outer edge', () => {
     const ring = [
       { id: 1, x: 100, y: 100 },
@@ -185,11 +203,37 @@ describe('Magnetic Blocks', () => {
       { left: 3, right: 1, total: 4 },
       { left: 4, right: 1, total: 5 },
     ])
+    expect(snapped.summands).toEqual([3, 1, 1])
+  })
+
+  it('orders up to four cascade summands by top-to-bottom, left-to-right screen position', () => {
+    const magneticBlocks = [
+      { id: 40, x: 250, y: 150 },
+      { id: 11, x: 250, y: 100 }, { id: 12, x: 250, y: 50 },
+      { id: 21, x: 200, y: 150 }, { id: 22, x: 150, y: 150 }, { id: 23, x: 100, y: 150 },
+      { id: 31, x: 300, y: 150 }, { id: 32, x: 350, y: 150 }, { id: 33, x: 400, y: 150 }, { id: 34, x: 450, y: 150 },
+    ]
+    const snapped = snapTogether(magneticBlocks, [
+      { a: 11, b: 12 },
+      { a: 21, b: 22 }, { a: 22, b: 23 },
+      { a: 31, b: 32 }, { a: 32, b: 33 }, { a: 33, b: 34 },
+    ], [40], 50, 1, { width: 550, height: 300 })
+
+    expect(snapped.summands).toEqual([2, 3, 1, 4])
+    expect(joinEquation(snapped.summands)).toBe('2+3+1+4=10')
   })
 
   it('formats component-size arithmetic for joins and splits', () => {
-    expect(joinEquation(3, 2)).toBe('3+2=5')
+    expect(joinEquation([3, 2])).toBe('3+2=5')
+    expect(joinEquation([1, 1, 1])).toBe('1+1+1=3')
+    expect(joinEquation([1, 2, 3, 4])).toBe('1+2+3+4=10')
     expect(splitEquation(5, 2)).toBe('5-2=3')
+  })
+
+  it('spells out arithmetic operators so speech voices do not skip minus', () => {
+    expect(arithmeticExpressionForSpeech(joinEquation([3, 2]))).toBe('3 plus 2 equals 5')
+    expect(arithmeticExpressionForSpeech(splitEquation(3, 1))).toBe('3 minus 1 equals 2')
+    expect(arithmeticExpressionForSpeech(splitEquation(3, 1), 'fr')).toBe('3 moins 1 égal 2')
   })
 
   it('keeps a collection label on its outer boundary corner as blocks are added', () => {
@@ -231,6 +275,80 @@ describe('Magnetic Blocks', () => {
 
     await Effect.runPromise(Fiber.interrupt(fiber))
     board.remove()
+  })
+
+  it('speaks one cascade equation and announces a later split immediately', async () => {
+    const originalSpeechSynthesis = globalThis.speechSynthesis
+    const originalUtterance = globalThis.SpeechSynthesisUtterance
+    const spoken: string[] = []
+    globalThis.speechSynthesis = {
+      cancel: () => {},
+      getVoices: () => [],
+      resume: () => {},
+      speak: (utterance: SpeechSynthesisUtterance) => { spoken.push(utterance.text) },
+    } as unknown as SpeechSynthesis
+    globalThis.SpeechSynthesisUtterance = class MockUtterance {
+      text: string
+      rate = 1
+      pitch = 1
+      lang = 'en'
+      voice: SpeechSynthesisVoice | null = null
+      constructor(text: string) { this.text = text }
+    } as unknown as typeof SpeechSynthesisUtterance
+
+    const board = document.createElement('div')
+    board.setAttribute('data-magnetic-spawn-id', '0')
+    board.setAttribute('data-magnetic-remove-id', '0')
+    board.setAttribute('data-magnetic-break-speed', DEFAULT_BREAK_SPEED.toString())
+    board.setAttribute('data-magnetic-muted', 'false')
+    board.setAttribute('data-magnetic-language', 'en')
+    board.getBoundingClientRect = () => new DOMRect(0, 0, 620, 420)
+    board.setPointerCapture = () => {}
+    board.releasePointerCapture = () => {}
+    board.hasPointerCapture = () => true
+    document.body.appendChild(board)
+
+    const positions: ReadonlyArray<readonly [number, number]> = [
+      [100, 100], [250, 100], [500, 100],
+      [100, 250], [300, 250], [500, 250],
+      [100, 360], [300, 360],
+    ]
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0.5)
+    for (const [x, y] of positions) {
+      random.mockReturnValueOnce((x - 37.5) / 545)
+      random.mockReturnValueOnce((y - 37.5) / 345)
+    }
+
+    const pointer = (target: Element, type: string, x: number, y: number, timeStamp: number): void => {
+      const event = new PointerEvent(type, { bubbles: true, clientX: x, clientY: y, pointerId: 1, pointerType: 'mouse' })
+      Object.defineProperty(event, 'timeStamp', { value: timeStamp })
+      target.dispatchEvent(event)
+    }
+
+    const fiber = Effect.runFork(Stream.runDrain(mountMagneticBlocks(board)))
+    try {
+      await new Promise(resolve => setTimeout(resolve, 0))
+      const blocks = [...board.querySelectorAll('.magnetic-block')]
+
+      pointer(blocks[2]!, 'pointerdown', 500, 100, 0)
+      pointer(board, 'pointermove', 175, 100, 20)
+      pointer(board, 'pointerup', 175, 100, 40)
+      expect([...board.querySelectorAll('.magnetic-block-count')].some(el => el.textContent === '3')).toBe(true)
+      expect(spoken.at(-1)).toBe('1 plus 1 plus 1 equals 3')
+
+      spoken.length = 0
+      pointer(blocks[1]!, 'pointerdown', 250, 100, 200)
+      pointer(board, 'pointermove', 500, 100, 220)
+
+      expect(spoken).toEqual(['3 minus 1 equals 2'])
+      pointer(board, 'pointercancel', 500, 100, 240)
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(fiber))
+      random.mockRestore()
+      board.remove()
+      globalThis.speechSynthesis = originalSpeechSynthesis
+      globalThis.SpeechSynthesisUtterance = originalUtterance
+    }
   })
 
   it('increments the spawn id through the game message', () => {
