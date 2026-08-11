@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { Effect, Fiber, Stream } from 'effect'
+import { describe, expect, it, vi } from 'vitest'
 import { Scene, Story } from 'foldkit/test'
 import * as Counter from './counter'
 import { numberToWord, parseBallCount, parseBallFontSize } from './counter'
@@ -444,6 +445,127 @@ describe('counter orientation gravity', () => {
     expect(Counter.orientationGravity(null, 0)).toBeUndefined()
     expect(Counter.orientationGravity(0, null)).toBeUndefined()
     expect(Counter.orientationGravity(0, 0)).toEqual([0, 0])
+  })
+})
+
+describe('counter ball dragging', () => {
+  const pointer = (
+    target: Element,
+    type: string,
+    pointerType: 'mouse' | 'touch',
+    pointerId: number,
+    x: number,
+    y: number,
+    timeStamp?: number,
+  ): void => {
+    const event = new PointerEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      clientX: x,
+      clientY: y,
+      pointerId,
+      pointerType,
+    })
+    if (timeStamp !== undefined) Object.defineProperty(event, 'timeStamp', { value: timeStamp })
+    target.dispatchEvent(event)
+  }
+
+  const ballPosition = (ball: HTMLElement): readonly [number, number] => {
+    const match = ball.style.transform.match(/translate3d\(([-\d.]+)px,([-\d.]+)px,0\)/)
+    if (!match) throw new Error(`Unexpected ball transform: ${ball.style.transform}`)
+    return [Number(match[1]), Number(match[2])]
+  }
+
+  it.each(['mouse', 'touch'] as const)('lets a %s pointer pick up, move, and drop a ball', async pointerType => {
+    const parent = document.createElement('div')
+    parent.setAttribute('data-count', '1')
+    parent.setAttribute('data-fontsize', '3')
+    parent.setAttribute('data-tilt-gravity', 'false')
+    parent.getBoundingClientRect = () => new DOMRect(0, 0, 300, 200)
+    const captured = new Set<number>()
+    parent.setPointerCapture = id => { captured.add(id) }
+    parent.hasPointerCapture = id => captured.has(id)
+    parent.releasePointerCapture = id => { captured.delete(id) }
+    document.body.appendChild(parent)
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0.5)
+    const fiber = Effect.runFork(Stream.runDrain(Counter.mountCounterBalls(parent)))
+
+    try {
+      await new Promise(resolve => setTimeout(resolve, 40))
+      const ball = parent.querySelector<HTMLElement>('.ball')
+      expect(ball).not.toBeNull()
+      const [left, top] = ballPosition(ball!)
+      const radius = Number.parseFloat(ball!.style.width) / 2
+
+      pointer(ball!, 'pointerdown', pointerType, 7, left + radius, top + radius, 100)
+      expect(ball!.classList.contains('ball--dragging')).toBe(true)
+      expect(captured.has(7)).toBe(true)
+
+      pointer(parent, 'pointermove', pointerType, 7, 80, 80, 500)
+      expect(ballPosition(ball!)).toEqual([69, 69])
+
+      pointer(parent, 'pointerup', pointerType, 7, 80, 80, 510)
+      expect(ball!.classList.contains('ball--dragging')).toBe(false)
+      expect(captured.has(7)).toBe(false)
+
+      await new Promise(resolve => setTimeout(resolve, 40))
+      expect(ballPosition(ball!)[1]).toBeGreaterThan(69)
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(fiber))
+      random.mockRestore()
+      parent.remove()
+    }
+  })
+
+  it('flings a dropped ball with the measured pointer velocity', async () => {
+    const parent = document.createElement('div')
+    parent.setAttribute('data-count', '1')
+    parent.setAttribute('data-fontsize', '3')
+    parent.setAttribute('data-tilt-gravity', 'false')
+    parent.getBoundingClientRect = () => new DOMRect(0, 0, 400, 240)
+    parent.setPointerCapture = () => {}
+    parent.hasPointerCapture = () => true
+    parent.releasePointerCapture = () => {}
+    document.body.appendChild(parent)
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0.5)
+    const fiber = Effect.runFork(Stream.runDrain(Counter.mountCounterBalls(parent)))
+
+    try {
+      await new Promise(resolve => setTimeout(resolve, 40))
+      const ball = parent.querySelector<HTMLElement>('.ball')!
+      const [left, top] = ballPosition(ball)
+      const radius = Number.parseFloat(ball.style.width) / 2
+      const centerX = left + radius
+      const centerY = top + radius
+
+      pointer(ball, 'pointerdown', 'touch', 3, centerX, centerY, 100)
+      pointer(parent, 'pointermove', 'touch', 3, centerX + 40, centerY, 200)
+      pointer(parent, 'pointerup', 'touch', 3, centerX + 40, centerY, 210)
+      const releasedLeft = ballPosition(ball)[0]
+
+      await new Promise(resolve => setTimeout(resolve, 35))
+      expect(ballPosition(ball)[0]).toBeGreaterThan(releasedLeft)
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(fiber))
+      random.mockRestore()
+      parent.remove()
+    }
+  })
+})
+
+describe('counter wall reflection', () => {
+  it.each([
+    { wall: 'left', velocity: [-100, 40], normal: [1, 0], reflected: [72, 28.8] },
+    { wall: 'right', velocity: [100, 40], normal: [-1, 0], reflected: [-72, 28.8] },
+    { wall: 'top', velocity: [40, -100], normal: [0, 1], reflected: [28.8, 72] },
+    { wall: 'bottom', velocity: [40, 100], normal: [0, -1], reflected: [28.8, -72] },
+  ])('makes a damped specular reflection at the $wall wall', ({ velocity, normal, reflected }) => {
+    const result = Counter.dampedSpecularReflection(velocity[0]!, velocity[1]!, normal[0]!, normal[1]!)
+
+    expect(result[0]).toBeCloseTo(reflected[0]!)
+    expect(result[1]).toBeCloseTo(reflected[1]!)
+    expect(Math.hypot(...result)).toBeCloseTo(Math.hypot(...velocity) * Counter.WALL_RESTITUTION)
   })
 })
 

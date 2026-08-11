@@ -1,4 +1,4 @@
-import { Match as M, Schema as S } from 'effect'
+import { Effect, Match as M, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
@@ -6,6 +6,10 @@ import { t } from '../i18n'
 import * as FindIt from './findit'
 
 export const PAIR_COUNT = 6
+export const OPENING_REVEAL_MS = 1800
+export const CARD_FLIP_MS = 600
+
+export const MemoryPhase = S.Union([S.Literal('preview'), S.Literal('closing'), S.Literal('ready')])
 
 const MemoryCard = S.Struct({
   id: S.Number,
@@ -22,14 +26,18 @@ export const Model = S.Struct({
   attempts: S.Number,
   won: S.Boolean,
   enabledPacks: S.Array(FindIt.EmojiPackKey),
+  phase: MemoryPhase,
+  previewToken: S.Number,
 })
 export type Model = typeof Model.Type
 
 export const ClickedCard = m('MemoryClickedCard', { id: S.Number })
 export const ClickedReset = m('MemoryClickedReset')
 export const SetEmojiPackEnabled = m('MemorySetEmojiPackEnabled', { key: FindIt.EmojiPackKey, value: S.Boolean })
+export const BeginClosing = m('MemoryBeginClosing', { token: S.Number })
+export const PreviewFinished = m('MemoryPreviewFinished', { token: S.Number })
 
-export const Message = S.Union([ClickedCard, ClickedReset, SetEmojiPackEnabled])
+export const Message = S.Union([ClickedCard, ClickedReset, SetEmojiPackEnabled, BeginClosing, PreviewFinished])
 export type Message = typeof Message.Type
 
 const shuffle = <A>(items: readonly A[], random: () => number = Math.random): A[] => {
@@ -60,12 +68,30 @@ export const buildDeck = (
   }))
 }
 
-export const init = (enabledPacks: readonly string[] = FindIt.DEFAULT_EMOJI_PACK_KEYS): Model => ({
+export const init = (
+  enabledPacks: readonly string[] = FindIt.DEFAULT_EMOJI_PACK_KEYS,
+  previewToken: number = 0,
+): Model => ({
   deck: buildDeck(enabledPacks),
   flippedIds: [],
   attempts: 0,
   won: false,
   enabledPacks: FindIt.normalizeEmojiPackKeys(enabledPacks),
+  phase: 'preview',
+  previewToken,
+})
+
+const beginClosingEffect = (token: number) =>
+  Effect.sleep(OPENING_REVEAL_MS).pipe(Effect.as(BeginClosing({ token })))
+
+const beginClosingCommand = (token: number): Command.Command<Message> => ({
+  name: 'MemoryOpeningReveal',
+  effect: beginClosingEffect(token),
+})
+
+const finishPreviewCommand = (token: number): Command.Command<Message> => ({
+  name: 'MemoryOpeningFlip',
+  effect: Effect.sleep(CARD_FLIP_MS).pipe(Effect.as(PreviewFinished({ token }))),
 })
 
 const cardById = (deck: readonly MemoryCard[], id: number): MemoryCard | undefined =>
@@ -96,6 +122,7 @@ export const update = (
     M.withReturnType<readonly [Model, ReadonlyArray<Command.Command<Message>>]>(),
     M.tagsExhaustive({
       MemoryClickedCard: (msg) => {
+        if (model.phase !== 'ready') return [model, []]
         const closed = closeUnmatchedFlips(model)
         if (closed.won) return [closed, []]
         const picked = cardById(closed.deck, msg.id)
@@ -126,7 +153,10 @@ export const update = (
         const won = deck.every(card => card.matched)
         return [{ ...closed, deck, flippedIds: nextFlippedIds, attempts, won }, []]
       },
-      MemoryClickedReset: () => [init(model.enabledPacks), []],
+      MemoryClickedReset: () => {
+        const next = init(model.enabledPacks, model.previewToken + 1)
+        return [next, [beginClosingCommand(next.previewToken)]]
+      },
       MemorySetEmojiPackEnabled: (msg) => {
         const current = FindIt.normalizeEmojiPackKeys(model.enabledPacks)
         if (!msg.value && current.length === 1 && current[0] === msg.key) return [model, []]
@@ -134,14 +164,24 @@ export const update = (
           ? [...current, msg.key]
           : current.filter(key => key !== msg.key))
         if (nextPacks.length === current.length && nextPacks.every((key, i) => key === current[i])) return [model, []]
-        return [init(nextPacks), []]
+        const next = init(nextPacks, model.previewToken + 1)
+        return [next, [beginClosingCommand(next.previewToken)]]
       },
+      MemoryBeginClosing: (msg) =>
+        msg.token !== model.previewToken || model.phase !== 'preview'
+          ? [model, []]
+          : [{ ...model, phase: 'closing' }, [finishPreviewCommand(msg.token)]],
+      MemoryPreviewFinished: (msg) =>
+        msg.token !== model.previewToken || model.phase !== 'closing'
+          ? [model, []]
+          : [{ ...model, phase: 'ready' }, []],
     }),
   )
 
 export const view = (model: Model, language: string = 'en') => {
   const h = html<Message>()
   const matchedCount = model.deck.filter(card => card.matched).length / 2
+  const previewing = model.phase !== 'ready'
 
   return h.div([h.Class('page memory-page')], [
     h.div([h.Class('card memory-card')], [
@@ -150,19 +190,32 @@ export const view = (model: Model, language: string = 'en') => {
         h.span([], [`${t('memoryAttempts', language)}: ${model.attempts}`]),
         h.span([], [`${t('memoryMatched', language)}: ${matchedCount}/${PAIR_COUNT}`]),
       ]),
-      h.div([h.Class('memory-grid')], [
-        ...model.deck.map(card =>
-          h.button(
+      h.div([
+        h.Class(`memory-grid memory-grid--${model.phase}`),
+        h.OnMount({
+          name: 'memoryOpeningReveal',
+          args: { token: model.previewToken },
+          f: () => Stream.fromEffect(beginClosingEffect(model.previewToken)),
+        }),
+      ], [
+        ...model.deck.map(card => {
+          const faceUp = model.phase === 'preview' || card.flipped || card.matched
+          return h.button(
             [
               h.Key(card.id.toString()),
-              h.Class('memory-tile' + (card.flipped ? ' memory-tile--flipped' : '') + (card.matched ? ' memory-tile--matched' : '')),
+              h.Class('memory-tile' + (faceUp ? ' memory-tile--flipped' : '') + (card.matched ? ' memory-tile--matched' : '')),
               h.OnClick(ClickedCard({ id: card.id })),
-              h.Disabled(card.matched),
-              h.Attribute('aria-label', card.flipped || card.matched ? card.value : t('memoryCardsTitle', language)),
+              h.Disabled(previewing || card.matched),
+              h.Attribute('aria-label', faceUp ? card.value : t('memoryCardsTitle', language)),
             ],
-            [card.flipped || card.matched ? card.value : '?'],
-          ),
-        ),
+            [
+              h.span([h.Class('memory-tile-inner')], [
+                h.span([h.Class('memory-tile-face memory-tile-back'), h.Attribute('aria-hidden', 'true')], ['?']),
+                h.span([h.Class('memory-tile-face memory-tile-front'), h.Attribute('aria-hidden', 'true')], [card.value]),
+              ]),
+            ],
+          )
+        }),
       ]),
       model.won
         ? h.div([h.Class('memory-win')], [t('memoryYouWon', language)])

@@ -90,11 +90,24 @@
   border-radius: 50%;
   top: 0;
   left: 0;
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  cursor: grab;
   will-change: transform;
   box-shadow:
     2px 3px 6px rgba(0, 0, 0, 0.25),
     inset -1px -1px 2px rgba(0, 0, 0, 0.12);
   border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.ball--dragging {
+  z-index: 3;
+  cursor: grabbing;
+  box-shadow:
+    0 8px 18px rgba(0, 0, 0, 0.3),
+    0 0 0 4px rgba(255, 255, 255, 0.38),
+    inset -1px -1px 2px rgba(0, 0, 0, 0.12);
 }
 
 .ball.neg {
@@ -104,6 +117,7 @@
 .number {
   font-weight: 900;
   line-height: 1;
+  pointer-events: none;
   transition: color 0.3s, font-size 0.15s;
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }

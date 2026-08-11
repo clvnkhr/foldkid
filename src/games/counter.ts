@@ -173,6 +173,19 @@ interface BallState {
   hue: number
   r: number
   el: HTMLElement
+  pointerId: number | null
+}
+
+interface BallDragState {
+  ball: BallState
+  offsetX: number
+  offsetY: number
+  lastX: number
+  lastY: number
+  lastTime: number
+  velocityX: number
+  velocityY: number
+  hasVelocity: boolean
 }
 
 // A deliberately inelastic, fixed-step solver. Counter balls are decorative,
@@ -184,7 +197,13 @@ const MAX_FRAME_DT = 0.1
 const MAX_STEPS_PER_FRAME = 8
 const COLLISION_ITERATIONS = 5
 const AIR_DAMPING = 4
-const REST_EPSILON = 0.01
+export const WALL_RESTITUTION = 0.72
+const BALL_RESTITUTION = 0.58
+const WALL_SLEEP_SPEED = 65
+const MAX_FLING_SPEED = 5000
+const FLING_SAMPLE_BLEND = 0.72
+const FLING_RELEASE_GRACE_MS = 32
+const FLING_RELEASE_DECAY_MS = 90
 const SPAWN_INTERVAL = 0.14
 const ORIENTATION_DEAD_ZONE = 0.03
 const ORIENTATION_SMOOTHING = 0.18
@@ -296,7 +315,7 @@ const makeBall = (
   h: number,
   gravityX: number,
   gravityY: number,
-): Omit<BallState, 'el'> => {
+): Omit<BallState, 'el' | 'pointerId'> => {
   const randomX = r + Math.random() * Math.max(0, w - r * 2)
   const randomY = r + Math.random() * Math.max(0, h - r * 2)
   const gravityMagnitude = Math.hypot(gravityX, gravityY)
@@ -320,6 +339,7 @@ const makeBall = (
 
 interface TickState {
   rendered: BallState[]
+  drags: Map<number, BallDragState>
   running: boolean
   id: number
   w: number
@@ -345,6 +365,70 @@ const constrainToBounds = (ball: BallState, w: number, h: number): void => {
   ball.y = Math.min(maxY, Math.max(minY, ball.y))
 }
 
+export const dampedSpecularReflection = (
+  vx: number,
+  vy: number,
+  normalX: number,
+  normalY: number,
+  damping: number = WALL_RESTITUTION,
+): readonly [number, number] => {
+  const normalLength = Math.hypot(normalX, normalY)
+  if (normalLength === 0) return [vx, vy]
+  const nx = normalX / normalLength
+  const ny = normalY / normalLength
+  const dot = vx * nx + vy * ny
+  if (dot >= 0) return [vx, vy]
+  return [
+    (vx - 2 * dot * nx) * damping,
+    (vy - 2 * dot * ny) * damping,
+  ]
+}
+
+const resolveWallCollisions = (ball: BallState, w: number, h: number): void => {
+  const minX = ball.r
+  const maxX = Math.max(minX, w - ball.r)
+  const minY = ball.r
+  const maxY = Math.max(minY, h - ball.r)
+  let hitX = false
+  let hitY = false
+  let normalX = 0
+  let normalY = 0
+  if (maxX === minX) {
+    ball.x = minX
+    ball.vx = 0
+  } else if (ball.x < minX) {
+    ball.x = minX
+    hitX = ball.vx < 0
+    normalX = 1
+  } else if (ball.x > maxX) {
+    ball.x = maxX
+    hitX = ball.vx > 0
+    normalX = -1
+  }
+  if (maxY === minY) {
+    ball.y = minY
+    ball.vy = 0
+  } else if (ball.y < minY) {
+    ball.y = minY
+    hitY = ball.vy < 0
+    normalY = 1
+  } else if (ball.y > maxY) {
+    ball.y = maxY
+    hitY = ball.vy > 0
+    normalY = -1
+  }
+  const bounceX = hitX && Math.abs(ball.vx) >= WALL_SLEEP_SPEED
+  const bounceY = hitY && Math.abs(ball.vy) >= WALL_SLEEP_SPEED
+  if (bounceX !== bounceY) {
+    ;[ball.vx, ball.vy] = dampedSpecularReflection(ball.vx, ball.vy, bounceX ? normalX : 0, bounceY ? normalY : 0)
+  } else if (bounceX && bounceY) {
+    ball.vx = (bounceX ? -ball.vx : ball.vx) * WALL_RESTITUTION
+    ball.vy = (bounceY ? -ball.vy : ball.vy) * WALL_RESTITUTION
+  }
+  if (hitX && !bounceX) ball.vx = 0
+  if (hitY && !bounceY) ball.vy = 0
+}
+
 const resolveCollision = (a: BallState, b: BallState, aIndex: number, bIndex: number): void => {
   let dx = b.x - a.x
   let dy = b.y - a.y
@@ -363,14 +447,27 @@ const resolveCollision = (a: BallState, b: BallState, aIndex: number, bIndex: nu
   const overlap = minDistance - distance
   const nx = dx / distance
   const ny = dy / distance
-  const inverseMassA = 1 / (a.r * a.r)
-  const inverseMassB = 1 / (b.r * b.r)
+  // A held ball is controlled by the pointer, so collisions move the loose
+  // ball out of its way without pulling the held one away from the finger.
+  const inverseMassA = a.pointerId === null ? 1 / (a.r * a.r) : 0
+  const inverseMassB = b.pointerId === null ? 1 / (b.r * b.r) : 0
+  if (inverseMassA + inverseMassB === 0) return
   const correction = overlap / (inverseMassA + inverseMassB)
 
   a.x -= nx * correction * inverseMassA
   a.y -= ny * correction * inverseMassA
   b.x += nx * correction * inverseMassB
   b.y += ny * correction * inverseMassB
+
+  const relativeVelocityX = b.vx - a.vx
+  const relativeVelocityY = b.vy - a.vy
+  const normalVelocity = relativeVelocityX * nx + relativeVelocityY * ny
+  if (normalVelocity >= 0) return
+  const impulse = -(1 + BALL_RESTITUTION) * normalVelocity / (inverseMassA + inverseMassB)
+  a.vx -= impulse * inverseMassA * nx
+  a.vy -= impulse * inverseMassA * ny
+  b.vx += impulse * inverseMassB * nx
+  b.vy += impulse * inverseMassB * ny
 }
 
 const solveCollisions = (balls: BallState[], w: number, h: number): void => {
@@ -406,47 +503,24 @@ const solveCollisions = (balls: BallState[], w: number, h: number): void => {
           }
         }
       }
-      constrainToBounds(ball, w, h)
+      if (ball.pointerId === null) resolveWallCollisions(ball, w, h)
     }
   }
 }
 
 const simulate = (balls: BallState[], w: number, h: number, gravityX: number, gravityY: number): void => {
-  const previousX = new Float64Array(balls.length)
-  const previousY = new Float64Array(balls.length)
   const damping = Math.exp(-AIR_DAMPING * FIXED_DT)
 
-  for (let i = 0; i < balls.length; i++) {
-    const ball = balls[i]
-    if (!ball) continue
-    previousX[i] = ball.x
-    previousY[i] = ball.y
+  for (const ball of balls) {
+    if (ball.pointerId !== null) continue
     ball.vx = (ball.vx + gravityX * BASE_GRAVITY * FIXED_DT) * damping
     ball.vy = (ball.vy + gravityY * BASE_GRAVITY * FIXED_DT) * damping
     ball.x += ball.vx * FIXED_DT
     ball.y += ball.vy * FIXED_DT
-    constrainToBounds(ball, w, h)
+    resolveWallCollisions(ball, w, h)
   }
 
   solveCollisions(balls, w, h)
-
-  for (let i = 0; i < balls.length; i++) {
-    const ball = balls[i]
-    if (!ball) continue
-    ball.vx = (ball.x - previousX[i]!) / FIXED_DT * damping
-    ball.vy = (ball.y - previousY[i]!) / FIXED_DT * damping
-
-    const restingAtHorizontalWall = gravityX > 0
-      ? ball.x >= w - ball.r - REST_EPSILON
-      : gravityX < 0 && ball.x <= ball.r + REST_EPSILON
-    const restingAtVerticalWall = gravityY > 0
-      ? ball.y >= h - ball.r - REST_EPSILON
-      : gravityY < 0 && ball.y <= ball.r + REST_EPSILON
-    if (restingAtHorizontalWall) ball.vx = 0
-    if (restingAtVerticalWall) ball.vy = 0
-    if (Math.abs(ball.vx) < REST_EPSILON) ball.vx = 0
-    if (Math.abs(ball.vy) < REST_EPSILON) ball.vy = 0
-  }
 }
 
 const addBall = (state: TickState, parent: HTMLElement, negative: boolean): void => {
@@ -463,7 +537,16 @@ const addBall = (state: TickState, parent: HTMLElement, negative: boolean): void
   element.style.height = `${size}px`
   element.style.background = ballGradient(ball.hue, negative)
   parent.appendChild(element)
-  state.rendered.push({ ...ball, el: element })
+  state.rendered.push({ ...ball, el: element, pointerId: null })
+}
+
+const cancelBallDrag = (state: TickState, parent: HTMLElement, ball: BallState): void => {
+  if (ball.pointerId === null) return
+  const pointerId = ball.pointerId
+  state.drags.delete(pointerId)
+  ball.pointerId = null
+  ball.el.classList.remove('ball--dragging')
+  if (parent.hasPointerCapture(pointerId)) parent.releasePointerCapture(pointerId)
 }
 
 const tick = (state: TickState, parent: HTMLElement, activeParticles: Set<HTMLElement>, now: number): void => {
@@ -482,7 +565,10 @@ const tick = (state: TickState, parent: HTMLElement, activeParticles: Set<HTMLEl
   const negative = state.target < 0
   while (state.rendered.length > target) {
     const ball = state.rendered.pop()
-    if (ball) poof(ball.el, activeParticles)
+    if (ball) {
+      cancelBallDrag(state, parent, ball)
+      poof(ball.el, activeParticles)
+    }
   }
 
   state.spawnElapsed += elapsed
@@ -509,6 +595,168 @@ const tick = (state: TickState, parent: HTMLElement, activeParticles: Set<HTMLEl
     ball.el.style.transform = `translate3d(${ball.x - ball.r}px,${ball.y - ball.r}px,0)`
   }
 }
+
+export const mountCounterBalls = (element: Element): Stream.Stream<never> =>
+  Stream.callback<never>(() =>
+    Effect.gen(function* () {
+      const activeParticles = new Set<HTMLElement>()
+      yield* Effect.acquireRelease(
+        Effect.sync(() => {
+          const parent = element as HTMLElement
+          const rect = parent.getBoundingClientRect()
+          const state: TickState = {
+            rendered: [],
+            drags: new Map(),
+            running: true,
+            id: 0,
+            w: rect.width,
+            h: rect.height,
+            target: parseBallCount(parent.getAttribute('data-count')),
+            fontSize: parseBallFontSize(parent.getAttribute('data-fontsize')),
+            dirty: true,
+            spawnElapsed: SPAWN_INTERVAL,
+            lastTime: performance.now(),
+            accumulator: 0,
+            nextHue: 0,
+            gravityX: 0,
+            gravityY: 1,
+            tiltGravity: parent.getAttribute('data-tilt-gravity') === 'true',
+          }
+          const ro = new ResizeObserver(() => { state.dirty = true })
+          ro.observe(parent)
+          const mo = new MutationObserver(() => {
+            state.target = parseBallCount(parent.getAttribute('data-count'))
+            state.fontSize = parseBallFontSize(parent.getAttribute('data-fontsize'))
+            state.tiltGravity = parent.getAttribute('data-tilt-gravity') === 'true'
+            if (!state.tiltGravity) {
+              state.gravityX = 0
+              state.gravityY = 1
+            }
+          })
+          mo.observe(parent, { attributes: true, attributeFilter: ['data-count', 'data-fontsize', 'data-tilt-gravity'] })
+
+          const localPoint = (event: PointerEvent): { x: number; y: number } => {
+            const bounds = parent.getBoundingClientRect()
+            return { x: event.clientX - bounds.left, y: event.clientY - bounds.top }
+          }
+          const moveHeldBall = (event: PointerEvent, sampleVelocity: boolean = true): void => {
+            const drag = state.drags.get(event.pointerId)
+            if (!drag) return
+            const point = localPoint(event)
+            drag.ball.x = point.x - drag.offsetX
+            drag.ball.y = point.y - drag.offsetY
+            constrainToBounds(drag.ball, state.w, state.h)
+            const elapsed = event.timeStamp - drag.lastTime
+            if (sampleVelocity && elapsed > 0) {
+              const sampleX = (drag.ball.x - drag.lastX) * 1000 / elapsed
+              const sampleY = (drag.ball.y - drag.lastY) * 1000 / elapsed
+              drag.velocityX = drag.hasVelocity
+                ? drag.velocityX * (1 - FLING_SAMPLE_BLEND) + sampleX * FLING_SAMPLE_BLEND
+                : sampleX
+              drag.velocityY = drag.hasVelocity
+                ? drag.velocityY * (1 - FLING_SAMPLE_BLEND) + sampleY * FLING_SAMPLE_BLEND
+                : sampleY
+              const speed = Math.hypot(drag.velocityX, drag.velocityY)
+              if (speed > MAX_FLING_SPEED) {
+                const scale = MAX_FLING_SPEED / speed
+                drag.velocityX *= scale
+                drag.velocityY *= scale
+              }
+              drag.hasVelocity = true
+              drag.lastX = drag.ball.x
+              drag.lastY = drag.ball.y
+              drag.lastTime = event.timeStamp
+              drag.ball.vx = drag.velocityX
+              drag.ball.vy = drag.velocityY
+            }
+            drag.ball.el.style.transform = `translate3d(${drag.ball.x - drag.ball.r}px,${drag.ball.y - drag.ball.r}px,0)`
+            event.preventDefault()
+          }
+          const onPointerDown = (event: PointerEvent): void => {
+            if (event.pointerType === 'mouse' && event.button !== 0) return
+            const target = (event.target as Element | null)?.closest('.ball') as HTMLElement | null
+            if (!target) return
+            const ball = state.rendered.find(candidate => candidate.el === target)
+            if (!ball || ball.pointerId !== null) return
+            const point = localPoint(event)
+            ball.pointerId = event.pointerId
+            ball.vx = 0
+            ball.vy = 0
+            ball.el.classList.add('ball--dragging')
+            state.drags.set(event.pointerId, {
+              ball,
+              offsetX: point.x - ball.x,
+              offsetY: point.y - ball.y,
+              lastX: ball.x,
+              lastY: ball.y,
+              lastTime: event.timeStamp,
+              velocityX: 0,
+              velocityY: 0,
+              hasVelocity: false,
+            })
+            parent.setPointerCapture?.(event.pointerId)
+            event.preventDefault()
+          }
+          const onPointerMove = (event: PointerEvent): void => moveHeldBall(event)
+          const finishDrag = (event: PointerEvent): void => {
+            const drag = state.drags.get(event.pointerId)
+            if (!drag) return
+            if (event.type === 'pointerup') {
+              moveHeldBall(event, false)
+              const idleTime = Math.max(0, event.timeStamp - drag.lastTime - FLING_RELEASE_GRACE_MS)
+              const releaseScale = Math.exp(-idleTime / FLING_RELEASE_DECAY_MS)
+              drag.ball.vx = drag.velocityX * releaseScale
+              drag.ball.vy = drag.velocityY * releaseScale
+            } else {
+              drag.ball.vx = 0
+              drag.ball.vy = 0
+            }
+            cancelBallDrag(state, parent, drag.ball)
+            event.preventDefault()
+          }
+          const onOrientation = (event: DeviceOrientationEvent): void => {
+            if (!state.tiltGravity) return
+            const gravity = orientationGravity(event.beta, event.gamma, currentScreenAngle())
+            if (!gravity) return
+            const nextX = state.gravityX * (1 - ORIENTATION_SMOOTHING) + gravity[0] * ORIENTATION_SMOOTHING
+            const nextY = state.gravityY * (1 - ORIENTATION_SMOOTHING) + gravity[1] * ORIENTATION_SMOOTHING
+            state.gravityX = Math.abs(nextX) < ORIENTATION_DEAD_ZONE ? 0 : nextX
+            state.gravityY = Math.abs(nextY) < ORIENTATION_DEAD_ZONE ? 0 : nextY
+          }
+          parent.addEventListener('pointerdown', onPointerDown)
+          parent.addEventListener('pointermove', onPointerMove)
+          parent.addEventListener('pointerup', finishDrag)
+          parent.addEventListener('pointercancel', finishDrag)
+          window.addEventListener('deviceorientation', onOrientation)
+          const loop = (now: number) => {
+            if (!state.running) return
+            tick(state, parent, activeParticles, now)
+            state.id = requestAnimationFrame(loop)
+          }
+          state.id = requestAnimationFrame(loop)
+          return { parent, state, ro, mo, onPointerDown, onPointerMove, finishDrag, onOrientation }
+        }),
+        ({ parent, state, ro, mo, onPointerDown, onPointerMove, finishDrag, onOrientation }) => Effect.sync(() => {
+          state.running = false
+          cancelAnimationFrame(state.id)
+          ro.disconnect()
+          mo.disconnect()
+          parent.removeEventListener('pointerdown', onPointerDown)
+          parent.removeEventListener('pointermove', onPointerMove)
+          parent.removeEventListener('pointerup', finishDrag)
+          parent.removeEventListener('pointercancel', finishDrag)
+          window.removeEventListener('deviceorientation', onOrientation)
+          state.rendered.forEach(ball => {
+            cancelBallDrag(state, parent, ball)
+            ball.el.remove()
+          })
+          activeParticles.forEach(particle => particle.remove())
+          activeParticles.clear()
+        }),
+      )
+      return yield* Effect.never
+    }),
+  )
 
 export const view = (model: Model, language: string = 'en') => {
   const h = html<Message>()
@@ -562,74 +810,7 @@ export const view = (model: Model, language: string = 'en') => {
             h.Attribute('data-tilt-gravity', String(model.tiltGravity)),
             h.OnMount({
               name: 'counterBalls',
-              f: (element) => Stream.callback<never>(_queue =>
-                Effect.gen(function* () {
-                  const activeParticles = new Set<HTMLElement>()
-                  yield* Effect.acquireRelease(
-                    Effect.sync(() => {
-                      const parent = element as HTMLElement
-                      const rect = parent.getBoundingClientRect()
-                      const state: TickState = {
-                        rendered: [],
-                        running: true,
-                        id: 0,
-                        w: rect.width,
-                        h: rect.height,
-                        target: model.count,
-                        fontSize: model.fontSize,
-                        dirty: true,
-                        spawnElapsed: SPAWN_INTERVAL,
-                        lastTime: performance.now(),
-                        accumulator: 0,
-                        nextHue: 0,
-                        gravityX: 0,
-                        gravityY: 1,
-                        tiltGravity: model.tiltGravity,
-                      }
-                      const ro = new ResizeObserver(() => { state.dirty = true })
-                      ro.observe(parent)
-                      const mo = new MutationObserver(() => {
-                        state.target = parseBallCount(parent.getAttribute('data-count'))
-                        state.fontSize = parseBallFontSize(parent.getAttribute('data-fontsize'))
-                        state.tiltGravity = parent.getAttribute('data-tilt-gravity') === 'true'
-                        if (!state.tiltGravity) {
-                          state.gravityX = 0
-                          state.gravityY = 1
-                        }
-                      })
-                      mo.observe(parent, { attributes: true, attributeFilter: ['data-count', 'data-fontsize', 'data-tilt-gravity'] })
-                      const onOrientation = (event: DeviceOrientationEvent): void => {
-                        if (!state.tiltGravity) return
-                        const gravity = orientationGravity(event.beta, event.gamma, currentScreenAngle())
-                        if (!gravity) return
-                        const nextX = state.gravityX * (1 - ORIENTATION_SMOOTHING) + gravity[0] * ORIENTATION_SMOOTHING
-                        const nextY = state.gravityY * (1 - ORIENTATION_SMOOTHING) + gravity[1] * ORIENTATION_SMOOTHING
-                        state.gravityX = Math.abs(nextX) < ORIENTATION_DEAD_ZONE ? 0 : nextX
-                        state.gravityY = Math.abs(nextY) < ORIENTATION_DEAD_ZONE ? 0 : nextY
-                      }
-                      window.addEventListener('deviceorientation', onOrientation)
-                      const loop = (now: number) => {
-                        if (!state.running) return
-                        tick(state, parent, activeParticles, now)
-                        state.id = requestAnimationFrame(loop)
-                      }
-                      state.id = requestAnimationFrame(loop)
-                      return { state, ro, mo, onOrientation }
-                    }),
-                    ({ state, ro, mo, onOrientation }) => Effect.sync(() => {
-                      state.running = false
-                      cancelAnimationFrame(state.id)
-                      ro.disconnect()
-                      mo.disconnect()
-                      window.removeEventListener('deviceorientation', onOrientation)
-                      state.rendered.forEach(b => b.el.remove())
-                      activeParticles.forEach(el => el.remove())
-                      activeParticles.clear()
-                    }),
-                  )
-                  return yield* Effect.never
-                }),
-              ),
+              f: mountCounterBalls,
             }),
           ], []),
           h.p([h.Class(model.holding ? 'number holding' : model.count < 0 ? 'number negative' : 'number'), h.Style({ color: numberColor(model.count), fontSize: `${model.fontSize}rem`, position: 'relative', zIndex: '2' }), h.Key(model.count.toString())], [displayText()]),

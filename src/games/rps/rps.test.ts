@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { Story } from 'foldkit'
+import { Scene, Story } from 'foldkit/test'
 
 import {
   init,
@@ -8,6 +8,9 @@ import {
   SoundPlayed,
   StartGame,
   update,
+  view,
+  type Message,
+  type Model,
 } from './main'
 
 const resolveChime = [{ name: 'PlayChime' }, SoundPlayed()] as const
@@ -27,6 +30,16 @@ describe('RPS', () => {
       prediction: null,
       gigaChad: false,
     })
+  })
+
+  it('accepts a mouse click on a choice button', () => {
+    Scene.scene(
+      { update: (model: Model, message: Message) => update(model, message, true), view },
+      Scene.with(init),
+      Scene.click(Scene.selector('.rps-choice-btn')),
+      Scene.expect(Scene.selector('.rps-choice-btn--selected')).toExist(),
+      Scene.Command.expectNone(),
+    )
   })
 
   // ── Normal AI (frequency-based) ──

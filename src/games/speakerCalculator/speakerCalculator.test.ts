@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { Story } from 'foldkit'
+import { Scene, Story } from 'foldkit/test'
 
 import {
   ClickedClear,
@@ -15,6 +15,9 @@ import {
   init,
   SpeakCompleted,
   update,
+  view,
+  type Message,
+  type Model,
 } from './main'
 
 const resolveSpeak = [{ name: 'Speak' }, SpeakCompleted()] as const
@@ -22,6 +25,17 @@ const resolveSpeak = [{ name: 'Speak' }, SpeakCompleted()] as const
 describe('SpeakerCalculator', () => {
   it('init state', () => {
     expect(init).toStrictEqual({ display: '0', isResult: false, theme: 0 })
+  })
+
+  it('accepts mouse clicks on calculator buttons', () => {
+    Scene.scene(
+      { update: (model: Model, message: Message) => update(model, message, 'en', true), view },
+      Scene.with(init),
+      Scene.click(Scene.text('5')),
+      Scene.click(Scene.text('6')),
+      Scene.expect(Scene.text('56')).toExist(),
+      Scene.Command.expectNone(),
+    )
   })
 
   it('clears display', () => {

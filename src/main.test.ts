@@ -103,7 +103,7 @@ beforeEach(() => {
 })
 
 describe('settings persistence', () => {
-  const settingsMessages: Array<{ label: string; msg: Main.Message }> = [
+  const settingsMessages: Array<{ label: string; msg: Main.Message; resolves?: ReadonlyArray<readonly [{ readonly name: string }, Main.Message]> }> = [
     { label: 'ClickedDarkMode', msg: ClickedDarkMode() },
     { label: 'SetLanguage', msg: SetLanguage({ value: 'fr' }) },
     { label: 'ToggleMute', msg: ToggleMute() },
@@ -124,7 +124,14 @@ describe('settings persistence', () => {
     { label: 'DrawSetIncludePairs', msg: Draw.SetIncludePairs({ value: false }) },
     { label: 'DrawSetIncludeNumbers', msg: Draw.SetIncludeNumbers({ value: false }) },
     { label: 'DrawSetIncludeLetters', msg: Draw.SetIncludeLetters({ value: false }) },
-    { label: 'MemorySetEmojiPackEnabled', msg: Memory.SetEmojiPackEnabled({ key: 'numbers', value: false }) },
+    {
+      label: 'MemorySetEmojiPackEnabled',
+      msg: Memory.SetEmojiPackEnabled({ key: 'numbers', value: false }),
+      resolves: [
+        [{ name: 'MemoryOpeningReveal' }, Memory.BeginClosing({ token: 1 })],
+        [{ name: 'MemoryOpeningFlip' }, Memory.PreviewFinished({ token: 1 })],
+      ],
+    },
     { label: 'RpsSetGigaChad', msg: Rps.SetGigaChad({ value: true }) },
     { label: 'MagneticBlocksSetBreakSpeed', msg: MagneticBlocks.SetBreakSpeed({ value: 875 }) },
     { label: 'TalkingKeyboardSetWordPackEnabled', msg: TalkingKeyboard.SetWordPackEnabled({ key: 'animals', value: false }) },
@@ -161,14 +168,14 @@ describe('settings persistence', () => {
     expect(Main.PERSISTED_SETTINGS_MESSAGE_TAGS).toEqual(settingsMessages.map(({ msg }) => msg._tag))
   })
 
-  for (const { label, msg } of settingsMessages) {
+  for (const { label, msg, resolves } of settingsMessages) {
     it(`persists settings on ${label}`, () => {
       expect(Main.shouldPersistSettings(msg)).toBe(true)
       Story.story(
         Main.update,
         Story.with(createModel()),
         Story.message(msg),
-        Story.Command.resolveAll(resolveSettings),
+        Story.Command.resolveAll(...(resolves ?? []), resolveSettings),
         Story.Command.expectNone(),
       )
     })

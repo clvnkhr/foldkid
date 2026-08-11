@@ -161,6 +161,21 @@ describe('FindIt', () => {
     )
   })
 
+  it('selects an emoji card with a mouse click', () => {
+    const game = FindIt.init()
+    const first = game.grid[0]!
+    const clickable = { ...game, target: first.emoji }
+
+    Scene.scene(
+      { update: FindIt.update, view: FindIt.view },
+      Scene.with(clickable),
+      Scene.click(Scene.selector('.emoji-cell')),
+      Scene.Command.resolveAll(...resolveWin),
+      Scene.expect(Scene.selector('.findit-overlay')).toExist(),
+      Scene.Command.expectNone(),
+    )
+  })
+
   it('clicking wrong cell shows wobble', () => {
     const game = FindIt.init()
     const wrong = game.grid.find(c => c.emoji !== game.target)!

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { Story } from 'foldkit/test'
+import { Scene, Story } from 'foldkit/test'
 import * as Memory from './memory'
 import * as FindIt from './findit'
 
@@ -20,18 +20,73 @@ const mismatchedIds = (model: Memory.Model): [number, number, number] => {
   return [first.id, second.id, third.id]
 }
 
+const readyModel = (model: Memory.Model = Memory.init()): Memory.Model => {
+  const [closing] = Memory.update(model, Memory.BeginClosing({ token: model.previewToken }))
+  return Memory.update(closing, Memory.PreviewFinished({ token: model.previewToken }))[0]
+}
+
 describe('Memory Cards', () => {
-  it('starts with a face-down deck of pairs', () => {
+  it('starts with a face-up preview of the deck pairs', () => {
     const model = Memory.init()
 
     expect(model.deck).toHaveLength(12)
     expect(model.deck.every(card => !card.flipped && !card.matched)).toBe(true)
     expect(new Set(model.deck.map(card => card.pairId)).size).toBe(6)
     expect(model.enabledPacks).toEqual(FindIt.DEFAULT_EMOJI_PACK_KEYS)
+    expect(model.phase).toBe('preview')
+    expect(model.previewToken).toBe(0)
+  })
+
+  it('turns the opening preview face down before enabling play', () => {
+    const initial = Memory.init()
+    const [ignored] = Memory.update(initial, Memory.ClickedCard({ id: initial.deck[0]!.id }))
+
+    Story.story(
+      Memory.update,
+      Story.with(initial),
+      Story.message(Memory.BeginClosing({ token: 0 })),
+      Story.model(model => {
+        expect(model.phase).toBe('closing')
+        expect(model.deck.every(card => !card.flipped)).toBe(true)
+      }),
+      Story.Command.resolveAll([{ name: 'MemoryOpeningFlip' }, Memory.PreviewFinished({ token: 0 })]),
+      Story.model(model => {
+        expect(model.phase).toBe('ready')
+      }),
+      Story.Command.expectNone(),
+    )
+
+    expect(ignored).toBe(initial)
+  })
+
+  it('renders two card faces and flips the opening board before it becomes interactive', () => {
+    Scene.scene(
+      { update: Memory.update, view: Memory.view },
+      Scene.with(Memory.init()),
+      Scene.expect(Scene.selector('.memory-grid--preview')).toExist(),
+      Scene.expect(Scene.selector('.memory-tile--flipped .memory-tile-front')).toExist(),
+      Scene.expect(Scene.selector('.memory-tile-back')).toExist(),
+      Scene.Mount.resolveAll([{ name: 'memoryOpeningReveal' }, Memory.BeginClosing({ token: 0 })]),
+      Scene.expect(Scene.selector('.memory-grid--closing')).toExist(),
+      Scene.Command.resolveAll([{ name: 'MemoryOpeningFlip' }, Memory.PreviewFinished({ token: 0 })]),
+      Scene.expect(Scene.selector('.memory-grid--ready')).toExist(),
+      Scene.Command.expectNone(),
+    )
+  })
+
+  it('ignores an old opening timer after reset starts a new preview', () => {
+    const initial = readyModel()
+    const [reset, commands] = Memory.update(initial, Memory.ClickedReset())
+    const [afterStaleTimer, staleCommands] = Memory.update(reset, Memory.BeginClosing({ token: initial.previewToken }))
+
+    expect(reset.phase).toBe('preview')
+    expect(commands.map(command => command.name)).toEqual(['MemoryOpeningReveal'])
+    expect(afterStaleTimer).toBe(reset)
+    expect(staleCommands).toEqual([])
   })
 
   it('marks a matching pair and counts one attempt', () => {
-    const initial = Memory.init()
+    const initial = readyModel()
     const [firstId, secondId] = matchingIds(initial)
 
     Story.story(
@@ -50,7 +105,7 @@ describe('Memory Cards', () => {
   })
 
   it('leaves mismatched cards visible until the next pick', () => {
-    const initial = Memory.init()
+    const initial = readyModel()
     const [firstId, secondId, thirdId] = mismatchedIds(initial)
     const [one] = Memory.update(initial, Memory.ClickedCard({ id: firstId }))
     const [two] = Memory.update(one, Memory.ClickedCard({ id: secondId }))
@@ -65,7 +120,7 @@ describe('Memory Cards', () => {
   })
 
   it('wins when every pair is matched and reset starts fresh', () => {
-    const initial = Memory.init()
+    const initial = readyModel()
     const matches = [...new Set(initial.deck.map(card => card.pairId))]
       .map(pairId => initial.deck.filter(card => card.pairId === pairId).map(card => card.id))
     const won = matches.flat().reduce(
@@ -78,6 +133,8 @@ describe('Memory Cards', () => {
     expect(won.attempts).toBe(6)
     expect(reset.enabledPacks).toEqual(won.enabledPacks)
     expect(reset.deck.every(card => !card.flipped && !card.matched)).toBe(true)
+    expect(reset.phase).toBe('preview')
+    expect(reset.previewToken).toBe(won.previewToken + 1)
   })
 
   it('builds cards from the enabled emoji packs', () => {
@@ -96,6 +153,8 @@ describe('Memory Cards', () => {
     expect(unchanged).toBe(numbersOnly)
     expect(withFun.enabledPacks).toEqual(['numbers', 'fun'])
     expect(withFun.deck.every(card => !card.flipped && !card.matched)).toBe(true)
+    expect(withFun.phase).toBe('preview')
+    expect(withFun.previewToken).toBe(numbersOnly.previewToken + 1)
   })
 
   it('shuffles the generated card order', () => {
