@@ -452,7 +452,7 @@ describe('counter ball dragging', () => {
   const pointer = (
     target: Element,
     type: string,
-    pointerType: 'mouse' | 'touch',
+    pointerType: 'mouse' | 'pen',
     pointerId: number,
     x: number,
     y: number,
@@ -471,22 +471,42 @@ describe('counter ball dragging', () => {
     target.dispatchEvent(event)
   }
 
+  const touch = (
+    dispatchTarget: Element,
+    touchTarget: Element,
+    type: string,
+    identifier: number,
+    x: number,
+    y: number,
+    timeStamp: number,
+  ): Event => {
+    const event = new Event(type, { bubbles: true, cancelable: true })
+    const touchPoint = { identifier, clientX: x, clientY: y, target: touchTarget } as unknown as Touch
+    const changedTouches = {
+      0: touchPoint,
+      length: 1,
+      item: (index: number) => index === 0 ? touchPoint : null,
+    } as unknown as TouchList
+    Object.defineProperties(event, {
+      changedTouches: { value: changedTouches },
+      timeStamp: { value: timeStamp },
+    })
+    dispatchTarget.dispatchEvent(event)
+    return event
+  }
+
   const ballPosition = (ball: HTMLElement): readonly [number, number] => {
     const match = ball.style.transform.match(/translate3d\(([-\d.]+)px,([-\d.]+)px,0\)/)
     if (!match) throw new Error(`Unexpected ball transform: ${ball.style.transform}`)
     return [Number(match[1]), Number(match[2])]
   }
 
-  it.each(['mouse', 'touch'] as const)('lets a %s pointer pick up, move, and drop a ball', async pointerType => {
+  it('lets a mouse pick up, move, and drop a ball', async () => {
     const parent = document.createElement('div')
     parent.setAttribute('data-count', '1')
     parent.setAttribute('data-fontsize', '3')
     parent.setAttribute('data-tilt-gravity', 'false')
     parent.getBoundingClientRect = () => new DOMRect(0, 0, 300, 200)
-    const captured = new Set<number>()
-    parent.setPointerCapture = id => { captured.add(id) }
-    parent.hasPointerCapture = id => captured.has(id)
-    parent.releasePointerCapture = id => { captured.delete(id) }
     document.body.appendChild(parent)
     const random = vi.spyOn(Math, 'random').mockReturnValue(0.5)
     const fiber = Effect.runFork(Stream.runDrain(Counter.mountCounterBalls(parent)))
@@ -497,20 +517,61 @@ describe('counter ball dragging', () => {
       expect(ball).not.toBeNull()
       const [left, top] = ballPosition(ball!)
       const radius = Number.parseFloat(ball!.style.width) / 2
+      const captured = new Set<number>()
+      ball!.setPointerCapture = id => { captured.add(id) }
+      ball!.hasPointerCapture = id => captured.has(id)
+      ball!.releasePointerCapture = id => { captured.delete(id) }
 
-      pointer(ball!, 'pointerdown', pointerType, 7, left + radius, top + radius, 100)
+      pointer(ball!, 'pointerdown', 'mouse', 7, left + radius, top + radius, 100)
       expect(ball!.classList.contains('ball--dragging')).toBe(true)
       expect(captured.has(7)).toBe(true)
 
-      pointer(parent, 'pointermove', pointerType, 7, 80, 80, 500)
+      pointer(parent, 'pointermove', 'mouse', 7, 80, 80, 500)
       expect(ballPosition(ball!)).toEqual([69, 69])
 
-      pointer(parent, 'pointerup', pointerType, 7, 80, 80, 510)
+      pointer(parent, 'pointerup', 'mouse', 7, 80, 80, 510)
       expect(ball!.classList.contains('ball--dragging')).toBe(false)
       expect(captured.has(7)).toBe(false)
 
       await new Promise(resolve => setTimeout(resolve, 40))
       expect(ballPosition(ball!)[1]).toBeGreaterThan(69)
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(fiber))
+      random.mockRestore()
+      parent.remove()
+    }
+  })
+
+  it('uses cancellable touch events to drag on iOS without pointer capture', async () => {
+    const parent = document.createElement('div')
+    parent.setAttribute('data-count', '1')
+    parent.setAttribute('data-fontsize', '3')
+    parent.setAttribute('data-tilt-gravity', 'false')
+    parent.getBoundingClientRect = () => new DOMRect(0, 0, 300, 200)
+    document.body.appendChild(parent)
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0.5)
+    const fiber = Effect.runFork(Stream.runDrain(Counter.mountCounterBalls(parent)))
+
+    try {
+      await new Promise(resolve => setTimeout(resolve, 40))
+      const ball = parent.querySelector<HTMLElement>('.ball')!
+      const [left, top] = ballPosition(ball)
+      const radius = Number.parseFloat(ball.style.width) / 2
+
+      const start = touch(ball, ball, 'touchstart', 7, left + radius, top + radius, 100)
+      expect(ball.classList.contains('ball--dragging')).toBe(true)
+      expect(start.defaultPrevented).toBe(true)
+
+      const move = touch(ball, ball, 'touchmove', 7, 80, 80, 500)
+      expect(ballPosition(ball)).toEqual([69, 69])
+      expect(move.defaultPrevented).toBe(true)
+
+      const end = touch(ball, ball, 'touchend', 7, 80, 80, 510)
+      expect(ball.classList.contains('ball--dragging')).toBe(false)
+      expect(end.defaultPrevented).toBe(true)
+
+      await new Promise(resolve => setTimeout(resolve, 40))
+      expect(ballPosition(ball)[1]).toBeGreaterThan(69)
     } finally {
       await Effect.runPromise(Fiber.interrupt(fiber))
       random.mockRestore()
@@ -524,9 +585,6 @@ describe('counter ball dragging', () => {
     parent.setAttribute('data-fontsize', '3')
     parent.setAttribute('data-tilt-gravity', 'false')
     parent.getBoundingClientRect = () => new DOMRect(0, 0, 400, 240)
-    parent.setPointerCapture = () => {}
-    parent.hasPointerCapture = () => true
-    parent.releasePointerCapture = () => {}
     document.body.appendChild(parent)
     const random = vi.spyOn(Math, 'random').mockReturnValue(0.5)
     const fiber = Effect.runFork(Stream.runDrain(Counter.mountCounterBalls(parent)))
@@ -539,9 +597,9 @@ describe('counter ball dragging', () => {
       const centerX = left + radius
       const centerY = top + radius
 
-      pointer(ball, 'pointerdown', 'touch', 3, centerX, centerY, 100)
-      pointer(parent, 'pointermove', 'touch', 3, centerX + 40, centerY, 200)
-      pointer(parent, 'pointerup', 'touch', 3, centerX + 40, centerY, 210)
+      touch(ball, ball, 'touchstart', 3, centerX, centerY, 100)
+      touch(ball, ball, 'touchmove', 3, centerX + 40, centerY, 200)
+      touch(ball, ball, 'touchend', 3, centerX + 40, centerY, 210)
       const releasedLeft = ballPosition(ball)[0]
 
       await new Promise(resolve => setTimeout(resolve, 35))

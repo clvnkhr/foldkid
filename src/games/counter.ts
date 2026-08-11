@@ -178,6 +178,7 @@ interface BallState {
 
 interface BallDragState {
   ball: BallState
+  captureElement: HTMLElement | null
   offsetX: number
   offsetY: number
   lastX: number
@@ -186,6 +187,13 @@ interface BallDragState {
   velocityX: number
   velocityY: number
   hasVelocity: boolean
+}
+
+interface BallDragPoint {
+  id: number
+  clientX: number
+  clientY: number
+  timeStamp: number
 }
 
 // A deliberately inelastic, fixed-step solver. Counter balls are decorative,
@@ -540,13 +548,18 @@ const addBall = (state: TickState, parent: HTMLElement, negative: boolean): void
   state.rendered.push({ ...ball, el: element, pointerId: null })
 }
 
-const cancelBallDrag = (state: TickState, parent: HTMLElement, ball: BallState): void => {
+const cancelBallDrag = (state: TickState, ball: BallState): void => {
   if (ball.pointerId === null) return
   const pointerId = ball.pointerId
+  const captureElement = state.drags.get(pointerId)?.captureElement
   state.drags.delete(pointerId)
   ball.pointerId = null
   ball.el.classList.remove('ball--dragging')
-  if (parent.hasPointerCapture(pointerId)) parent.releasePointerCapture(pointerId)
+  try {
+    if (captureElement?.hasPointerCapture(pointerId)) captureElement.releasePointerCapture(pointerId)
+  } catch {
+    // WebKit may have already discarded capture when a pointer is cancelled.
+  }
 }
 
 const tick = (state: TickState, parent: HTMLElement, activeParticles: Set<HTMLElement>, now: number): void => {
@@ -566,7 +579,7 @@ const tick = (state: TickState, parent: HTMLElement, activeParticles: Set<HTMLEl
   while (state.rendered.length > target) {
     const ball = state.rendered.pop()
     if (ball) {
-      cancelBallDrag(state, parent, ball)
+      cancelBallDrag(state, ball)
       poof(ball.el, activeParticles)
     }
   }
@@ -635,18 +648,55 @@ export const mountCounterBalls = (element: Element): Stream.Stream<never> =>
           })
           mo.observe(parent, { attributes: true, attributeFilter: ['data-count', 'data-fontsize', 'data-tilt-gravity'] })
 
-          const localPoint = (event: PointerEvent): { x: number; y: number } => {
+          const localPoint = (point: BallDragPoint): { x: number; y: number } => {
             const bounds = parent.getBoundingClientRect()
-            return { x: event.clientX - bounds.left, y: event.clientY - bounds.top }
+            return { x: point.clientX - bounds.left, y: point.clientY - bounds.top }
           }
-          const moveHeldBall = (event: PointerEvent, sampleVelocity: boolean = true): void => {
-            const drag = state.drags.get(event.pointerId)
-            if (!drag) return
-            const point = localPoint(event)
-            drag.ball.x = point.x - drag.offsetX
-            drag.ball.y = point.y - drag.offsetY
+          const startDrag = (
+            target: EventTarget | null,
+            point: BallDragPoint,
+            captureElement: HTMLElement | null,
+          ): boolean => {
+            const ballElement = target instanceof Element
+              ? target.closest('.ball') as HTMLElement | null
+              : null
+            if (!ballElement) return false
+            const ball = state.rendered.find(candidate => candidate.el === ballElement)
+            if (!ball || ball.pointerId !== null) return false
+            const local = localPoint(point)
+            ball.pointerId = point.id
+            ball.vx = 0
+            ball.vy = 0
+            ball.el.classList.add('ball--dragging')
+            state.drags.set(point.id, {
+              ball,
+              captureElement,
+              offsetX: local.x - ball.x,
+              offsetY: local.y - ball.y,
+              lastX: ball.x,
+              lastY: ball.y,
+              lastTime: point.timeStamp,
+              velocityX: 0,
+              velocityY: 0,
+              hasVelocity: false,
+            })
+            if (captureElement) {
+              try {
+                captureElement.setPointerCapture(point.id)
+              } catch {
+                // Dragging still works while the pointer remains over the play area.
+              }
+            }
+            return true
+          }
+          const moveHeldBall = (point: BallDragPoint, sampleVelocity: boolean = true): boolean => {
+            const drag = state.drags.get(point.id)
+            if (!drag) return false
+            const local = localPoint(point)
+            drag.ball.x = local.x - drag.offsetX
+            drag.ball.y = local.y - drag.offsetY
             constrainToBounds(drag.ball, state.w, state.h)
-            const elapsed = event.timeStamp - drag.lastTime
+            const elapsed = point.timeStamp - drag.lastTime
             if (sampleVelocity && elapsed > 0) {
               const sampleX = (drag.ball.x - drag.lastX) * 1000 / elapsed
               const sampleY = (drag.ball.y - drag.lastY) * 1000 / elapsed
@@ -665,45 +715,19 @@ export const mountCounterBalls = (element: Element): Stream.Stream<never> =>
               drag.hasVelocity = true
               drag.lastX = drag.ball.x
               drag.lastY = drag.ball.y
-              drag.lastTime = event.timeStamp
+              drag.lastTime = point.timeStamp
               drag.ball.vx = drag.velocityX
               drag.ball.vy = drag.velocityY
             }
             drag.ball.el.style.transform = `translate3d(${drag.ball.x - drag.ball.r}px,${drag.ball.y - drag.ball.r}px,0)`
-            event.preventDefault()
+            return true
           }
-          const onPointerDown = (event: PointerEvent): void => {
-            if (event.pointerType === 'mouse' && event.button !== 0) return
-            const target = (event.target as Element | null)?.closest('.ball') as HTMLElement | null
-            if (!target) return
-            const ball = state.rendered.find(candidate => candidate.el === target)
-            if (!ball || ball.pointerId !== null) return
-            const point = localPoint(event)
-            ball.pointerId = event.pointerId
-            ball.vx = 0
-            ball.vy = 0
-            ball.el.classList.add('ball--dragging')
-            state.drags.set(event.pointerId, {
-              ball,
-              offsetX: point.x - ball.x,
-              offsetY: point.y - ball.y,
-              lastX: ball.x,
-              lastY: ball.y,
-              lastTime: event.timeStamp,
-              velocityX: 0,
-              velocityY: 0,
-              hasVelocity: false,
-            })
-            parent.setPointerCapture?.(event.pointerId)
-            event.preventDefault()
-          }
-          const onPointerMove = (event: PointerEvent): void => moveHeldBall(event)
-          const finishDrag = (event: PointerEvent): void => {
-            const drag = state.drags.get(event.pointerId)
-            if (!drag) return
-            if (event.type === 'pointerup') {
-              moveHeldBall(event, false)
-              const idleTime = Math.max(0, event.timeStamp - drag.lastTime - FLING_RELEASE_GRACE_MS)
+          const finishDrag = (point: BallDragPoint, cancelled: boolean): boolean => {
+            const drag = state.drags.get(point.id)
+            if (!drag) return false
+            if (!cancelled) {
+              moveHeldBall(point, false)
+              const idleTime = Math.max(0, point.timeStamp - drag.lastTime - FLING_RELEASE_GRACE_MS)
               const releaseScale = Math.exp(-idleTime / FLING_RELEASE_DECAY_MS)
               drag.ball.vx = drag.velocityX * releaseScale
               drag.ball.vy = drag.velocityY * releaseScale
@@ -711,8 +735,71 @@ export const mountCounterBalls = (element: Element): Stream.Stream<never> =>
               drag.ball.vx = 0
               drag.ball.vy = 0
             }
-            cancelBallDrag(state, parent, drag.ball)
-            event.preventDefault()
+            cancelBallDrag(state, drag.ball)
+            return true
+          }
+          // iOS has historically delivered captured pointer events to the wrong
+          // element. Use its native touch stream for fingers and reserve pointer
+          // capture for mouse/pen input, capturing on the ball that was pressed.
+          const useTouchEvents = typeof TouchEvent !== 'undefined'
+          const onPointerDown = (event: PointerEvent): void => {
+            if (event.pointerType === 'touch' && useTouchEvents) return
+            if (event.pointerType === 'mouse' && event.button !== 0) return
+            const target = (event.target as Element | null)?.closest('.ball') as HTMLElement | null
+            if (!target) return
+            if (startDrag(target, {
+              id: event.pointerId,
+              clientX: event.clientX,
+              clientY: event.clientY,
+              timeStamp: event.timeStamp,
+            }, target)) event.preventDefault()
+          }
+          const onPointerMove = (event: PointerEvent): void => {
+            if (event.pointerType === 'touch' && useTouchEvents) return
+            if (moveHeldBall({
+              id: event.pointerId,
+              clientX: event.clientX,
+              clientY: event.clientY,
+              timeStamp: event.timeStamp,
+            })) event.preventDefault()
+          }
+          const onPointerFinish = (event: PointerEvent): void => {
+            if (event.pointerType === 'touch' && useTouchEvents) return
+            if (finishDrag({
+              id: event.pointerId,
+              clientX: event.clientX,
+              clientY: event.clientY,
+              timeStamp: event.timeStamp,
+            }, event.type === 'pointercancel')) event.preventDefault()
+          }
+          const touchId = (identifier: number): number => -identifier - 1
+          const eachChangedTouch = (event: TouchEvent, fn: (touch: Touch) => boolean): boolean => {
+            let handled = false
+            for (let index = 0; index < event.changedTouches.length; index++) {
+              const touch = event.changedTouches.item(index)
+              if (touch && fn(touch)) handled = true
+            }
+            return handled
+          }
+          const touchPoint = (touch: Touch, event: TouchEvent): BallDragPoint => ({
+            id: touchId(touch.identifier),
+            clientX: touch.clientX,
+            clientY: touch.clientY,
+            timeStamp: event.timeStamp,
+          })
+          const onTouchStart = (event: TouchEvent): void => {
+            if (eachChangedTouch(event, touch => startDrag(touch.target, touchPoint(touch, event), null))) {
+              event.preventDefault()
+            }
+          }
+          const onTouchMove = (event: TouchEvent): void => {
+            if (eachChangedTouch(event, touch => moveHeldBall(touchPoint(touch, event)))) event.preventDefault()
+          }
+          const onTouchEnd = (event: TouchEvent): void => {
+            if (eachChangedTouch(event, touch => finishDrag(touchPoint(touch, event), false))) event.preventDefault()
+          }
+          const onTouchCancel = (event: TouchEvent): void => {
+            if (eachChangedTouch(event, touch => finishDrag(touchPoint(touch, event), true))) event.preventDefault()
           }
           const onOrientation = (event: DeviceOrientationEvent): void => {
             if (!state.tiltGravity) return
@@ -725,8 +812,12 @@ export const mountCounterBalls = (element: Element): Stream.Stream<never> =>
           }
           parent.addEventListener('pointerdown', onPointerDown)
           parent.addEventListener('pointermove', onPointerMove)
-          parent.addEventListener('pointerup', finishDrag)
-          parent.addEventListener('pointercancel', finishDrag)
+          parent.addEventListener('pointerup', onPointerFinish)
+          parent.addEventListener('pointercancel', onPointerFinish)
+          parent.addEventListener('touchstart', onTouchStart, { passive: false })
+          parent.addEventListener('touchmove', onTouchMove, { passive: false })
+          parent.addEventListener('touchend', onTouchEnd, { passive: false })
+          parent.addEventListener('touchcancel', onTouchCancel, { passive: false })
           window.addEventListener('deviceorientation', onOrientation)
           const loop = (now: number) => {
             if (!state.running) return
@@ -734,20 +825,30 @@ export const mountCounterBalls = (element: Element): Stream.Stream<never> =>
             state.id = requestAnimationFrame(loop)
           }
           state.id = requestAnimationFrame(loop)
-          return { parent, state, ro, mo, onPointerDown, onPointerMove, finishDrag, onOrientation }
+          return {
+            parent, state, ro, mo, onPointerDown, onPointerMove, onPointerFinish,
+            onTouchStart, onTouchMove, onTouchEnd, onTouchCancel, onOrientation,
+          }
         }),
-        ({ parent, state, ro, mo, onPointerDown, onPointerMove, finishDrag, onOrientation }) => Effect.sync(() => {
+        ({
+          parent, state, ro, mo, onPointerDown, onPointerMove, onPointerFinish,
+          onTouchStart, onTouchMove, onTouchEnd, onTouchCancel, onOrientation,
+        }) => Effect.sync(() => {
           state.running = false
           cancelAnimationFrame(state.id)
           ro.disconnect()
           mo.disconnect()
           parent.removeEventListener('pointerdown', onPointerDown)
           parent.removeEventListener('pointermove', onPointerMove)
-          parent.removeEventListener('pointerup', finishDrag)
-          parent.removeEventListener('pointercancel', finishDrag)
+          parent.removeEventListener('pointerup', onPointerFinish)
+          parent.removeEventListener('pointercancel', onPointerFinish)
+          parent.removeEventListener('touchstart', onTouchStart)
+          parent.removeEventListener('touchmove', onTouchMove)
+          parent.removeEventListener('touchend', onTouchEnd)
+          parent.removeEventListener('touchcancel', onTouchCancel)
           window.removeEventListener('deviceorientation', onOrientation)
           state.rendered.forEach(ball => {
-            cancelBallDrag(state, parent, ball)
+            cancelBallDrag(state, ball)
             ball.el.remove()
           })
           activeParticles.forEach(particle => particle.remove())

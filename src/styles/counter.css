@@ -2,6 +2,7 @@
   justify-content: flex-start;
   min-height: 100dvh;
   padding: 4.25rem clamp(0.35rem, 1vw, 1rem) 0.5rem;
+  overscroll-behavior: none;
 }
 
 .counter-card {
@@ -81,7 +82,9 @@
 .balls-container {
   position: absolute;
   inset: 0;
-  pointer-events: none;
+  pointer-events: auto;
+  touch-action: none;
+  overscroll-behavior: none;
   z-index: 1;
 }
 
@@ -93,6 +96,7 @@
   pointer-events: auto;
   touch-action: none;
   user-select: none;
+  -webkit-user-drag: none;
   cursor: grab;
   will-change: transform;
   box-shadow:
