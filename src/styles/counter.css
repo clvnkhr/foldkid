@@ -1,9 +1,76 @@
+.counter-page {
+  justify-content: flex-start;
+  min-height: 100dvh;
+  padding: 4.25rem clamp(0.35rem, 1vw, 1rem) 0.5rem;
+}
+
+.counter-card {
+  width: 100%;
+  max-width: none;
+  min-height: calc(100vh - 4.75rem);
+  min-height: calc(100dvh - 4.75rem);
+  padding: clamp(0.65rem, 1.5vw, 1.25rem);
+}
+
+.counter-actions {
+  flex: 0 0 auto;
+  gap: clamp(0.5rem, 1.5vw, 1rem);
+  width: min(100%, 44rem);
+}
+
+.counter-actions .counter-size-btn {
+  position: relative;
+  min-height: clamp(3.25rem, 7dvh, 5rem);
+  overflow: visible;
+  border-radius: clamp(0.7rem, 1.5vw, 1rem);
+  font-size: clamp(1.25rem, 4vmin, 2rem);
+  isolation: isolate;
+}
+
+@property --counter-charge-pct {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: 0%;
+}
+
+.counter-size-btn--charging::before {
+  content: '';
+  position: absolute;
+  inset: -0.45rem;
+  border-radius: inherit;
+  background: conic-gradient(#facc15 0 var(--counter-charge-pct), transparent 0);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  padding: 0.22rem;
+  pointer-events: none;
+  animation: counter-charge-fill 2s linear forwards;
+}
+
+.counter-size-btn.counter-size-btn--charging,
+.counter-size-btn.counter-size-btn--charging:active {
+  z-index: 2;
+  animation: counter-charge-pulse 0.6s ease-in-out infinite;
+}
+
+@keyframes counter-charge-fill {
+  from { --counter-charge-pct: 0%; }
+  to { --counter-charge-pct: 100%; }
+}
+
+@keyframes counter-charge-pulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 8px 2px rgba(250, 204, 21, 0.3); }
+  50% { transform: scale(1.04); box-shadow: 0 0 24px 8px rgba(250, 204, 21, 0.48); }
+}
+
 .display-area {
   position: relative;
+  flex: 1 1 auto;
   width: 100%;
-  height: 40vmin;
-  min-height: 180px;
-  max-height: 50vh;
+  height: auto;
+  min-height: clamp(18rem, 55dvh, 50rem);
+  max-height: none;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -64,4 +131,20 @@
   25% { transform: scale(1.12) rotate(-3deg); }
   50% { transform: scale(1) rotate(0deg); }
   75% { transform: scale(1.12) rotate(3deg); }
+}
+
+@media (max-width: 520px) {
+  .counter-page {
+    padding: 3.75rem 0.3rem 0.3rem;
+  }
+
+  .counter-card {
+    min-height: calc(100vh - 4.05rem);
+    min-height: calc(100dvh - 4.05rem);
+    padding: 0.55rem;
+  }
+
+  .display-area {
+    min-height: 16rem;
+  }
 }

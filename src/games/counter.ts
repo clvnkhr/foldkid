@@ -217,7 +217,13 @@ const poof = (el: HTMLElement, activeParticles: Set<HTMLElement>): void => {
   }
 }
 
-const ballRadius = (fontSize: number): number => fontSize + 8
+const MIN_BALL_RADIUS = 11
+const MAX_BALL_RADIUS = 90
+
+export const ballRadius = (fontSize: number): number => {
+  const normalizedSize = (parseBallFontSize(fontSize.toString()) - 3) / 17
+  return MIN_BALL_RADIUS + normalizedSize * (MAX_BALL_RADIUS - MIN_BALL_RADIUS)
+}
 
 const makeBall = (
   r: number,
@@ -425,7 +431,8 @@ export const view = (model: Model, language: string = 'en') => {
   }
 
   const btnAttrs = (msg: (d: number, btn: 'inc' | 'dec') => Message, btn: 'inc' | 'dec') => [
-    h.Class('btn btn-primary'),
+    h.Class(`btn btn-primary counter-size-btn${model.pressedButton === btn ? ' counter-size-btn--charging' : ''}`),
+    h.Attribute('aria-pressed', String(model.pressedButton === btn)),
     h.OnPointerDown((_pt, _btn, _sx, _sy, ts) => {
       return O.some(PointerDown({ timeStamp: ts, button: btn }))
     }),
@@ -440,9 +447,9 @@ export const view = (model: Model, language: string = 'en') => {
   ] as const
 
   return h.div(
-    [h.Class('page')],
+    [h.Class('page counter-page')],
     [
-      h.div([h.Class('card')], [
+      h.div([h.Class('card counter-card')], [
         h.h1([h.Class('title')], [t('counterTitle', language)]),
         h.div([h.Class('buttons counter-actions')], [
           h.button(

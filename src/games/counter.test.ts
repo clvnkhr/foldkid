@@ -142,6 +142,8 @@ describe('Counter', () => {
     Scene.scene(
       { update: Counter.update, view: Counter.view },
       Scene.with(Counter.init),
+      Scene.expect(Scene.selector('.counter-page')).toExist(),
+      Scene.expect(Scene.selector('.counter-card')).toExist(),
       Scene.expect(Scene.text('0')).toExist(),
       Scene.expect(Scene.text('-1')).toExist(),
       Scene.expect(Scene.text('+1')).toExist(),
@@ -157,6 +159,7 @@ describe('Counter', () => {
       Scene.with(Counter.init),
       Scene.Mount.resolveAll(resolveBalls),
       Scene.pointerDown(Scene.text('+1')),
+      Scene.expect(Scene.selector('.counter-size-btn--charging')).toExist(),
       Scene.pointerUp(Scene.text('+1')),
       Scene.expect(Scene.text('1')).toExist(),
       Scene.Command.resolveAll(resolveClick, resolveSpeak),
@@ -365,6 +368,11 @@ describe('numberToWord', () => {
 })
 
 describe('counter ball attribute parsing', () => {
+  it('maps a full hold to a much larger ball while preserving the tap size', () => {
+    expect(Counter.ballRadius(3)).toBe(11)
+    expect(Counter.ballRadius(20)).toBe(90)
+  })
+
   it('parses finite integer ball counts and preserves negative direction', () => {
     expect(parseBallCount('12')).toBe(12)
     expect(parseBallCount('-4')).toBe(-4)
