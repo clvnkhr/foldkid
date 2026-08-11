@@ -1,4 +1,4 @@
-import { Effect, Match as M, pipe, Schema as S } from 'effect'
+import { Effect, Match as M, Option as O, pipe, Schema as S } from 'effect'
 import { Command } from 'foldkit'
 import { Html, html } from 'foldkit/html'
 import { m } from 'foldkit/message'
@@ -188,7 +188,7 @@ export const view = (model: Model, language: string = 'en'): Html => {
                 const isActive = activeIdx === i
                 return h.div([
                   h.Class(`pat-tile pat-tile--${i}${isActive ? ' pat-tile--active' : ''}`),
-                  h.OnTouchEnd(ClickedTile({ index: i })),
+                  h.OnPointerUp(() => O.some(ClickedTile({ index: i }))),
                   ...(isActive ? [h.Key(`pat-tile-${i}-${model.showIndex}`)] : []),
                 ], [])
               }),

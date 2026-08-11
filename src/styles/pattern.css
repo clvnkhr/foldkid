@@ -46,6 +46,7 @@
   border-radius: clamp(12px, 3vmin, 20px);
   cursor: pointer;
   touch-action: manipulation;
+  transition: filter 0.45s ease-out, transform 0.45s ease-out, box-shadow 0.45s ease-out;
   position: relative;
   overflow: hidden;
 }
@@ -110,6 +111,7 @@
 .pat-tile:active {
   filter: brightness(1.8);
   transform: scale(1.08);
+  transition-duration: 0.05s;
 }
 
 .pat-tile--0:active {

@@ -927,7 +927,7 @@ export const view = (model: Model, language: string = 'en', muted: boolean = fal
   const h = html<Message>()
 
   return h.div(
-    [h.Class('page')],
+    [h.Class('page magnetic-blocks-page')],
     [
       h.div([h.Class('card magnetic-blocks-card')], [
         h.div([h.Class('magnetic-blocks-heading')], [

@@ -4,13 +4,11 @@ import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
 import { t } from '../../i18n'
 import { speak } from '../../speech'
+import { BSL_HAND_PATHS } from './signs'
 
 const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')
 const OPTION_COUNT = 4
 const ROUNDS_PER_GAME = 10
-
-const bslImage = (letter: string): string =>
-  `${import.meta.env.BASE_URL}images/bsl/bsl_${letter}.svg`
 
 const shuffle = <T>(arr: readonly T[]): T[] => {
   const a = [...arr]
@@ -87,6 +85,7 @@ export const update = (
 export const view = (model: Model, language: string = 'en') => {
   const h = html<Message>()
   const gameOver = model.round >= ROUNDS_PER_GAME && model.feedback !== 'none'
+  const handPath = BSL_HAND_PATHS[model.letter] ?? BSL_HAND_PATHS.A!
 
   return h.div([h.Class('page bsl-page')], [
     h.div([h.Class('card bsl-card')], [
@@ -104,7 +103,23 @@ export const view = (model: Model, language: string = 'en') => {
             h.span([h.Class('bsl-score')], [`${t('bslScore', language)} ${model.score}`]),
           ]),
           h.div([h.Class('bsl-hand-container')], [
-            h.img([h.Class('bsl-hand'), h.Src(bslImage(model.letter)), h.Alt(`BSL letter ${model.letter}`)]),
+            h.svg([
+              h.Class('bsl-hand'),
+              h.ViewBox('0 320 240 160'),
+              h.Width('240'),
+              h.Height('160'),
+              h.Role('img'),
+              h.AriaLabel(`BSL letter ${model.letter}`),
+              h.Attribute('data-bsl-letter', model.letter),
+              h.Attribute('focusable', 'false'),
+            ], [
+              h.path([
+                h.D(handPath),
+                h.Fill('currentColor'),
+                h.Stroke('currentColor'),
+                h.StrokeWidth('2.66667008'),
+              ], []),
+            ]),
           ]),
           h.div([h.Class('bsl-options')], [
             ...model.options.map(letter =>

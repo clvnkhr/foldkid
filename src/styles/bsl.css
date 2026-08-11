@@ -18,13 +18,11 @@
 }
 
 .bsl-hand {
-  max-width: 240px;
+  display: block;
+  width: min(240px, 100%);
+  height: auto;
   max-height: 160px;
-  border-radius: 8px;
-}
-
-.dark .bsl-hand {
-  filter: invert(1) hue-rotate(180deg);
+  color: var(--text-primary);
 }
 
 .bsl-options {

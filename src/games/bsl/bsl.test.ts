@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import { Scene, Story } from 'foldkit/test'
 import * as Bsl from './main'
+import { BSL_HAND_PATHS } from './signs'
 
 const resolveSound = [{ name: 'Speak' }, Bsl.SoundPlayed()] as const
 
 describe('Bsl', () => {
+  it('contains an inline hand path for every letter', () => {
+    expect(Object.keys(BSL_HAND_PATHS).sort().join('')).toBe('ABCDEFGHIJKLMNOPQRSTUVWXYZ')
+    expect(Object.values(BSL_HAND_PATHS).every(path => path.startsWith('M '))).toBe(true)
+  })
+
   it('init creates model with letter and 4 options', () => {
     const model = Bsl.init()
     expect(model.letter).toBeTruthy()
@@ -76,10 +82,14 @@ describe('Bsl', () => {
   })
 
   it('renders initial state', () => {
+    const model = { ...Bsl.init(), letter: 'A' }
     Scene.scene(
       { update: Bsl.update, view: Bsl.view },
-      Scene.with(Bsl.init()),
+      Scene.with(model),
       Scene.expect(Scene.text('Round 1/10')).toExist(),
+      Scene.expect(Scene.selector('svg.bsl-hand[data-bsl-letter="A"]')).toExist(),
+      Scene.expect(Scene.selector('svg.bsl-hand path')).toExist(),
+      Scene.expect(Scene.selector('.bsl-hand-container img')).not.toExist(),
       Scene.Command.expectNone(),
     )
   })

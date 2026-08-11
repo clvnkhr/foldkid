@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { Story } from 'foldkit'
+import { Scene, Story } from 'foldkit/test'
 
-import { ClickedTile, init, ShowTile, SoundPlayed, StartGame, StartPlaying, update } from './main'
+import { ClickedTile, init, ShowTile, SoundPlayed, StartGame, StartPlaying, update, view } from './main'
 
 const resolveAscend = [{ name: 'PlayAscend' }, SoundPlayed()] as const
 const resolveDescend = [{ name: 'PlayDescend' }, SoundPlayed()] as const
@@ -129,6 +129,18 @@ describe('Pattern', () => {
       }),
       Story.Command.resolveAll(resolveTile0),
       Story.Command.expectNone(),
+    )
+  })
+
+  it('registers a mouse pointer-up on a tile', () => {
+    const play = playingWithSeq([0, 1, 2])
+    Scene.scene(
+      { update, view },
+      Scene.with(play),
+      Scene.pointerUp(Scene.selector('.pat-tile--0'), { pointerType: 'mouse' }),
+      Scene.expect(Scene.selector('.pat-dot--filled')).toExist(),
+      Scene.Command.resolveAll(resolveTile0),
+      Scene.Command.expectNone(),
     )
   })
 
