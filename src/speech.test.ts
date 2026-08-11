@@ -1,6 +1,6 @@
 import { Effect } from 'effect'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { findVoice, speak } from './speech'
+import { findVoice, speak, speakNow } from './speech'
 
 let lastSpokenText = ''
 let speakCount = 0
@@ -74,6 +74,13 @@ describe('speech', () => {
   it('speak accepts rate/pitch/lang options', () => {
     const cmd = speak('hello', 'msg', { rate: 0.5, pitch: 2, lang: 'fr' })
     expect(cmd.name).toBe('Speak')
+  })
+
+  it('speakNow speaks immediately with the shared speech options', () => {
+    speakNow('2+3=5', { rate: 1.2, pitch: 0.8, lang: 'en-GB' })
+
+    expect(speakCount).toBe(1)
+    expect(lastSpokenText).toBe('2+3=5')
   })
 
   it('speak produces the correct result message', async () => {

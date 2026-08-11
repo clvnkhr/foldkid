@@ -61,6 +61,14 @@
   grid-column: 1 / -1;
 }
 
+.talking-keyboard-emoji-pair {
+  display: inline-flex;
+  gap: 0.04em;
+  align-items: center;
+  font-size: 0.58em;
+  vertical-align: middle;
+}
+
 .talking-keyboard-map-with-x {
   position: relative;
   display: inline-block;
@@ -292,6 +300,13 @@
 .talking-keyboard-key:focus-visible {
   outline: 3px solid #ec4899;
   outline-offset: 3px;
+}
+
+.talking-keyboard-key:disabled {
+  opacity: 0.28;
+  cursor: not-allowed;
+  filter: grayscale(1);
+  transform: none;
 }
 
 .dark .talking-keyboard-showcase {

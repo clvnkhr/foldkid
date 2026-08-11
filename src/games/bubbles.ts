@@ -67,7 +67,7 @@ const getPoofContainer = (): HTMLElement => {
   return poofContainer
 }
 
-export const Model = S.Struct({ bubbles: S.Array(Bubble), score: S.Number, nextId: S.Number, rainbowMode: S.Boolean, popLabel: S.Boolean, sayColor: S.Boolean, selectedColor: S.String, shapeMode: S.Boolean, selectedShape: S.String, shapePage: S.Number })
+export const Model = S.Struct({ bubbles: S.Array(Bubble), score: S.Number, nextId: S.Number, rainbowMode: S.Boolean, sayColor: S.Boolean, selectedColor: S.String, shapeMode: S.Boolean, selectedShape: S.String, shapePage: S.Number })
 export type Model = typeof Model.Type
 
 export const ClickedPop = m('BubblesClickedPop', { id: S.Number })
@@ -77,16 +77,15 @@ export const ClearCompleted = m('BubblesClearCompleted', { ids: S.Array(S.Number
 export const ClickedColor = m('BubblesClickedColor', { color: S.String, duration: S.Number })
 export const SoundPlayed = m('BubblesSoundPlayed')
 export const SetRainbowMode = m('BubblesSetRainbowMode', { value: S.Boolean })
-export const SetPopLabel = m('BubblesSetPopLabel', { value: S.Boolean })
 export const SetSayColor = m('BubblesSetSayColor', { value: S.Boolean })
 export const SetShapeMode = m('BubblesSetShapeMode', { value: S.Boolean })
 export const SetSelectedShape = m('BubblesSetSelectedShape', { value: S.String })
 export const NextShapePage = m('BubblesNextShapePage')
 
-export const Message = S.Union([ClickedPop, ClickedReset, ClearBubble, ClearCompleted, ClickedColor, SoundPlayed, SetRainbowMode, SetPopLabel, SetSayColor, SetShapeMode, SetSelectedShape, NextShapePage])
+export const Message = S.Union([ClickedPop, ClickedReset, ClearBubble, ClearCompleted, ClickedColor, SoundPlayed, SetRainbowMode, SetSayColor, SetShapeMode, SetSelectedShape, NextShapePage])
 export type Message = typeof Message.Type
 
-export const init = (): Model => ({ bubbles: [], score: 0, nextId: 0, rainbowMode: false, popLabel: false, sayColor: false, selectedColor: '', shapeMode: false, selectedShape: 'circle', shapePage: 0 })
+export const init = (): Model => ({ bubbles: [], score: 0, nextId: 0, rainbowMode: false, sayColor: false, selectedColor: '', shapeMode: false, selectedShape: 'circle', shapePage: 0 })
 
 const clearCommands = (bubbles: ReadonlyArray<Bubble>): ReadonlyArray<Command.Command<Message>> => {
   const ids = bubbles.map((bubble) => bubble.id)
@@ -103,7 +102,7 @@ const clearCommands = (bubbles: ReadonlyArray<Bubble>): ReadonlyArray<Command.Co
   ]
 }
 
-const poof = (cx: number, cy: number, w: number, color: string, popLabelText: string): void => {
+const poof = (cx: number, cy: number, w: number, color: string, colorLabel: string): void => {
   const s = w / 16
   const count = Math.max(4, Math.floor(w / 12))
   const flashDuration = (300 + w * 1.5) * 0.4
@@ -190,8 +189,7 @@ const poof = (cx: number, cy: number, w: number, color: string, popLabelText: st
     )
   }
 
-  // Score popup or pop label
-  if (popLabelText) {
+  if (colorLabel) {
     createParticle(
       0, cx - 15, cy - 15, 'transparent', 1003,
       [
@@ -200,10 +198,9 @@ const poof = (cx: number, cy: number, w: number, color: string, popLabelText: st
       ],
       { duration: 700, easing: 'ease-out', fill: 'forwards' },
     )
-    // Set text on the last created element (the popup)
-    const popup = container.querySelector(':scope > :last-child') as HTMLElement | null
+    const popup = frag.lastElementChild as HTMLElement | null
     if (popup) {
-      popup.textContent = popLabelText
+      popup.textContent = colorLabel
       popup.style.cssText += ';font-size:1.5rem;font-weight:700;color:#FFD700;text-shadow:0 1px 3px rgba(0,0,0,0.4);width:auto;height:auto;background:none;border-radius:0'
     }
   }
@@ -392,8 +389,7 @@ export const update = (
         [],
       ],
       BubblesSetRainbowMode: (msg) => [{ ...model, rainbowMode: msg.value, selectedColor: msg.value ? 'rainbow' : model.selectedColor }, []],
-      BubblesSetPopLabel: (msg) => [{ ...model, popLabel: msg.value, sayColor: false }, []],
-      BubblesSetSayColor: (msg) => [{ ...model, sayColor: msg.value, popLabel: false }, []],
+      BubblesSetSayColor: (msg) => [{ ...model, sayColor: msg.value }, []],
       BubblesSetShapeMode: (msg) => [{ ...model, shapeMode: msg.value }, []],
       BubblesSetSelectedShape: (msg) => [{ ...model, selectedShape: msg.value }, []],
       BubblesNextShapePage: () => [{ ...model, shapePage: (model.shapePage + 1) % SHAPE_PAGES.length }, []],
@@ -418,7 +414,8 @@ export const view = (model: Model, language: string = 'en') => {
                 h.button(
                   [
                     h.Class(s === model.selectedShape ? 'shape-btn shape-btn--active' : 'shape-btn'),
-                    h.OnClick(SetSelectedShape({ value: s })),
+                    h.OnPointerUp(() => O.some(SetSelectedShape({ value: s }))),
+                    h.OnKeyUpPreventDefault((key) => key === 'Enter' || key === ' ' ? O.some(SetSelectedShape({ value: s })) : O.none()),
                     h.Attribute('aria-pressed', String(s === model.selectedShape)),
                     h.Attribute('type', 'button'),
                     h.Key(s),
@@ -429,7 +426,8 @@ export const view = (model: Model, language: string = 'en') => {
               h.button(
                 [
                   h.Class('shape-btn shape-btn--next'),
-                  h.OnClick(NextShapePage()),
+                  h.OnPointerUp(() => O.some(NextShapePage())),
+                  h.OnKeyUpPreventDefault((key) => key === 'Enter' || key === ' ' ? O.some(NextShapePage()) : O.none()),
                   h.Attribute('type', 'button'),
                   h.Key('next-shape-page'),
                 ],
@@ -555,7 +553,6 @@ export const view = (model: Model, language: string = 'en') => {
         h.div([
           h.Class('bubbles-container'),
           h.Key('bubbles-container'),
-          h.Attribute('data-pop-label', !model.sayColor && model.popLabel ? t('popText', language) : ''),
           h.OnMount({
             name: 'bubblesAnim',
             f: (element) => Stream.callback<never>(_queue =>
@@ -589,9 +586,8 @@ export const view = (model: Model, language: string = 'en') => {
                           const id = parseInt(node.getAttribute('data-id') ?? '', 10)
                           const ba = state.bubbles.get(id)
                           if (ba) {
-                          const popLabelText = container.getAttribute('data-pop-label') ?? ''
                           const colorName = node.getAttribute('data-color-name') ?? ''
-                          poof(ba.cx, ba.cy, ba.rectW, ba.color, colorName || popLabelText)
+                          poof(ba.cx, ba.cy, ba.rectW, ba.color, colorName)
                             state.bubbles.delete(id)
                           }
                         }

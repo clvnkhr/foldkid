@@ -114,7 +114,6 @@ describe('settings persistence', () => {
     { label: 'FindItSetVoiceMode', msg: FindIt.SetVoiceMode({ value: true }) },
     { label: 'FindItSetPairsMode', msg: FindIt.SetPairsMode({ value: true }) },
     { label: 'FindItSetEmojiPackEnabled', msg: FindIt.SetEmojiPackEnabled({ key: 'numbers', value: false }) },
-    { label: 'BubblesSetPopLabel', msg: Bubbles.SetPopLabel({ value: true }) },
     { label: 'BubblesSetSayColor', msg: Bubbles.SetSayColor({ value: true }) },
     { label: 'BubblesSetShapeMode', msg: Bubbles.SetShapeMode({ value: true }) },
     { label: 'DrawSetTopN', msg: Draw.SetTopN({ value: 7 }) },
@@ -128,6 +127,7 @@ describe('settings persistence', () => {
     { label: 'MemorySetEmojiPackEnabled', msg: Memory.SetEmojiPackEnabled({ key: 'numbers', value: false }) },
     { label: 'RpsSetGigaChad', msg: Rps.SetGigaChad({ value: true }) },
     { label: 'MagneticBlocksSetBreakSpeed', msg: MagneticBlocks.SetBreakSpeed({ value: 875 }) },
+    { label: 'TalkingKeyboardSetWordPackEnabled', msg: TalkingKeyboard.SetWordPackEnabled({ key: 'animals', value: false }) },
     { label: 'MusicBoxSetDrumVolume', msg: MusicBox.SetDrumVolume({ value: 0.35 }) },
     { label: 'MusicBoxToggleSongVisibility', msg: MusicBox.ToggleSongVisibility({ index: 1 }) },
     { label: 'MusicBoxSongDroppedOn', msg: MusicBox.SongDroppedOn({ index: 1 }) },
@@ -207,7 +207,8 @@ describe('Main', () => {
     expect(model.speechPitch).toBe(1.1)
     expect(model.counter.count).toBe(0)
     expect(model.findIt.enabledPacks).toEqual(FindIt.DEFAULT_EMOJI_PACK_KEYS)
-    expect(model.bubbles).toStrictEqual({ bubbles: [], score: 0, nextId: 0, rainbowMode: false, popLabel: false, sayColor: false, selectedColor: '', shapeMode: false, selectedShape: 'circle', shapePage: 0 })
+    expect(model.talkingKeyboard.enabledPacks).toEqual(TalkingKeyboard.DEFAULT_WORD_PACK_KEYS)
+    expect(model.bubbles).toStrictEqual({ bubbles: [], score: 0, nextId: 0, rainbowMode: false, sayColor: false, selectedColor: '', shapeMode: false, selectedShape: 'circle', shapePage: 0 })
   })
 
   it('init loads persisted Find It emoji packs', () => {
@@ -219,7 +220,17 @@ describe('Main', () => {
     expect(model.findIt.grid.every(cell => numbers.has(cell.emoji))).toBe(true)
   })
 
-  it('init ignores legacy Bubbles selected color because it is transient UI state', () => {
+  it('init loads persisted Talking Keyboard word packs', () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ talkingKeyboardEnabledPacks: ['food', 'animals'] }))
+    const [model] = Main.init()
+
+    expect(model.talkingKeyboard.enabledPacks).toEqual(['food', 'animals'])
+    expect(TalkingKeyboard.wordsFor('B', model.talkingKeyboard.enabledPacks).every(({ word }) =>
+      ['food', 'animals'].includes(TalkingKeyboard.wordPackFor(word)),
+    )).toBe(true)
+  })
+
+  it('init safely ignores legacy Bubbles selected color and pop-label settings', () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       bubblesSelectedColor: 'rainbow',
       bubblesPopLabel: true,
@@ -229,7 +240,7 @@ describe('Main', () => {
 
     expect(model.bubbles.selectedColor).toBe('')
     expect(model.bubbles.rainbowMode).toBe(false)
-    expect(model.bubbles.popLabel).toBe(true)
+    expect(model.bubbles).not.toHaveProperty('popLabel')
   })
 
   it('uses global speech settings for Counter speech commands', async () => {
@@ -668,30 +679,30 @@ describe('Main', () => {
       expect(loaded.musicBox.drumVolume).toBe(0.35)
     })
 
-    it('does not export or persist transient Bubbles selected color', async () => {
+    it('does not export or persist transient and legacy Bubbles settings', async () => {
       const customized = {
         ...createModel(),
         bubbles: {
           ...createModel().bubbles,
           selectedColor: 'rainbow',
           rainbowMode: true,
-          popLabel: true,
         },
       }
       const [exported] = Main.update(customized, ExportSettings())
       const exportedData = JSON.parse(exported.exportData) as { settings: Record<string, unknown> }
 
-      expect(exportedData.settings.bubblesPopLabel).toBe(true)
+      expect(exportedData.settings).not.toHaveProperty('bubblesPopLabel')
       expect(exportedData.settings).not.toHaveProperty('bubblesSelectedColor')
 
-      const [_, cmds] = Main.update(customized, Bubbles.SetPopLabel({ value: false }))
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ bubblesPopLabel: true }))
+      const [_, cmds] = Main.update(customized, Bubbles.SetSayColor({ value: true }))
       const cmd = cmds[0]
       expect(cmd?.name).toBe('PersistSettings')
       if (!cmd) throw new Error('missing PersistSettings command')
 
       await Effect.runPromise(cmd.effect)
       const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') as Record<string, unknown>
-      expect(stored.bubblesPopLabel).toBe(false)
+      expect(stored).not.toHaveProperty('bubblesPopLabel')
       expect(stored).not.toHaveProperty('bubblesSelectedColor')
     })
 
@@ -746,7 +757,6 @@ describe('Main', () => {
         },
         bubbles: {
           ...createModel().bubbles,
-          popLabel: true,
           sayColor: true,
           selectedColor: 'rainbow',
           rainbowMode: true,
@@ -755,6 +765,7 @@ describe('Main', () => {
           ...createModel().memory,
           enabledPacks: ['animals'] as FindIt.EmojiPackKey[],
         },
+        talkingKeyboard: TalkingKeyboard.init(['food', 'nature']),
         musicBox: {
           ...createModel().musicBox,
           selectedSong: 0,
@@ -784,11 +795,11 @@ describe('Main', () => {
       expect(imported.findIt.pairsMode).toBe(customized.findIt.pairsMode)
       expect(imported.findIt.enabledPacks).toEqual(customized.findIt.enabledPacks)
       expect(imported.findIt.grid.every(cell => segmentEmoji(cell.emoji).every(emoji => numbers.has(emoji)))).toBe(true)
-      expect(imported.bubbles.popLabel).toBe(customized.bubbles.popLabel)
       expect(imported.bubbles.sayColor).toBe(customized.bubbles.sayColor)
       expect(imported.bubbles.selectedColor).toBe('')
       expect(imported.bubbles.rainbowMode).toBe(false)
       expect(imported.memory.enabledPacks).toEqual(customized.memory.enabledPacks)
+      expect(imported.talkingKeyboard.enabledPacks).toEqual(customized.talkingKeyboard.enabledPacks)
       expect(imported.memory.deck.every(card => FindIt.emojiPoolForPacks(customized.memory.enabledPacks).includes(card.value))).toBe(true)
       expect(imported.musicBox.songOrder).toEqual(customized.musicBox.songOrder)
       expect(imported.musicBox.hiddenSongs).toEqual(customized.musicBox.hiddenSongs)

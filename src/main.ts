@@ -56,6 +56,7 @@ const PersistedSettingsSchema = S.Struct({
   findItVoiceMode: S.optionalKey(S.Boolean),
   findItPairsMode: S.optionalKey(S.Boolean),
   findItEnabledPacks: S.optionalKey(S.Array(FindIt.EmojiPackKey)),
+  // Legacy only: accepted so older saved settings/imports still decode, then ignored.
   bubblesPopLabel: S.optionalKey(S.Boolean),
   bubblesSayColor: S.optionalKey(S.Boolean),
   bubblesShapeMode: S.optionalKey(S.Boolean),
@@ -69,6 +70,7 @@ const PersistedSettingsSchema = S.Struct({
   drawIncludeLetters: S.optionalKey(S.Boolean),
   rpsGigaChad: S.optionalKey(S.Boolean),
   magneticBlocksBreakSpeed: S.optionalKey(S.Number),
+  talkingKeyboardEnabledPacks: S.optionalKey(S.Array(TalkingKeyboard.WordPackKey)),
   memoryEnabledPacks: S.optionalKey(S.Array(FindIt.EmojiPackKey)),
   musicBoxSongOrder: S.optionalKey(S.Array(S.Number)),
   musicBoxHiddenSongs: S.optionalKey(S.Array(S.Boolean)),
@@ -158,7 +160,6 @@ const buildSettingsData = (model: Model): PersistedSettings => ({
   findItVoiceMode: model.findIt.voiceMode,
   findItPairsMode: model.findIt.pairsMode,
   findItEnabledPacks: model.findIt.enabledPacks,
-  bubblesPopLabel: model.bubbles.popLabel,
   bubblesSayColor: model.bubbles.sayColor,
   bubblesShapeMode: model.bubbles.shapeMode,
   drawTopN: model.draw.topN,
@@ -171,6 +172,7 @@ const buildSettingsData = (model: Model): PersistedSettings => ({
   drawIncludeLetters: model.draw.includeLetters,
   rpsGigaChad: model.rps.gigaChad,
   magneticBlocksBreakSpeed: model.magneticBlocks.breakSpeed,
+  talkingKeyboardEnabledPacks: model.talkingKeyboard.enabledPacks,
   memoryEnabledPacks: model.memory.enabledPacks,
   musicBoxSongOrder: model.musicBox.songOrder,
   musicBoxHiddenSongs: model.musicBox.hiddenSongs,
@@ -274,6 +276,7 @@ export const Message = S.Union([
   MagneticBlocks.SetBreakSpeed,
   TalkingKeyboard.PressedLetter,
   TalkingKeyboard.AskQuestion,
+  TalkingKeyboard.SetWordPackEnabled,
   TalkingKeyboard.SoundPlayed,
   TalkingClock.SetTime,
   TalkingClock.WindToNow,
@@ -319,7 +322,6 @@ export const Message = S.Union([
   FindIt.SoundPlayed,
   Bubbles.SoundPlayed,
   Bubbles.SetRainbowMode,
-  Bubbles.SetPopLabel,
   Bubbles.SetSayColor,
   Bubbles.SetShapeMode,
   Bubbles.SetSelectedShape,
@@ -465,7 +467,6 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
       findIt: { ...findItInit, anyWins: saved.findItAnyWins ?? false, voiceMode, pairsMode, enabledPacks: findItEnabledPacks },
       bubbles: {
         ...Bubbles.init(),
-        popLabel: saved.bubblesPopLabel ?? false,
         sayColor: saved.bubblesSayColor ?? false,
         shapeMode: saved.bubblesShapeMode ?? false,
       },
@@ -491,7 +492,7 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
         ...MagneticBlocks.init,
         breakSpeed: MagneticBlocks.normalizeBreakSpeed(saved.magneticBlocksBreakSpeed ?? MagneticBlocks.init.breakSpeed),
       },
-      talkingKeyboard: TalkingKeyboard.init(),
+      talkingKeyboard: TalkingKeyboard.init(saved.talkingKeyboardEnabledPacks),
       talkingClock: TalkingClock.init(),
       settingsPanelWidth: 150,
       isDraggingSettings: false,
@@ -675,7 +676,6 @@ const applyImportData = (model: Model, s: PersistedSettings): Model => {
     findIt: importedFindIt,
     bubbles: {
       ...model.bubbles,
-      popLabel: s.bubblesPopLabel ?? model.bubbles.popLabel,
       sayColor: s.bubblesSayColor ?? model.bubbles.sayColor,
       shapeMode: s.bubblesShapeMode ?? model.bubbles.shapeMode,
     },
@@ -702,7 +702,9 @@ const applyImportData = (model: Model, s: PersistedSettings): Model => {
       breakSpeed: MagneticBlocks.normalizeBreakSpeed(s.magneticBlocksBreakSpeed ?? model.magneticBlocks.breakSpeed),
     },
     phonemeGarden: model.phonemeGarden,
-    talkingKeyboard: model.talkingKeyboard,
+    talkingKeyboard: s.talkingKeyboardEnabledPacks === undefined
+      ? model.talkingKeyboard
+      : TalkingKeyboard.init(s.talkingKeyboardEnabledPacks),
     musicBox: {
       ...model.musicBox,
       songOrder: normalizeSongOrder(s.musicBoxSongOrder, model.musicBox.songOrder),
@@ -800,6 +802,7 @@ const _update = (
       MagneticBlocksSetBreakSpeed: (msg) => updateMagneticBlocks(model, msg),
       TalkingKeyboardPressedLetter: (msg) => updateTalkingKeyboard(model, msg),
       TalkingKeyboardAskQuestion: (msg) => updateTalkingKeyboard(model, msg),
+      TalkingKeyboardSetWordPackEnabled: (msg) => updateTalkingKeyboard(model, msg),
       TalkingKeyboardSoundPlayed: (msg) => updateTalkingKeyboard(model, msg),
       TalkingClockSetTime: (msg) => updateTalkingClock(model, msg),
       TalkingClockWindToNow: (msg) => updateTalkingClock(model, msg),
@@ -873,7 +876,6 @@ const _update = (
       BubblesSoundPlayed: (msg) => updateBubbles(model, msg),
       BubblesClickedColor: (msg) => updateBubbles(model, msg),
       BubblesSetRainbowMode: (msg) => updateBubbles(model, msg),
-      BubblesSetPopLabel: (msg) => updateBubbles(model, msg),
       BubblesSetSayColor: (msg) => updateBubbles(model, msg),
       BubblesSetShapeMode: (msg) => updateBubbles(model, msg),
       BubblesSetSelectedShape: (msg) => updateBubbles(model, msg),
@@ -1009,10 +1011,11 @@ export const PERSISTED_SETTINGS_MESSAGE_TAGS = [
   'ClickedDarkMode', 'SetLanguage', 'ToggleMute', 'SetSpeechRate', 'SetSpeechPitch',
   'CounterSetDisplayMode',
   'FindItSetAnyWins', 'FindItSetVoiceMode', 'FindItSetPairsMode', 'FindItSetEmojiPackEnabled',
-  'BubblesSetPopLabel', 'BubblesSetSayColor', 'BubblesSetShapeMode',
+  'BubblesSetSayColor', 'BubblesSetShapeMode',
   'DrawSetTopN', 'DrawSetRecognitionMode', 'DrawSetTargetOrderMode', 'DrawSetFreeMode', 'DrawSetIncludeSingle', 'DrawSetIncludePairs', 'DrawSetIncludeNumbers', 'DrawSetIncludeLetters',
   'MemorySetEmojiPackEnabled', 'RpsSetGigaChad',
   'MagneticBlocksSetBreakSpeed',
+  'TalkingKeyboardSetWordPackEnabled',
   'MusicBoxSetDrumVolume', 'MusicBoxToggleSongVisibility', 'MusicBoxSongDroppedOn',
   'LandingSettingsDroppedOn', 'LandingToggleGameVisibility',
 ] as const satisfies ReadonlyArray<Message['_tag']>
@@ -1307,15 +1310,7 @@ export const view = (model: Model): Document => {
               h.h3([], [t('bubblesTitle', model.language)]),
               h.div([h.Class('lang-buttons')], [
                 h.button(
-                  [h.Class(!model.bubbles.popLabel && !model.bubbles.sayColor ? 'btn btn-primary' : 'btn btn-secondary'), settingsOnClick(Bubbles.SetPopLabel({ value: false }))],
-                  [t('normal', model.language)],
-                ),
-                h.button(
-                  [h.Class(model.bubbles.popLabel && !model.bubbles.sayColor ? 'btn btn-primary' : 'btn btn-secondary'), settingsOnClick(Bubbles.SetPopLabel({ value: true }))],
-                  [t('popLabel', model.language)],
-                ),
-                h.button(
-                  [h.Class(model.bubbles.sayColor ? 'btn btn-primary' : 'btn btn-secondary'), settingsOnClick(Bubbles.SetSayColor({ value: true }))],
+                  [h.Class(model.bubbles.sayColor ? 'btn btn-primary' : 'btn btn-secondary'), settingsOnClick(Bubbles.SetSayColor({ value: !model.bubbles.sayColor }))],
                   [t('sayColor', model.language)],
                 ),
               ]),
@@ -1324,6 +1319,31 @@ export const view = (model: Model): Document => {
                   [h.Class(model.bubbles.shapeMode ? 'btn btn-primary' : 'btn btn-secondary'), settingsOnClick(Bubbles.SetShapeMode({ value: !model.bubbles.shapeMode }))],
                   [t('shapeMode', model.language)],
                 ),
+              ]),
+            ])
+            : null,
+          model.page._tag === 'PageTalkingKeyboard'
+            ? h.div([h.Class('setting-section')], [
+              h.h3([], [t('talkingKeyboardTitle', model.language)]),
+              h.div([h.Class('setting-row')], [
+                h.label([], [t('talkingKeyboardWordPacks', model.language)]),
+                h.div([h.Class('emoji-pack-buttons')], [
+                  ...TalkingKeyboard.WORD_PACKS.map((pack) => {
+                    const enabled = model.talkingKeyboard.enabledPacks.includes(pack.key)
+                    const isLastEnabled = enabled && model.talkingKeyboard.enabledPacks.length === 1
+                    return h.button(
+                      [
+                        h.Class(enabled ? 'btn btn-primary emoji-pack-btn' : 'btn btn-secondary emoji-pack-btn'),
+                        h.Disabled(isLastEnabled),
+                        settingsOnClick(TalkingKeyboard.SetWordPackEnabled({ key: pack.key, value: !enabled })),
+                      ],
+                      [
+                        h.span([h.Class('emoji-pack-sample')], [pack.sample]),
+                        h.span([], [t(pack.labelKey, model.language)]),
+                      ],
+                    )
+                  }),
+                ]),
               ]),
             ])
             : null,
@@ -1632,7 +1652,7 @@ export const view = (model: Model): Document => {
       PagePattern: () => Pattern.view(model.pattern, model.language),
       PageBsl: () => Bsl.view(model.bsl, model.language),
       PageRps: () => Rps.view(model.rps, model.language),
-      PageMagneticBlocks: () => MagneticBlocks.view(model.magneticBlocks, model.language, model.muted),
+      PageMagneticBlocks: () => MagneticBlocks.view(model.magneticBlocks, model.language, model.muted, { rate: model.speechRate, pitch: model.speechPitch, lang: model.language }),
       PageTalkingKeyboard: () => TalkingKeyboard.view(model.talkingKeyboard, model.language),
       PageTalkingClock: () => TalkingClock.view(model.talkingClock),
     }),

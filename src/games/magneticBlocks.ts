@@ -2,8 +2,9 @@ import { Effect, Schema as S, Stream } from 'effect'
 import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
 
-import { getContext } from '../audio'
+import { getContext, warmAudio } from '../audio'
 import { t } from '../i18n'
+import { speakNow, type SpeechOptions } from '../speech'
 
 const INITIAL_BLOCKS = 8
 const MAX_BLOCKS = 48
@@ -53,7 +54,7 @@ export interface BoardBounds {
   readonly height: number
 }
 
-interface SnapResult {
+export interface SnapResult {
   readonly dx: number
   readonly dy: number
   readonly bond: MagneticBond
@@ -68,7 +69,17 @@ interface DragState {
   lastY: number
   lastTime: number
   brokeApart: boolean
+  equations: string[]
 }
+
+export interface MagneticJoin {
+  readonly left: number
+  readonly right: number
+  readonly total: number
+}
+
+export const joinEquation = (left: number, right: number): string => `${left}+${right}=${left + right}`
+export const splitEquation = (whole: number, removed: number): string => `${whole}-${removed}=${whole - removed}`
 
 const BLOCK_FACES = ['round', 'wide', 'side-eye', 'sleepy', 'cross-eyed', 'surprised'] as const
 type BlockFace = typeof BLOCK_FACES[number]
@@ -183,6 +194,16 @@ export const splitComponentAtBestBond = (
   return best ? { bonds: best.bonds, draggedIds: best.draggedIds } : undefined
 }
 
+const overlapsAt = (
+  movingBlock: MagneticBlock,
+  stationaryBlock: MagneticBlock,
+  dx: number,
+  dy: number,
+  cell: number,
+): boolean =>
+  Math.abs(movingBlock.x + dx - stationaryBlock.x) < cell - 0.01
+  && Math.abs(movingBlock.y + dy - stationaryBlock.y) < cell - 0.01
+
 const wouldOverlap = (
   blocks: readonly MagneticBlock[],
   moving: ReadonlySet<number>,
@@ -194,13 +215,124 @@ const wouldOverlap = (
     if (!moving.has(movingBlock.id)) continue
     for (const stationaryBlock of blocks) {
       if (moving.has(stationaryBlock.id)) continue
-      if (
-        Math.abs(movingBlock.x + dx - stationaryBlock.x) < cell * 0.72
-        && Math.abs(movingBlock.y + dy - stationaryBlock.y) < cell * 0.72
-      ) return true
+      if (overlapsAt(movingBlock, stationaryBlock, dx, dy, cell)) return true
     }
   }
   return false
+}
+
+const canReachOutsideComponent = (
+  movingBlocks: readonly MagneticBlock[],
+  stationaryBlocks: readonly MagneticBlock[],
+  cell: number,
+): boolean => {
+  // A finite component cannot enclose a path that has travelled farther than
+  // its total number of unit blocks. Until then, test every possible unit
+  // translation against every individual stationary block.
+  const escapeSteps = stationaryBlocks.length + movingBlocks.length + 2
+  const queue: Array<readonly [number, number]> = [[0, 0]]
+  const visited = new Set(['0:0'])
+
+  for (let index = 0; index < queue.length; index++) {
+    const [stepX, stepY] = queue[index]!
+    if (Math.abs(stepX) + Math.abs(stepY) > escapeSteps) return true
+
+    for (const [nextX, nextY] of [
+      [stepX - 1, stepY],
+      [stepX + 1, stepY],
+      [stepX, stepY - 1],
+      [stepX, stepY + 1],
+    ] as const) {
+      const key = `${nextX}:${nextY}`
+      if (visited.has(key)) continue
+      const nextDx = nextX * cell
+      const nextDy = nextY * cell
+      if (movingBlocks.some(movingBlock => stationaryBlocks.some(stationaryBlock =>
+        overlapsAt(movingBlock, stationaryBlock, nextDx, nextDy, cell)))) continue
+      visited.add(key)
+      queue.push([nextX, nextY])
+    }
+  }
+
+  return false
+}
+
+const fitsBoard = (
+  blocks: readonly MagneticBlock[],
+  moving: ReadonlySet<number>,
+  dx: number,
+  dy: number,
+  cell: number,
+  bounds?: BoardBounds,
+): boolean => !bounds || blocks.every(block => !moving.has(block.id) || (
+  block.x + dx >= cell / 2
+  && block.y + dy >= cell / 2
+  && block.x + dx <= bounds.width - cell / 2
+  && block.y + dy <= bounds.height - cell / 2
+))
+
+/**
+ * Finds a collision-free exterior edge for a component that overlaps another
+ * component, or is trapped by its individual unit blocks. Unlike normal
+ * magnetic snapping, this correction is not distance-limited.
+ */
+export const findOverlapSnap = (
+  blocks: readonly MagneticBlock[],
+  bonds: readonly MagneticBond[],
+  movingIds: readonly number[],
+  cell: number,
+  bounds?: BoardBounds,
+): SnapResult | undefined => {
+  const moving = new Set(movingIds)
+  const movingBlocks = blocks.filter(block => moving.has(block.id))
+  let closest: (SnapResult & { readonly distance: number }) | undefined
+
+  for (const ids of componentsFor(blocks, bonds)) {
+    if (ids.some(id => moving.has(id))) continue
+    const stationary = new Set(ids)
+    const stationaryBlocks = blocks.filter(block => stationary.has(block.id))
+    if (stationaryBlocks.length === 0) continue
+
+    const overlaps = movingBlocks.some(movingBlock =>
+      stationaryBlocks.some(stationaryBlock => overlapsAt(movingBlock, stationaryBlock, 0, 0, cell)))
+    const enclosed = !overlaps
+      && stationaryBlocks.length > movingBlocks.length
+      && !canReachOutsideComponent(movingBlocks, stationaryBlocks, cell)
+    if (!overlaps && !enclosed) continue
+
+    for (const movingBlock of movingBlocks) {
+      for (const stationaryBlock of stationaryBlocks) {
+        const targets = [
+          { x: stationaryBlock.x - cell, y: stationaryBlock.y },
+          { x: stationaryBlock.x + cell, y: stationaryBlock.y },
+          { x: stationaryBlock.x, y: stationaryBlock.y - cell },
+          { x: stationaryBlock.x, y: stationaryBlock.y + cell },
+        ]
+        for (const target of targets) {
+          const dx = target.x - movingBlock.x
+          const dy = target.y - movingBlock.y
+          if (!fitsBoard(blocks, moving, dx, dy, cell, bounds)) continue
+          if (wouldOverlap(blocks, moving, dx, dy, cell)) continue
+          if (enclosed && !canReachOutsideComponent(
+            movingBlocks.map(block => ({ ...block, x: block.x + dx, y: block.y + dy })),
+            stationaryBlocks,
+            cell,
+          )) continue
+          const distance = Math.hypot(dx, dy)
+          if (!closest || distance < closest.distance) {
+            closest = {
+              dx,
+              dy,
+              distance,
+              bond: { a: movingBlock.id, b: stationaryBlock.id },
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return closest
 }
 
 export const findClosestSnap = (
@@ -228,12 +360,7 @@ export const findClosestSnap = (
         const dy = target.y - movingBlock.y
         const distance = Math.hypot(dx, dy)
         if (distance > snapDistance) continue
-        if (bounds && blocks.some(block => moving.has(block.id) && (
-          block.x + dx < cell / 2
-          || block.y + dy < cell / 2
-          || block.x + dx > bounds.width - cell / 2
-          || block.y + dy > bounds.height - cell / 2
-        ))) continue
+        if (!fitsBoard(blocks, moving, dx, dy, cell, bounds)) continue
         if (wouldOverlap(blocks, moving, dx, dy, cell)) continue
         if (!closest || distance < closest.distance) {
           closest = {
@@ -256,17 +383,21 @@ export const snapTogether = (
   cell: number,
   snapDistance: number,
   bounds: BoardBounds,
-): { bonds: MagneticBond[]; ids: number[] } => {
+): { bonds: MagneticBond[]; ids: number[]; joins: MagneticJoin[] } => {
   let nextBonds = [...bonds]
   let joinedIds = [...movingIds]
+  const joins: MagneticJoin[] = []
 
   // Each loop either adds a new component to the moving shape or stops. The
   // bound guarantees that a malformed board can never create a snap loop.
   for (let step = 0; step < blocks.length; step++) {
-    const snap = findClosestSnap(blocks, joinedIds, cell, snapDistance, bounds)
+    const snap = findOverlapSnap(blocks, nextBonds, joinedIds, cell, bounds)
+      ?? findClosestSnap(blocks, joinedIds, cell, snapDistance, bounds)
     if (!snap) break
     const key = bondKey(snap.bond.a, snap.bond.b)
     if (nextBonds.some(bond => bondKey(bond.a, bond.b) === key)) break
+    const left = joinedIds.length
+    const stationary = componentsFor(blocks, nextBonds).find(component => component.includes(snap.bond.b))
 
     for (const id of joinedIds) {
       const block = blocks.find(candidate => candidate.id === id)
@@ -278,10 +409,41 @@ export const snapTogether = (
     nextBonds = [...nextBonds, snap.bond]
     const expanded = componentsFor(blocks, nextBonds).find(component => component.includes(snap.bond.a))
     if (!expanded || expanded.length <= joinedIds.length) break
+    joins.push({ left, right: stationary?.length ?? expanded.length - left, total: expanded.length })
     joinedIds = expanded
   }
 
-  return { bonds: nextBonds, ids: joinedIds }
+  return { bonds: nextBonds, ids: joinedIds, joins }
+}
+
+export const settleOverlappingBlocks = (
+  blocks: MagneticBlock[],
+  bonds: readonly MagneticBond[],
+  cell: number,
+  bounds: BoardBounds,
+): { bonds: MagneticBond[]; ids: number[]; joins: MagneticJoin[] } => {
+  let nextBonds = [...bonds]
+  const settledIds = new Set<number>()
+  const joins: MagneticJoin[] = []
+
+  // Prefer moving the smaller component, which makes an enclosed collection
+  // leave the larger collection instead of shifting the larger shape around it.
+  for (let step = 0; step < blocks.length; step++) {
+    const components = componentsFor(blocks, nextBonds).sort((left, right) => left.length - right.length)
+    let changed = false
+    for (const component of components) {
+      const snapped = snapTogether(blocks, nextBonds, component, cell, -1, bounds)
+      if (snapped.joins.length === 0) continue
+      nextBonds = snapped.bonds
+      for (const id of snapped.ids) settledIds.add(id)
+      joins.push(...snapped.joins)
+      changed = true
+      break
+    }
+    if (!changed) break
+  }
+
+  return { bonds: nextBonds, ids: [...settledIds], joins }
 }
 
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value))
@@ -475,6 +637,16 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
           let faces = new Map<number, BlockFace>()
           let labels = new Map<number, MagneticLabelCorner>()
 
+          const speechOptions = (): SpeechOptions => {
+            const rate = Number(board.getAttribute('data-magnetic-speech-rate'))
+            const pitch = Number(board.getAttribute('data-magnetic-speech-pitch'))
+            return {
+              ...(Number.isFinite(rate) && rate > 0 ? { rate } : {}),
+              ...(Number.isFinite(pitch) && pitch > 0 ? { pitch } : {}),
+              lang: board.getAttribute('data-magnetic-language') ?? 'en',
+            }
+          }
+
           const bounds = (): BoardBounds => {
             const rect = board.getBoundingClientRect()
             return { width: rect.width, height: rect.height }
@@ -557,7 +729,7 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
           const randomPosition = (): { x: number; y: number } | undefined => {
             const area = bounds()
             const isOpen = (x: number, y: number): boolean =>
-              blocks.every(block => Math.abs(x - block.x) >= cell * 0.92 || Math.abs(y - block.y) >= cell * 0.92)
+              blocks.every(block => Math.abs(x - block.x) >= cell || Math.abs(y - block.y) >= cell)
             for (let attempt = 0; attempt < 160; attempt++) {
               const x = cell / 2 + Math.random() * Math.max(0, area.width - cell)
               const y = cell / 2 + Math.random() * Math.max(0, area.height - cell)
@@ -641,6 +813,7 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
               lastY: point.y,
               lastTime: event.timeStamp,
               brokeApart: false,
+              equations: [],
             }
             for (const draggedId of ids) blocks.find(block => block.id === draggedId)?.el.classList.add('magnetic-block--dragging')
             board.setPointerCapture(event.pointerId)
@@ -655,6 +828,7 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
             if (speed > breakSpeed && drag.ids.length > 1 && !drag.brokeApart) {
               const split = splitComponentAtBestBond(blocks, bonds, drag.grabbedId, point.x - drag.lastX, point.y - drag.lastY)
               if (split) {
+                drag.equations.push(splitEquation(drag.ids.length, split.draggedIds.length))
                 bonds = split.bonds
                 for (const id of drag.ids) blocks.find(block => block.id === id)?.el.classList.remove('magnetic-block--dragging')
                 drag.ids = split.draggedIds
@@ -677,13 +851,19 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
             const snapped = snapTogether(blocks, bonds, drag.ids, cell, cell * SNAP_DISTANCE_FACTOR, bounds())
             bonds = snapped.bonds
             const joins = bonds.length - previousBondCount
+            const equations = [
+              ...drag.equations,
+              ...snapped.joins.map(join => joinEquation(join.left, join.right)),
+            ]
             if (joins > 0) showSnap(snapped.ids)
             for (const id of drag.ids) blocks.find(block => block.id === id)?.el.classList.remove('magnetic-block--dragging')
             if (board.hasPointerCapture(event.pointerId)) board.releasePointerCapture(event.pointerId)
             drag = undefined
             render()
             if (!muted && event.type === 'pointerup') {
+              warmAudio()
               if (joins > 0) playMagnetClick('join', joins)
+              if (equations.length > 0) speakNow(equations.join('. '), speechOptions())
             }
           }
 
@@ -696,6 +876,9 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
               block.x = clamp(block.x * scale, cell / 2, area.width - cell / 2)
               block.y = clamp(block.y * scale, cell / 2, area.height - cell / 2)
             }
+            const settled = settleOverlappingBlocks(blocks, bonds, cell, area)
+            bonds = settled.bonds
+            if (settled.ids.length > 0) showSnap(settled.ids)
             render()
           }
 
@@ -740,7 +923,7 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
     }),
   )
 
-export const view = (model: Model, language: string = 'en', muted: boolean = false) => {
+export const view = (model: Model, language: string = 'en', muted: boolean = false, speech: SpeechOptions = {}) => {
   const h = html<Message>()
 
   return h.div(
@@ -763,6 +946,9 @@ export const view = (model: Model, language: string = 'en', muted: boolean = fal
           h.Attribute('data-magnetic-remove-id', model.removeId.toString()),
           h.Attribute('data-magnetic-break-speed', model.breakSpeed.toString()),
           h.Attribute('data-magnetic-muted', muted.toString()),
+          h.Attribute('data-magnetic-speech-rate', String(speech.rate ?? '')),
+          h.Attribute('data-magnetic-speech-pitch', String(speech.pitch ?? '')),
+          h.Attribute('data-magnetic-language', speech.lang ?? language),
           h.OnMount({ name: 'magneticBlocks', f: mountMagneticBlocks }),
         ], []),
         h.p([h.Class('magnetic-blocks-key')], ['Same-sized colour = one magnetic shape. Snap blocks edge-to-edge!']),

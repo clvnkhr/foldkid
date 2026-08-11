@@ -1,7 +1,7 @@
 import { Effect, Fiber, Stream } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { blockFillColor, componentColor, componentOutlineColor, componentsFor, DEFAULT_BREAK_SPEED, findClosestSnap, init, labelPlacementFor, mountMagneticBlocks, RemoveBlock, removeBondsFor, SetBreakSpeed, snapTogether, SpawnBlocks, splitComponentAtBestBond, update } from './magneticBlocks'
+import { blockFillColor, componentColor, componentOutlineColor, componentsFor, DEFAULT_BREAK_SPEED, findClosestSnap, init, joinEquation, labelPlacementFor, mountMagneticBlocks, RemoveBlock, removeBondsFor, SetBreakSpeed, snapTogether, SpawnBlocks, splitComponentAtBestBond, splitEquation, update } from './magneticBlocks'
 
 describe('Magnetic Blocks', () => {
   const blocks = [
@@ -83,6 +83,92 @@ describe('Magnetic Blocks', () => {
     expect(snap).toBeUndefined()
   })
 
+  it('always separates and joins overlapping blocks even outside the normal snap distance', () => {
+    const overlapping = [
+      { id: 1, x: 130, y: 100 },
+      { id: 2, x: 150, y: 100 },
+    ]
+    const snapped = snapTogether(overlapping, [], [1], 50, 0, { width: 300, height: 250 })
+
+    expect(snapped.ids).toHaveLength(2)
+    expect(snapped.joins).toEqual([{ left: 1, right: 1, total: 2 }])
+    expect(Math.abs(overlapping[0]!.x - overlapping[1]!.x) === 50
+      || Math.abs(overlapping[0]!.y - overlapping[1]!.y) === 50).toBe(true)
+    expect(Math.abs(overlapping[0]!.x - overlapping[1]!.x) < 50
+      && Math.abs(overlapping[0]!.y - overlapping[1]!.y) < 50).toBe(false)
+  })
+
+  it('moves a block out of a larger component boundary before joining its outer edge', () => {
+    const ring = [
+      { id: 1, x: 100, y: 100 },
+      { id: 2, x: 150, y: 100 },
+      { id: 3, x: 200, y: 100 },
+      { id: 4, x: 200, y: 150 },
+      { id: 5, x: 200, y: 200 },
+      { id: 6, x: 150, y: 200 },
+      { id: 7, x: 100, y: 200 },
+      { id: 8, x: 100, y: 150 },
+      { id: 9, x: 150, y: 150 },
+    ]
+    const ringBonds = [
+      { a: 1, b: 2 }, { a: 2, b: 3 }, { a: 3, b: 4 }, { a: 4, b: 5 },
+      { a: 5, b: 6 }, { a: 6, b: 7 }, { a: 7, b: 8 }, { a: 8, b: 1 },
+    ]
+    const snapped = snapTogether(ring, ringBonds, [9], 50, 0, { width: 350, height: 300 })
+    const moved = ring.find(block => block.id === 9)!
+
+    expect(snapped.ids).toHaveLength(9)
+    expect(snapped.joins).toEqual([{ left: 1, right: 8, total: 9 }])
+    expect(moved.x < 100 || moved.x > 200 || moved.y < 100 || moved.y > 200).toBe(true)
+    expect(ring.slice(0, 8).some(block =>
+      (Math.abs(moved.x - block.x) === 50 && moved.y === block.y)
+      || (Math.abs(moved.y - block.y) === 50 && moved.x === block.x))).toBe(true)
+    expect(ring.slice(0, 8).every(block =>
+      Math.abs(moved.x - block.x) >= 50 || Math.abs(moved.y - block.y) >= 50)).toBe(true)
+  })
+
+  it('keeps unusual attachments near an odd component boundary in place', () => {
+    const hook = [
+      { id: 1, x: 100, y: 100 },
+      { id: 2, x: 150, y: 100 },
+      { id: 3, x: 200, y: 100 },
+      { id: 4, x: 200, y: 150 },
+      { id: 5, x: 200, y: 200 },
+      { id: 6, x: 100, y: 150 },
+    ]
+    const snapped = snapTogether(hook, [
+      { a: 1, b: 2 }, { a: 2, b: 3 }, { a: 3, b: 4 }, { a: 4, b: 5 },
+    ], [6], 50, 5, { width: 350, height: 300 })
+
+    expect(hook[5]).toMatchObject({ x: 100, y: 150 })
+    expect(snapped.joins).toEqual([{ left: 1, right: 5, total: 6 }])
+  })
+
+  it('allows a one-block attachment deep inside an open C-shaped well', () => {
+    const deepC = [
+      { id: 1, x: 100, y: 100 },
+      { id: 2, x: 150, y: 100 },
+      { id: 3, x: 200, y: 100 },
+      { id: 4, x: 250, y: 100 },
+      { id: 5, x: 100, y: 150 },
+      { id: 6, x: 100, y: 200 },
+      { id: 7, x: 100, y: 250 },
+      { id: 8, x: 100, y: 300 },
+      { id: 9, x: 150, y: 300 },
+      { id: 10, x: 200, y: 300 },
+      { id: 11, x: 250, y: 300 },
+      { id: 12, x: 150, y: 200 },
+    ]
+    const snapped = snapTogether(deepC, [
+      { a: 1, b: 2 }, { a: 2, b: 3 }, { a: 3, b: 4 },
+      { a: 1, b: 5 }, { a: 5, b: 6 }, { a: 6, b: 7 }, { a: 7, b: 8 },
+      { a: 8, b: 9 }, { a: 9, b: 10 }, { a: 10, b: 11 },
+    ], [12], 50, 5, { width: 400, height: 400 })
+
+    expect(deepC[11]).toMatchObject({ x: 150, y: 200 })
+    expect(snapped.joins).toEqual([{ left: 1, right: 11, total: 12 }])
+  })
+
   it('keeps snapping until every touching component has joined the moving shape', () => {
     const magneticBlocks = [
       { id: 1, x: 100, y: 100 },
@@ -95,6 +181,15 @@ describe('Magnetic Blocks', () => {
 
     expect(componentsFor(magneticBlocks, snapped.bonds)[0]).toEqual(expect.arrayContaining([1, 2, 3, 4, 5]))
     expect(snapped.ids).toHaveLength(5)
+    expect(snapped.joins).toEqual([
+      { left: 3, right: 1, total: 4 },
+      { left: 4, right: 1, total: 5 },
+    ])
+  })
+
+  it('formats component-size arithmetic for joins and splits', () => {
+    expect(joinEquation(3, 2)).toBe('3+2=5')
+    expect(splitEquation(5, 2)).toBe('5-2=3')
   })
 
   it('keeps a collection label on its outer boundary corner as blocks are added', () => {

@@ -52,6 +52,20 @@ describe('Bubbles', () => {
     )
   })
 
+  it('handles each shape choice on pointer-up so simultaneous touches are not click-suppressed', () => {
+    Scene.scene(
+      { update: Bubbles.update, view: Bubbles.view },
+      Scene.with({ ...Bubbles.init(), shapeMode: true }),
+      Scene.Mount.resolveAll(resolveAnim, resolveColorSelector),
+      Scene.Command.resolveAll(resolveChime, resolveSpeak),
+      Scene.pointerUp(Scene.text('Star')),
+      Scene.expect(Scene.selector('.shape-btn--active')).toHaveText('Star'),
+      Scene.pointerUp(Scene.text('Heart')),
+      Scene.expect(Scene.selector('.shape-btn--active')).toHaveText('Heart'),
+      Scene.Command.expectNone(),
+    )
+  })
+
   it('uses a newly selected shape for the next bubble', () => {
     Story.story(
       Bubbles.update,

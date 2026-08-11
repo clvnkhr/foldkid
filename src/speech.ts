@@ -21,6 +21,23 @@ export const findVoice = (lang: string): SpeechSynthesisVoice | undefined => {
   return voices.find(v => v.lang.startsWith(lang)) ?? voices.find(v => v.lang.startsWith(lang.slice(0, 2)))
 }
 
+export const speakNow = (text: string, options?: SpeechOptions): void => {
+  const synth = getSpeechSynthesis()
+  if (!synth || typeof globalThis.SpeechSynthesisUtterance === 'undefined') return
+  synth.cancel()
+  const utterance = new SpeechSynthesisUtterance(text)
+  utterance.rate = options?.rate ?? DEFAULT_SPEECH_RATE
+  utterance.pitch = options?.pitch ?? DEFAULT_SPEECH_PITCH
+  utterance.lang = options?.lang ?? 'en'
+  const voice = findVoice(utterance.lang)
+  if (voice) utterance.voice = voice
+  try {
+    synth.speak(utterance)
+  } catch {
+    // Speech is optional; some browsers expose the API but reject playback.
+  }
+}
+
 // NOTE (iOS Safari): the event that triggers the message dispatch MUST be a
 // qualifying user gesture for audio. `touchstart` and `pointerdown` with touch
 // do NOT qualify — `touchend`, `pointerup`, and `click` DO. Using `touchstart`
@@ -36,22 +53,7 @@ export const speak = <Msg>(
   effect: playTone(800, 0.06, 'square').pipe(
     Effect.flatMap(() =>
       Effect.sync(() => {
-        const synth = getSpeechSynthesis()
-        if (!synth || typeof globalThis.SpeechSynthesisUtterance === 'undefined') {
-          return msg
-        }
-        synth.cancel()
-        const utterance = new SpeechSynthesisUtterance(text)
-        utterance.rate = options?.rate ?? DEFAULT_SPEECH_RATE
-        utterance.pitch = options?.pitch ?? DEFAULT_SPEECH_PITCH
-        utterance.lang = options?.lang ?? 'en'
-        const voice = findVoice(utterance.lang)
-        if (voice) utterance.voice = voice
-        try {
-          synth.speak(utterance)
-        } catch {
-          // speech synthesis failed
-        }
+        speakNow(text, options)
         return msg
       }),
     ),

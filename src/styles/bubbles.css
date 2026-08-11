@@ -160,6 +160,7 @@
   background: var(--btn-secondary-bg);
   color: var(--btn-secondary-text);
   transition: transform 0.15s, border-color 0.15s, background 0.15s;
+  touch-action: manipulation;
 }
 
 .shape-btn:hover {
