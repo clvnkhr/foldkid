@@ -40,6 +40,7 @@ const DEFAULT_INCLUDE_NUMBERS = true
 const DEFAULT_INCLUDE_LETTERS = true
 export const INK_COLORS = ['#161616', '#e03131', '#f08c00', '#fcc419', '#2f9e44', '#1971c2', '#7048e8', '#9c36b5'] as const
 const DEFAULT_INK_COLOR = INK_COLORS[0]
+const DARK_DEFAULT_INK_COLOR = '#fff'
 const OCR_CANDIDATES = [...MODEL_LABELS, '+', '-', '=', '?', '!', '@', '$', '%']
 const ALLOWED_TARGETS = new Set(MODEL_LABELS)
 const NEAR_MATCH_GROUPS = [
@@ -892,7 +893,14 @@ const findAngledLeftRightSplit = (
   return null
 }
 
-export const __drawTest = { findLeftRightSplit }
+const strokeColorForCanvas = (canvas: HTMLCanvasElement): string => {
+  const selectedColor = canvas.dataset.inkColor ?? DEFAULT_INK_COLOR
+  return selectedColor === DEFAULT_INK_COLOR && canvas.closest('.dark')
+    ? DARK_DEFAULT_INK_COLOR
+    : selectedColor
+}
+
+export const __drawTest = { findLeftRightSplit, strokeColorForCanvas }
 
 const normalizeGrid = (data: Uint8ClampedArray, width: number, height: number): Grid | null => {
   const bounds = findInkBounds(data, width, height)
@@ -927,8 +935,6 @@ const snapshotCanvas = (canvas: HTMLCanvasElement, label: string): DebugImage =>
   output.height = canvas.height
   const context = output.getContext('2d')
   if (context) {
-    context.fillStyle = '#fff'
-    context.fillRect(0, 0, output.width, output.height)
     context.drawImage(canvas, 0, 0)
   }
   return { label, src: output.toDataURL('image/png'), kind: 'image' }
@@ -1261,7 +1267,7 @@ const mountWhiteboard = (target: string) => (element: Element): Stream.Stream<Me
           if (context) {
             context.lineCap = 'round'
             context.lineJoin = 'round'
-            context.strokeStyle = canvas.dataset.inkColor ?? DEFAULT_INK_COLOR
+            context.strokeStyle = strokeColorForCanvas(canvas)
             context.lineWidth = brushSizeFromCanvas(canvas)
           }
 
@@ -1276,7 +1282,7 @@ const mountWhiteboard = (target: string) => (element: Element): Stream.Stream<Me
           const drawTo = (event: PointerEvent): void => {
             if (!context || !activePointers.has(event.pointerId)) return
             event.preventDefault()
-            context.strokeStyle = canvas.dataset.inkColor ?? DEFAULT_INK_COLOR
+            context.strokeStyle = strokeColorForCanvas(canvas)
             context.lineWidth = brushSizeFromCanvas(canvas)
             const [x, y] = point(event)
             context.lineTo(x, y)
@@ -1288,7 +1294,7 @@ const mountWhiteboard = (target: string) => (element: Element): Stream.Stream<Me
             event.preventDefault()
             canvas.setPointerCapture(event.pointerId)
             activePointers.add(event.pointerId)
-            context.strokeStyle = canvas.dataset.inkColor ?? DEFAULT_INK_COLOR
+            context.strokeStyle = strokeColorForCanvas(canvas)
             context.lineWidth = brushSizeFromCanvas(canvas)
             const [x, y] = point(event)
             context.beginPath()

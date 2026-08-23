@@ -1,5 +1,10 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import * as Draw from './draw'
+
+const drawStyles = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../styles/draw.css'), 'utf8')
 
 const predictions = (...values: string[]) =>
   values.map((value, index) => ({ value, score: 1 - index * 0.1 }))
@@ -128,6 +133,35 @@ describe('Draw', () => {
 
     expect(colored.inkColor).toBe(Draw.INK_COLORS[3])
     expect(fallback.inkColor).toBe(Draw.INK_COLORS[0])
+  })
+
+  it('keeps palette colors literal while adapting only the default marker in dark mode', () => {
+    const light = document.createElement('div')
+    const dark = document.createElement('div')
+    const lightCanvas = document.createElement('canvas')
+    const darkCanvas = document.createElement('canvas')
+    dark.className = 'dark'
+    light.append(lightCanvas)
+    dark.append(darkCanvas)
+
+    for (const color of Draw.INK_COLORS.slice(1)) {
+      lightCanvas.dataset.inkColor = color
+      darkCanvas.dataset.inkColor = color
+      expect(Draw.__drawTest.strokeColorForCanvas(lightCanvas)).toBe(color)
+      expect(Draw.__drawTest.strokeColorForCanvas(darkCanvas)).toBe(color)
+    }
+
+    lightCanvas.dataset.inkColor = Draw.INK_COLORS[0]
+    darkCanvas.dataset.inkColor = Draw.INK_COLORS[0]
+    expect(Draw.__drawTest.strokeColorForCanvas(lightCanvas)).toBe(Draw.INK_COLORS[0])
+    expect(Draw.__drawTest.strokeColorForCanvas(darkCanvas)).toBe('#fff')
+  })
+
+  it('does not invert the dark drawing surfaces', () => {
+    expect(drawStyles).not.toContain('filter:invert')
+    expect(drawStyles).toContain('.dark .draw-board{background:#161616')
+    expect(drawStyles).toContain('.dark .draw-win-img{background:#161616')
+    expect(drawStyles).toContain('.dark .draw-debug-img{background:#161616')
   })
 
   it('sets brush thickness within the supported range', () => {

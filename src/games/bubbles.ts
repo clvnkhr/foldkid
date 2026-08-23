@@ -356,7 +356,7 @@ export const update = (
           cmds.push(chime(SoundPlayed()))
           const colorName = t(getColorName(msg.color), language)
           const shapeName = model.shapeMode ? t(getShapeName(shape), language) : t('bubble', language)
-          cmds.push(speak(`${colorName.toLowerCase()} ${shapeName.toLowerCase()}`, SoundPlayed(), { lang: language }))
+          cmds.push(speak(tf('coloredShape', language, colorName.toLowerCase(), shapeName.toLowerCase()), SoundPlayed(), { lang: language }))
         }
         return [
           {

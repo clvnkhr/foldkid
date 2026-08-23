@@ -6,6 +6,8 @@ import * as FindIt from './games/findit'
 import * as Memory from './games/memory'
 import * as MusicBox from './games/musicbox'
 import * as Main from './main'
+import * as GrowingNumbers from './games/growingNumbers'
+import * as ShapeWorkshop from './games/shapeWorkshop'
 import { translations, t } from './i18n'
 import { LANDING_GAME_COUNT } from './pages/landing'
 
@@ -103,6 +105,8 @@ describe('codebase invariants', () => {
       ['Bubbles', Bubbles.Model, Bubbles.init()],
       ['Memory', Memory.Model, Memory.init()],
       ['MusicBox', MusicBox.Model, MusicBox.init()],
+      ['GrowingNumbers', GrowingNumbers.Model, GrowingNumbers.init],
+      ['ShapeWorkshop', ShapeWorkshop.Model, ShapeWorkshop.init],
       ['Main', Main.Model, Main.init()[0]],
     ] as const
 
@@ -118,6 +122,8 @@ describe('codebase invariants', () => {
       ['Bubbles color duration', Bubbles.Message, { _tag: 'BubblesClickedColor', color: '#fff', duration: 'fast' }],
       ['Memory card id', Memory.Message, { _tag: 'MemoryClickedCard', id: '0' }],
       ['MusicBox song index', MusicBox.Message, { _tag: 'MusicBoxToggleSongVisibility', index: '1' }],
+      ['Growing Numbers choice', GrowingNumbers.Message, { _tag: 'GrowingNumbersChooseGrowth', amount: '1' }],
+      ['Shape Workshop piece', ShapeWorkshop.Message, { _tag: 'ShapeWorkshopTapPiece', index: '0' }],
       ['Main nested FindIt message', Main.Message, { _tag: 'FindItSetEmojiPackEnabled', key: 'space', value: true }],
     ] as const
 

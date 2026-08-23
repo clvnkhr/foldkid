@@ -11,8 +11,10 @@ import * as MusicBox from './games/musicbox'
 import * as Rps from './games/rps/main'
 import * as MagneticBlocks from './games/magneticBlocks'
 import * as TalkingKeyboard from './games/talkingKeyboard'
+import * as GrowingNumbers from './games/growingNumbers'
+import * as ShapeWorkshop from './games/shapeWorkshop'
 import { LANDING_GAME_COUNT, LANDING_GAMES } from './pages/landing'
-import { ApplyImport, ClickedLanding, ClickedCounter, ClickedFindIt, ClickedBubbles, ClickedDarkMode, ClickedMagneticBlocks, ClickedMemory, ClickedTalkingKeyboard, ConfirmResetSettings, ExportSettings, ImportedSettings, LandingDragStarted, LandingDroppedOn, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsPersisted, ToggleMute } from './message'
+import { ApplyImport, ClickedLanding, ClickedCounter, ClickedFindIt, ClickedBubbles, ClickedDarkMode, ClickedGrowingNumbers, ClickedMagneticBlocks, ClickedMemory, ClickedShapeWorkshop, ClickedTalkingKeyboard, ConfirmResetSettings, ExportSettings, ImportedSettings, LandingDragStarted, LandingDroppedOn, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsPersisted, ToggleMute } from './message'
 
 const resolveSettings = [{ name: 'PersistSettings' }, SettingsPersisted()] as const
 const resolveBubblesChime = [{ name: 'PlayChime' }, Bubbles.SoundPlayed()] as const
@@ -148,6 +150,18 @@ describe('settings persistence', () => {
     { label: 'ClickedFindIt', msg: ClickedFindIt() },
     { label: 'ClickedBubbles', msg: ClickedBubbles() },
     { label: 'ClickedMemory', msg: ClickedMemory() },
+    { label: 'ClickedGrowingNumbers', msg: ClickedGrowingNumbers() },
+    { label: 'ClickedShapeWorkshop', msg: ClickedShapeWorkshop() },
+    {
+      label: 'GrowingNumbersChooseGrowth',
+      msg: GrowingNumbers.ChooseGrowth({ amount: 1 }),
+      resolves: [[{ name: 'GrowingNumbersFlyGrowth' }, GrowingNumbers.FinishGrowth()]],
+    },
+    {
+      label: 'ShapeWorkshopTapPiece',
+      msg: ShapeWorkshop.TapPiece({ index: 0 }),
+      resolves: [[{ name: 'ShapeWorkshopFlyPiece' }, ShapeWorkshop.PieceFlightFinished({ index: 0, token: 1 })]],
+    },
     { label: 'CounterPointerDown', msg: Counter.PointerDown({ timeStamp: 0, button: 'inc' }) },
     { label: 'FindItClickedCell', msg: FindIt.ClickedCell({ id: 0 }) },
     { label: 'BubblesClickedPop', msg: Bubbles.ClickedPop({ id: 0 }) },
@@ -217,6 +231,8 @@ describe('Main', () => {
     expect(model.findIt.enabledPacks).toEqual(FindIt.DEFAULT_EMOJI_PACK_KEYS)
     expect(model.talkingKeyboard.enabledPacks).toEqual(TalkingKeyboard.DEFAULT_WORD_PACK_KEYS)
     expect(model.bubbles).toStrictEqual({ bubbles: [], score: 0, nextId: 0, rainbowMode: false, sayColor: false, selectedColor: '', shapeMode: false, selectedShape: 'circle', shapePage: 0 })
+    expect(model.growingNumbers).toStrictEqual(GrowingNumbers.init)
+    expect(model.shapeWorkshop).toStrictEqual(ShapeWorkshop.init)
   })
 
   it('init loads persisted Find It emoji packs', () => {
@@ -366,6 +382,23 @@ describe('Main', () => {
       }),
       Story.Command.expectNone(),
     )
+  })
+
+  it('opens both visual geometry games', () => {
+    const [growingNumbers] = Main.update(createModel(), ClickedGrowingNumbers())
+    const [shapeWorkshop] = Main.update(createModel(), ClickedShapeWorkshop())
+
+    expect(growingNumbers.page._tag).toBe('PageGrowingNumbers')
+    expect(shapeWorkshop.page._tag).toBe('PageShapeWorkshop')
+  })
+
+  it('delegates both visual geometry game messages', () => {
+    const [growingNumbers] = Main.update(createModel(), GrowingNumbers.ChooseGrowth({ amount: 1 }))
+    const [shapeWorkshopFlying] = Main.update(createModel(), ShapeWorkshop.TapPiece({ index: 0 }))
+    const [shapeWorkshop] = Main.update(shapeWorkshopFlying, ShapeWorkshop.PieceFlightFinished({ index: 0, token: 1 }))
+
+    expect(growingNumbers.growingNumbers.status).toBe('correct')
+    expect(shapeWorkshop.shapeWorkshop.placedPieceIds).toEqual([0])
   })
 
   it('toggles landing game visibility while keeping at least one game visible', () => {

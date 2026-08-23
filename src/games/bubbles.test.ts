@@ -1,3 +1,4 @@
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 import { Scene, Story } from 'foldkit/test'
 import * as Bubbles from './bubbles'
@@ -7,6 +8,42 @@ const resolveChime = [{ name: 'PlayChime' }, Bubbles.SoundPlayed()] as const
 const resolveSpeak = [{ name: 'Speak' }, Bubbles.SoundPlayed()] as const
 const resolveAnim = [{ name: 'bubblesAnim' }, Bubbles.SoundPlayed()] as const
 const resolveColorSelector = [{ name: 'colorSelector' }, Bubbles.ClickedColor({ color: '', duration: 0 })] as const
+
+const captureBubbleSpeech = async (language: string): Promise<string[]> => {
+  const originalSpeechSynthesis = globalThis.speechSynthesis
+  const originalUtterance = globalThis.SpeechSynthesisUtterance
+  const spoken: string[] = []
+
+  globalThis.speechSynthesis = {
+    getVoices: () => [],
+    cancel: () => {},
+    speak: (utterance: SpeechSynthesisUtterance) => { spoken.push(utterance.text) },
+  } as unknown as SpeechSynthesis
+  globalThis.SpeechSynthesisUtterance = class MockUtterance {
+    text: string
+    rate = 1
+    pitch = 1
+    lang = 'en'
+    voice: SpeechSynthesisVoice | null = null
+    constructor(text: string) { this.text = text }
+  } as unknown as typeof SpeechSynthesisUtterance
+
+  try {
+    const [, commands] = Bubbles.update(
+      { ...Bubbles.init(), shapeMode: true, selectedShape: 'circle' },
+      Bubbles.ClickedColor({ color: '#FF4757', duration: 500 }),
+      false,
+      language,
+    )
+    const speakCommand = commands.find(command => command.name === 'Speak')
+    if (!speakCommand) throw new Error('missing Speak command')
+    await Effect.runPromise(speakCommand.effect)
+    return spoken
+  } finally {
+    globalThis.speechSynthesis = originalSpeechSynthesis
+    globalThis.SpeechSynthesisUtterance = originalUtterance
+  }
+}
 
 describe('Bubbles', () => {
   it('init creates empty state', () => {
@@ -82,6 +119,23 @@ describe('Bubbles', () => {
       Story.Command.resolveAll(resolveChime, resolveSpeak),
       Story.Command.expectNone(),
     )
+  })
+
+  it('speaks colors and shapes in each language\'s word order', async () => {
+    const expectedByLanguage = {
+      en: 'red circle',
+      zh: '红色 圓形',
+      fr: 'cercle rouge',
+      de: 'rot kreis',
+      fa: 'دایره قرمز',
+      ms: 'bulat merah',
+      'zh-HK': '紅色 圓形',
+      ja: 'あか まる',
+    } as const
+
+    for (const [language, expected] of Object.entries(expectedByLanguage)) {
+      expect(await captureBubbleSpeech(language), language).toStrictEqual([expected])
+    }
   })
 
   for (const [shapePage, labels] of [

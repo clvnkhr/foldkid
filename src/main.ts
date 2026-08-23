@@ -2,9 +2,9 @@ import { Effect, Match as M, Option, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { Document, html } from 'foldkit/html'
 
-import { ApplyImport, CancelResetSettings, ClickedAudioTest, ClickedBsl, ClickedBubbles, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedLanding, ClickedDraw, ClickedMagneticBlocks, ClickedMemory, ClickedMusicBox, ClickedPhonemeGarden, ClickedRps, ClickedSpeakerCalculator, ClickedSettings, ClickedTalkingClock, ClickedTalkingKeyboard, ClickedWhackamole, ClickedPattern, ConfirmResetSettings, CopyExportData, DismissMessage, ExportSettings, ImportSettings, ImportedSettings, LandingDragEnded, LandingDragStarted, LandingDroppedOn, LandingSettingsDragEnded, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, ResetSettings, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsDragEnded, SettingsDragMoved, SettingsDragStarted, SettingsImportFailed, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
+import { ApplyImport, CancelResetSettings, ClickedAudioTest, ClickedBsl, ClickedBubbles, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedGrowingNumbers, ClickedLanding, ClickedDraw, ClickedMagneticBlocks, ClickedMemory, ClickedMusicBox, ClickedPhonemeGarden, ClickedRps, ClickedShapeWorkshop, ClickedSpeakerCalculator, ClickedSettings, ClickedTalkingClock, ClickedTalkingKeyboard, ClickedWhackamole, ClickedPattern, ConfirmResetSettings, CopyExportData, DismissMessage, ExportSettings, ImportSettings, ImportedSettings, LandingDragEnded, LandingDragStarted, LandingDroppedOn, LandingSettingsDragEnded, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, ResetSettings, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsDragEnded, SettingsDragMoved, SettingsDragStarted, SettingsImportFailed, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
 
-import { Page, PageAudioTest, PageBsl, PageBubbles, PageCounter, PageFindIt, PageLanding, PageDraw, PageMagneticBlocks, PageMemory, PageMusicBox, PagePhonemeGarden, PageRps, PageSpeakerCalculator, PageTalkingClock, PageTalkingKeyboard, PageWhackamole, PagePattern } from './route'
+import { Page, PageAudioTest, PageBsl, PageBubbles, PageCounter, PageFindIt, PageGrowingNumbers, PageLanding, PageDraw, PageMagneticBlocks, PageMemory, PageMusicBox, PagePhonemeGarden, PageRps, PageShapeWorkshop, PageSpeakerCalculator, PageTalkingClock, PageTalkingKeyboard, PageWhackamole, PagePattern } from './route'
 
 import * as FindIt from './games/findit'
 import * as MusicBox from './games/musicbox'
@@ -21,6 +21,8 @@ import * as Rps from './games/rps/main'
 import * as MagneticBlocks from './games/magneticBlocks'
 import * as TalkingKeyboard from './games/talkingKeyboard'
 import * as TalkingClock from './games/talkingClock'
+import * as GrowingNumbers from './games/growingNumbers'
+import * as ShapeWorkshop from './games/shapeWorkshop'
 import { LANDING_GAME_COUNT, LANDING_GAMES, view as landingView } from './pages/landing'
 import { view as audioTestView } from './pages/audiotest'
 import { Language, normalizeLanguage, t, tf } from './i18n'
@@ -230,6 +232,8 @@ export const Model = S.Struct({
   magneticBlocks: MagneticBlocks.Model,
   talkingKeyboard: TalkingKeyboard.Model,
   talkingClock: TalkingClock.Model,
+  growingNumbers: GrowingNumbers.Model,
+  shapeWorkshop: ShapeWorkshop.Model,
   settingsPanelWidth: S.Number,
   isDraggingSettings: S.Boolean,
   settingsDragStartMouseX: S.Number,
@@ -271,6 +275,15 @@ export const Message = S.Union([
   ClickedMagneticBlocks,
   ClickedTalkingKeyboard,
   ClickedTalkingClock,
+  ClickedGrowingNumbers,
+  ClickedShapeWorkshop,
+  GrowingNumbers.ChooseGrowth,
+  GrowingNumbers.FinishGrowth,
+  GrowingNumbers.NextPuzzle,
+  ShapeWorkshop.TapPiece,
+  ShapeWorkshop.PieceFlightFinished,
+  ShapeWorkshop.NextPuzzle,
+  ShapeWorkshop.ReplayPuzzle,
   MagneticBlocks.SpawnBlocks,
   MagneticBlocks.RemoveBlock,
   MagneticBlocks.SetBreakSpeed,
@@ -497,6 +510,8 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
       },
       talkingKeyboard: TalkingKeyboard.init(saved.talkingKeyboardEnabledPacks),
       talkingClock: TalkingClock.init(),
+      growingNumbers: GrowingNumbers.init,
+      shapeWorkshop: ShapeWorkshop.init,
       settingsPanelWidth: 150,
       isDraggingSettings: false,
       settingsDragStartMouseX: 0,
@@ -618,6 +633,22 @@ const updateTalkingClock = (
 ): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
   const [next, cmds] = TalkingClock.update(model.talkingClock, message, model.muted, { rate: model.speechRate, pitch: model.speechPitch })
   return [{ ...model, talkingClock: next }, cmds]
+}
+
+const updateGrowingNumbers = (
+  model: Model,
+  message: GrowingNumbers.Message,
+): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
+  const [next, cmds] = GrowingNumbers.update(model.growingNumbers, message)
+  return [{ ...model, growingNumbers: next }, cmds]
+}
+
+const updateShapeWorkshop = (
+  model: Model,
+  message: ShapeWorkshop.Message,
+): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
+  const [next, cmds] = ShapeWorkshop.update(model.shapeWorkshop, message)
+  return [{ ...model, shapeWorkshop: next }, cmds]
 }
 
 const updateBsl = (
@@ -800,6 +831,15 @@ const _update = (
       ClickedMagneticBlocks: () => [{ ...model, page: PageMagneticBlocks() }, []],
       ClickedTalkingKeyboard: () => [{ ...model, page: PageTalkingKeyboard() }, []],
       ClickedTalkingClock: () => [{ ...model, page: PageTalkingClock() }, []],
+      ClickedGrowingNumbers: () => [{ ...model, page: PageGrowingNumbers() }, []],
+      ClickedShapeWorkshop: () => [{ ...model, page: PageShapeWorkshop() }, []],
+      GrowingNumbersChooseGrowth: (msg) => updateGrowingNumbers(model, msg),
+      GrowingNumbersFinishGrowth: (msg) => updateGrowingNumbers(model, msg),
+      GrowingNumbersNextPuzzle: (msg) => updateGrowingNumbers(model, msg),
+      ShapeWorkshopTapPiece: (msg) => updateShapeWorkshop(model, msg),
+      ShapeWorkshopPieceFlightFinished: (msg) => updateShapeWorkshop(model, msg),
+      ShapeWorkshopNextPuzzle: (msg) => updateShapeWorkshop(model, msg),
+      ShapeWorkshopReplayPuzzle: (msg) => updateShapeWorkshop(model, msg),
       MagneticBlocksSpawn: (msg) => updateMagneticBlocks(model, msg),
       MagneticBlocksRemove: (msg) => updateMagneticBlocks(model, msg),
       MagneticBlocksSetBreakSpeed: (msg) => updateMagneticBlocks(model, msg),
@@ -1068,6 +1108,8 @@ const pageTitle = (model: Model): string =>
       PageMagneticBlocks: () => t('pageTitleMagneticBlocks', model.language),
       PageTalkingKeyboard: () => t('pageTitleTalkingKeyboard', model.language),
       PageTalkingClock: () => t('pageTitleTalkingClock', model.language),
+      PageGrowingNumbers: () => t('pageTitleGrowingNumbers', model.language),
+      PageShapeWorkshop: () => t('pageTitleShapeWorkshop', model.language),
     }),
   )
 
@@ -1680,6 +1722,8 @@ export const view = (model: Model): Document => {
       PageMagneticBlocks: () => MagneticBlocks.view(model.magneticBlocks, model.language, model.muted, { rate: model.speechRate, pitch: model.speechPitch, lang: model.language }),
       PageTalkingKeyboard: () => TalkingKeyboard.view(model.talkingKeyboard, model.language),
       PageTalkingClock: () => TalkingClock.view(model.talkingClock),
+      PageGrowingNumbers: () => GrowingNumbers.view(model.growingNumbers, model.language),
+      PageShapeWorkshop: () => ShapeWorkshop.view(model.shapeWorkshop, model.language),
     }),
           ),
           model.settingsOverlay

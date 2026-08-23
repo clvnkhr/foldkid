@@ -1,10 +1,10 @@
 import { html } from 'foldkit/html'
 
-import { ClickedAudioTest, ClickedBsl, ClickedBubbles, ClickedCounter, ClickedDraw, ClickedFindIt, ClickedMagneticBlocks, ClickedMemory, ClickedMusicBox, ClickedPhonemeGarden, ClickedRps, ClickedSpeakerCalculator, ClickedTalkingClock, ClickedTalkingKeyboard, ClickedWhackamole, ClickedPattern, LandingDragEnded, LandingDragStarted, LandingDroppedOn } from '../message'
-import { t } from '../i18n'
+import { ClickedAudioTest, ClickedBsl, ClickedBubbles, ClickedCounter, ClickedDraw, ClickedFindIt, ClickedGrowingNumbers, ClickedMagneticBlocks, ClickedMemory, ClickedMusicBox, ClickedPhonemeGarden, ClickedRps, ClickedShapeWorkshop, ClickedSpeakerCalculator, ClickedTalkingClock, ClickedTalkingKeyboard, ClickedWhackamole, ClickedPattern, LandingDragEnded, LandingDragStarted, LandingDroppedOn } from '../message'
+import { t, type StringKey } from '../i18n'
 import { pointerReorder } from '../pointerReorder'
 
-type Message = ReturnType<typeof ClickedCounter>
+type NavigationMessage = ReturnType<typeof ClickedCounter>
   | ReturnType<typeof ClickedFindIt>
   | ReturnType<typeof ClickedBubbles>
   | ReturnType<typeof ClickedDraw>
@@ -20,11 +20,20 @@ type Message = ReturnType<typeof ClickedCounter>
   | ReturnType<typeof ClickedMagneticBlocks>
   | ReturnType<typeof ClickedTalkingKeyboard>
   | ReturnType<typeof ClickedTalkingClock>
+  | ReturnType<typeof ClickedGrowingNumbers>
+  | ReturnType<typeof ClickedShapeWorkshop>
+type Message = NavigationMessage
   | ReturnType<typeof LandingDragStarted>
   | ReturnType<typeof LandingDroppedOn>
   | ReturnType<typeof LandingDragEnded>
 
-export const LANDING_GAMES = [
+interface LandingGame {
+  readonly msg: () => NavigationMessage
+  readonly title: StringKey
+  readonly emoji: string
+}
+
+export const LANDING_GAMES: readonly LandingGame[] = [
   { msg: ClickedCounter, title: 'counterTitle' as const, emoji: '🔢' },
   { msg: ClickedFindIt, title: 'findItTitle' as const, emoji: '🔎' },
   { msg: ClickedBubbles, title: 'bubblesTitle' as const, emoji: '🫧' },
@@ -40,6 +49,8 @@ export const LANDING_GAMES = [
   { msg: ClickedMagneticBlocks, title: 'magneticBlocksTitle' as const, emoji: '🧲' },
   { msg: ClickedTalkingKeyboard, title: 'talkingKeyboardTitle' as const, emoji: '⌨️' },
   { msg: ClickedTalkingClock, title: 'talkingClockTitle' as const, emoji: '🕰️' },
+  { msg: ClickedGrowingNumbers, title: 'growingNumbersTitle' as const, emoji: '📈' },
+  { msg: ClickedShapeWorkshop, title: 'shapeWorkshopTitle' as const, emoji: '🔷' },
 ]
 
 export const LANDING_GAME_COUNT = LANDING_GAMES.length

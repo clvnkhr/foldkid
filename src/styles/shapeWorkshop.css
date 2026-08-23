@@ -1,0 +1,34 @@
+.shape-workshop-page { justify-content: flex-start; min-height: 100dvh; padding-top: 4.5rem; }
+.shape-workshop-card { max-width: 680px; padding: clamp(1.2rem, 4vw, 2.4rem); gap: .7rem; }
+.shape-workshop-heading { width: 100%; display: flex; align-items: start; justify-content: space-between; text-align: left; }
+.shape-workshop-prompt { color: var(--text-secondary); font-weight: 600; }
+.shape-workshop-progress { padding: .35rem .65rem; border-radius: 999px; background: var(--cell-bg); color: var(--text-primary); font-weight: 800; }
+.shape-workshop-target { width: min(100%, 390px); height: clamp(190px, 32vh, 270px); padding: 0; border: 0; background: transparent; }
+button.shape-workshop-target { cursor: pointer; border-radius: 1rem; }
+.shape-workshop-target-svg { width: 100%; height: 100%; overflow: visible; }
+.shape-workshop-outline { fill: color-mix(in srgb, var(--cell-bg) 65%, transparent); stroke: var(--text-muted); stroke-width: 2; stroke-dasharray: 5 5; }
+.shape-workshop-slot { fill: color-mix(in srgb, var(--shape-workshop-color) 8%, transparent); stroke: color-mix(in srgb, var(--shape-workshop-color) 65%, var(--text-muted)); stroke-width: 2; stroke-dasharray: 7 5; }
+.shape-workshop-slot--receiving { fill: color-mix(in srgb, var(--shape-workshop-color) 18%, transparent); stroke-width: 3; animation: shapeWorkshopSlotPulse .52s ease-in-out infinite alternate; }
+.shape-workshop-piece { fill: var(--shape-workshop-color); stroke: var(--card-bg); stroke-width: 2; transition: fill .25s, filter .25s, stroke-width .25s; }
+.shape-workshop-flight { position: fixed; z-index: 1000; overflow: visible; pointer-events: none; will-change: transform, filter, opacity; }
+.shape-workshop-flight-piece { fill: var(--shape-workshop-color); stroke: var(--card-bg); stroke-width: 2; }
+.shape-workshop-target--complete .shape-workshop-target-svg { filter: drop-shadow(0 0 9px #c4b5fd); animation: shapeWorkshopGlow .7s ease-out; }
+.shape-workshop-target--complete .shape-workshop-outline { fill: none; stroke: #8b5cf6; stroke-width: 4; stroke-dasharray: none; }
+.shape-workshop-target--complete .shape-workshop-piece { fill: var(--shape-workshop-color); stroke: var(--card-bg); stroke-width: 2; }
+.shape-workshop-status { min-height: 2rem; display: flex; align-items: center; justify-content: center; gap: .45rem; color: var(--text-primary); font-size: 1.15rem; }
+.shape-workshop-piece-count { min-width: 2.8rem; padding: .12rem .42rem; border-radius: 999px; background: var(--cell-bg); color: var(--text-secondary); font-size: .85rem; font-weight: 800; text-align: center; }
+.shape-workshop-complete-text { color: var(--text-secondary); font-size: .9rem; font-weight: 600; }
+.shape-workshop-identity-icon { color: #8b5cf6; font-size: 1.7rem; line-height: 1; }
+.shape-workshop-tray { display: flex; flex-wrap: wrap; justify-content: center; gap: .55rem; width: 100%; }
+.shape-workshop-piece-button { width: clamp(58px, 12vw, 78px); height: clamp(58px, 12vw, 78px); padding: .35rem; border: 2px solid color-mix(in srgb, var(--shape-workshop-color) 55%, transparent); border-radius: .85rem; background: var(--cell-bg); cursor: pointer; transition: transform .15s, opacity .15s; }
+.shape-workshop-piece-button:hover:not(:disabled), .shape-workshop-piece-button:focus-visible { transform: translateY(-3px) scale(1.04); outline: 3px solid #fbbf24; outline-offset: 2px; }
+.shape-workshop-piece-button:disabled { opacity: .25; cursor: default; }
+.shape-workshop-piece-button--flying:disabled { opacity: .58; border-color: var(--shape-workshop-color); box-shadow: 0 0 0 3px color-mix(in srgb, var(--shape-workshop-color) 22%, transparent); }
+.shape-workshop-piece-svg { width: 100%; height: 100%; overflow: visible; fill: var(--shape-workshop-color); stroke: color-mix(in srgb, var(--shape-workshop-color) 65%, #111827); stroke-width: 1.5; }
+.shape-workshop-actions { display: flex; justify-content: center; gap: .65rem; margin-top: .2rem; }
+.shape-workshop-actions .btn { padding: .65rem 1.35rem; }
+.dark .shape-workshop-target--complete .shape-workshop-outline { stroke: #a78bfa; }
+@keyframes shapeWorkshopGlow { 0% { filter: drop-shadow(0 0 0 transparent); transform: scale(.96); transform-origin: center; } 70% { filter: drop-shadow(0 0 15px #fbbf24); } 100% { filter: drop-shadow(0 0 9px #c4b5fd); transform: scale(1); } }
+@keyframes shapeWorkshopSlotPulse { from { opacity: .65; } to { opacity: 1; } }
+@media (max-width: 480px) { .shape-workshop-card { min-height: 78vh; } .shape-workshop-target { height: 34vh; } .shape-workshop-heading { padding-top: 1.5rem; } }
+@media (prefers-reduced-motion: reduce) { .shape-workshop-piece, .shape-workshop-piece-button { transition: none; } .shape-workshop-target--complete .shape-workshop-target-svg, .shape-workshop-slot--receiving { animation: none; } }
