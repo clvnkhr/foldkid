@@ -1,4 +1,4 @@
-import { Euler, Group, Mesh, PerspectiveCamera, Quaternion, Scene, Vector3, type BufferGeometry, type MeshPhysicalMaterial } from 'three'
+import { Euler, Mesh, PerspectiveCamera, Quaternion, Scene, Vector3, type BufferGeometry, type MeshPhysicalMaterial } from 'three'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import * as Audio from '../audio'
@@ -115,7 +115,8 @@ describe('3D bubble world', () => {
   })
 
   it('uses the drawn radius for collisions and proportionate pop bursts', () => {
-    const world = createBubbles3dWorld()
+    const onBurst = vi.fn()
+    const world = createBubbles3dWorld(onBurst)
     try {
       world.resize(100, 400)
       world.apply({ revision: 0, bubbles: [
@@ -135,9 +136,12 @@ describe('3D bubble world', () => {
       const [tap, held] = meshesIn(world.scene)
       world.pop(2, false)
       world.pop(3, false)
-      const bursts = world.scene.children.filter(child => child instanceof Group)
-      expect(bursts[0]!.scale.x).toBeCloseTo(tap!.scale.x / 0.6)
-      expect(bursts[1]!.scale.x).toBeCloseTo(held!.scale.x / 0.6)
+      expect(onBurst).toHaveBeenCalledTimes(2)
+      const pixelRadius = (mesh: Mesh): number =>
+        Math.max(mesh.scale.x, mesh.scale.y, mesh.scale.z) * 400 / (2 * Math.tan(world.camera.fov * Math.PI / 360) * (world.camera.position.z - mesh.position.z))
+      expect(onBurst.mock.calls[0]![0].radius).toBeCloseTo(pixelRadius(tap!))
+      expect(onBurst.mock.calls[1]![0].radius).toBeCloseTo(pixelRadius(held!))
+      expect(world.scene.children.some(child => child.type === 'Group')).toBe(false)
     } finally { world.dispose() }
   })
 
@@ -154,10 +158,10 @@ describe('3D bubble world', () => {
   })
 
   it('caches colorful rainbow surfaces separately without tinting solid bubbles and disposes their resources', () => {
-    const world = createBubbles3dWorld()
+    const onBurst = vi.fn()
+    const world = createBubbles3dWorld(onBurst)
     const baseDisposed = vi.fn()
     const rainbowDisposed = vi.fn()
-    const particlesDisposed = vi.fn()
     try {
       world.apply({ revision: 0, bubbles: [
         { ...specs[0]! }, { ...specs[0]!, id: 1, rainbow: true }, { ...specs[0]!, id: 2, rainbow: true },
@@ -179,14 +183,121 @@ describe('3D bubble world', () => {
       solid!.geometry.addEventListener('dispose', baseDisposed)
       rainbow!.geometry.addEventListener('dispose', rainbowDisposed)
       world.pop(1, false)
-      const burst = world.scene.children.find(child => child instanceof Group)!
-      const particle = burst.children[0] as Mesh
-      expect(particle.geometry.getAttribute('color')).toBeDefined()
-      particle.geometry.addEventListener('dispose', particlesDisposed)
+      expect(onBurst).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ color: specs[0]!.color, rainbow: true }))
+      expect(meshesIn(world.scene)).toEqual([solid, rainbow, repeated])
     } finally { world.dispose() }
     expect(baseDisposed).toHaveBeenCalledOnce()
     expect(rainbowDisposed).toHaveBeenCalledOnce()
-    expect(particlesDisposed).toHaveBeenCalledOnce()
+  })
+
+  it('projects one flat burst in CSS pixels using the current viewport, depth and drawn radius', () => {
+    const onBurst = vi.fn()
+    const world = createBubbles3dWorld(onBurst)
+    try {
+      world.resize(450, 300)
+      world.apply({ revision: 0, bubbles: [{ ...specs[0]!, size: MAX_BUBBLE3D_SIZE, x: 0.4, y: -0.3, z: 0.8, rainbow: true }] }, false)
+      world.step(0.04, false)
+      const mesh = meshesIn(world.scene)[0]!
+      world.camera.updateMatrixWorld()
+      const center = mesh.position.clone().project(world.camera)
+      const expectedRadius = Math.max(mesh.scale.x, mesh.scale.y, mesh.scale.z) * 300 / (2 * Math.tan(world.camera.fov * Math.PI / 360) * (world.camera.position.z - mesh.position.z))
+      expect(world.pop(0, false)).toBe(true)
+      expect(onBurst).toHaveBeenCalledOnce()
+      expect(onBurst.mock.calls[0]![0]).toMatchObject({ color: specs[0]!.color, rainbow: true })
+      expect(onBurst.mock.calls[0]![0].x).toBeCloseTo((center.x + 1) * 225)
+      expect(onBurst.mock.calls[0]![0].y).toBeCloseTo((1 - center.y) * 150)
+      expect(onBurst.mock.calls[0]![0].radius).toBeCloseTo(expectedRadius)
+      expect(mesh.visible).toBe(false)
+      expect(world.pop(0, false)).toBe(false)
+      expect(onBurst).toHaveBeenCalledOnce()
+
+      world.resize(90, 900)
+      world.apply({ revision: 1, bubbles: [{ ...specs[0]!, id: 10, size: MAX_BUBBLE3D_SIZE, x: 0, y: 0, z: 0 }] }, true)
+      const resized = meshesIn(world.scene)[0]!
+      expect(resized.scale.x).toBeLessThan(MAX_BUBBLE3D_SIZE)
+      world.pop(10, false)
+      const burst = onBurst.mock.calls[1]![0]
+      expect(burst.x).toBeCloseTo(45)
+      expect(burst.y).toBeCloseTo(450)
+      expect(burst.radius).toBeCloseTo(resized.scale.x * 900 / (2 * Math.tan(world.camera.fov * Math.PI / 360) * world.camera.position.z))
+      expect(burst.radius).toBeLessThan(45)
+    } finally { world.dispose() }
+  })
+
+  it('emits no duplicate burst after optimistic popping and suppresses clear and reduced-motion effects', () => {
+    const onBurst = vi.fn()
+    const world = createBubbles3dWorld(onBurst)
+    try {
+      world.resize(400, 400)
+      world.apply({ revision: 0, bubbles: specs }, false)
+      expect(world.pop(0, false)).toBe(true)
+      world.apply({ revision: 0, bubbles: specs }, false)
+      expect(meshesIn(world.scene)[0]!.visible).toBe(false)
+      world.apply({ revision: 0, bubbles: [specs[1]!] }, false)
+      expect(onBurst).toHaveBeenCalledOnce()
+      world.apply({ revision: 0, bubbles: [] }, false)
+      expect(onBurst).toHaveBeenCalledTimes(2)
+      expect(onBurst.mock.calls[1]![0]).toMatchObject({ color: specs[1]!.color, rainbow: false })
+      world.apply({ revision: 1, bubbles: specs }, false)
+      world.apply({ revision: 2, bubbles: [] }, false)
+      expect(onBurst).toHaveBeenCalledTimes(2)
+      world.apply({ revision: 3, bubbles: specs }, true)
+      expect(world.pop(0, true)).toBe(true)
+      world.apply({ revision: 3, bubbles: [] }, true)
+      expect(onBurst).toHaveBeenCalledTimes(2)
+      expect(world.scene.children.every(child => child.type.endsWith('Light'))).toBe(true)
+    } finally { world.dispose() }
+  })
+
+  it('keeps popping and semantic removal working if decorative feedback fails', () => {
+    const onBurst = vi.fn(() => { throw new Error('overlay unavailable') })
+    const world = createBubbles3dWorld(onBurst)
+    try {
+      world.apply({ revision: 0, bubbles: specs }, false)
+      expect(() => world.pop(0, false)).not.toThrow()
+      expect(meshesIn(world.scene)[0]!.visible).toBe(false)
+      expect(world.pop(0, false)).toBe(false)
+      expect(() => world.apply({ revision: 0, bubbles: [] }, false)).not.toThrow()
+      expect(onBurst).toHaveBeenCalledTimes(2)
+      expect(world.scene.children.every(child => child.type.endsWith('Light'))).toBe(true)
+    } finally { world.dispose() }
+  })
+
+  it('handles 60 rapid pops without adding scene objects or allocating disposable effect materials', () => {
+    const onBurst = vi.fn()
+    const world = createBubbles3dWorld(onBurst)
+    const materialDisposed = vi.fn()
+    const geometryDisposed = vi.fn()
+    const bubbles = Array.from({ length: 60 }, (_, id) => ({ ...specs[id % specs.length]!, id, shape: BUBBLE3D_SHAPES[id % BUBBLE3D_SHAPES.length]!.id }))
+    const geometries = new Set<BufferGeometry>()
+    try {
+      world.resize(400, 400)
+      world.apply({ revision: 0, bubbles }, false)
+      const original = [...world.scene.children]
+      const meshes = meshesIn(world.scene)
+      for (const mesh of meshes) geometries.add(mesh.geometry)
+      for (const mesh of meshes) mesh.material.addEventListener('dispose', materialDisposed)
+      for (const geometry of geometries) geometry.addEventListener('dispose', geometryDisposed)
+      for (let id = 0; id < bubbles.length; id++) {
+        expect(world.pop(id, false)).toBe(true)
+        expect(world.pop(id, false)).toBe(false)
+        expect(world.scene.children).toEqual(original)
+        expect(meshes[id]!.visible).toBe(false)
+        expect(onBurst).toHaveBeenCalledTimes(id + 1)
+      }
+      expect(materialDisposed).not.toHaveBeenCalled()
+      expect(geometryDisposed).not.toHaveBeenCalled()
+      for (let frame = 0; frame < 20; frame++) world.step(0.04, false)
+      expect(world.scene.children).toEqual(original)
+      expect(world.pick(200, 200, 400, 400)).toBeUndefined()
+      world.apply({ revision: 0, bubbles: [] }, false)
+      expect(onBurst).toHaveBeenCalledTimes(60)
+      expect(materialDisposed).toHaveBeenCalledTimes(60)
+      expect(geometryDisposed).not.toHaveBeenCalled()
+      expect(world.scene.children.every(child => child.type.endsWith('Light'))).toBe(true)
+    } finally { world.dispose() }
+    expect(materialDisposed).toHaveBeenCalledTimes(60)
+    expect(geometryDisposed).toHaveBeenCalledTimes(geometries.size)
   })
 
   it('uses perspective depth and actual Three.js raycasts for the nearest shape', () => {
@@ -241,7 +352,8 @@ describe('3D bubble world', () => {
   })
 
   it('shares geometry only between matching shape kinds and disposes each cached geometry and material once', () => {
-    const world = createBubbles3dWorld()
+    const onBurst = vi.fn()
+    const world = createBubbles3dWorld(onBurst)
     const geometryDisposed = vi.fn()
     const cubeGeometryDisposed = vi.fn()
     const materialDisposed = vi.fn()
@@ -261,8 +373,10 @@ describe('3D bubble world', () => {
       world.step(0.02, false)
       expect(meshes[0]!.position.equals(original[0]!)).toBe(false)
       world.pop(0, false)
-      expect(world.scene.children.some(child => child.type === 'Group')).toBe(true)
+      expect(onBurst).toHaveBeenCalledOnce()
+      expect(world.scene.children.some(child => child.type === 'Group')).toBe(false)
       for (let index = 0; index < 20; index++) world.step(0.04, false)
+      expect(onBurst).toHaveBeenCalledOnce()
       expect(world.scene.children.some(child => child.type === 'Group')).toBe(false)
       world.apply({ revision: 1, bubbles: [{ ...specs[0]!, id: 3 }, { ...specs[1]!, id: 4 }] }, false)
       const replacements = world.scene.children.filter(child => child instanceof Mesh) as Array<Mesh<BufferGeometry, MeshPhysicalMaterial>>
@@ -332,6 +446,248 @@ describe('3D bubble world', () => {
 })
 
 describe('3D bubble runtime', () => {
+  it('decodes an unchanged snapshot once across repeated presses while still reading a synchronous clear', () => {
+    const host = stage()
+    const initialRaw = host.getAttribute('data-bubbles3d-state')!
+    const fake = fakeRenderer()
+    const parsed = vi.spyOn(JSON, 'parse')
+    const popped = vi.fn()
+    const ready = vi.fn()
+    vi.spyOn(Audio, 'warmAudio').mockImplementation(() => {})
+    vi.spyOn(HTMLCanvasElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 400, 400))
+    const cleanup = createBubbles3dRuntime(host, { popped, ready, unavailable: vi.fn() }, () => fake.handle)
+    try {
+      const canvas = host.querySelector('.bubbles3d-canvas')!
+      const left = fake.point(0)
+      for (let id = 1; id <= 6; id++) {
+        pointer(canvas, 'pointerdown', id, left.x, left.y)
+        pointer(document, 'pointercancel', id, left.x, left.y)
+      }
+      expect(parsed.mock.calls.filter(([raw]) => raw === initialRaw)).toHaveLength(1)
+      expect(popped).not.toHaveBeenCalled()
+      pointer(canvas, 'pointerdown', 10, left.x, left.y)
+      const updatedRaw = JSON.stringify({ revision: 1, bubbles: [{ ...specs[0]!, id: 20 }] })
+      host.setAttribute('data-bubbles3d-state', updatedRaw)
+      pointer(document, 'pointerup', 10, left.x, left.y)
+      expect(popped).not.toHaveBeenCalled()
+      expect(parsed.mock.calls.filter(([raw]) => raw === updatedRaw)).toHaveLength(1)
+      expect(ready.mock.calls).toEqual([[0], [1]])
+      const fresh = fake.point(20)
+      pointer(canvas, 'pointerdown', 11, fresh.x, fresh.y)
+      pointer(document, 'pointerup', 11, fresh.x, fresh.y)
+      expect(popped).toHaveBeenCalledExactlyOnceWith(20, 1)
+      expect(parsed.mock.calls.filter(([raw]) => raw === updatedRaw)).toHaveLength(1)
+    } finally { cleanup(); host.remove() }
+  })
+
+  it('stops an empty scene, starts on creation, and idles again after its last flat burst finishes', async () => {
+    const host = stage([])
+    const fake = fakeRenderer()
+    const drawing = { clearRect: vi.fn(), beginPath: vi.fn(), arc: vi.fn(), stroke: vi.fn(), fill: vi.fn(), globalAlpha: 1 } as unknown as CanvasRenderingContext2D
+    const popped = vi.fn()
+    const loop = vi.mocked(fake.renderer.setAnimationLoop)
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(drawing)
+    vi.spyOn(HTMLCanvasElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 400, 400))
+    vi.spyOn(Audio, 'warmAudio').mockImplementation(() => {})
+    const cleanup = createBubbles3dRuntime(host, { popped, ready: vi.fn(), unavailable: vi.fn() }, () => fake.handle)
+    const flushMutation = () => new Promise<void>(resolve => setTimeout(resolve, 0))
+    const currentFrame = () => loop.mock.calls.at(-1)?.[0] as ((time: number) => void) | null | undefined
+    try {
+      expect(loop.mock.calls.every(([callback]) => callback === null)).toBe(true)
+      expect(fake.renderer.render).toHaveBeenCalledOnce()
+      host.setAttribute('data-bubbles3d-state', JSON.stringify({ revision: 0, bubbles: [specs[0]!] }))
+      await flushMutation()
+      expect(typeof currentFrame()).toBe('function')
+      currentFrame()!(0)
+      const left = fake.point(0)
+      const canvas = host.querySelector('.bubbles3d-canvas')!
+      pointer(canvas, 'pointerdown', 1, left.x, left.y)
+      pointer(document, 'pointerup', 1, left.x, left.y)
+      expect(popped).toHaveBeenCalledExactlyOnceWith(0, 0)
+      expect(fake.scene().children.find(child => child.userData.bubbleId === 0)!.visible).toBe(false)
+      for (let index = 1; index <= 30 && currentFrame(); index++) currentFrame()!(index * 40)
+      expect(drawing.arc).toHaveBeenCalled()
+      expect(loop).toHaveBeenLastCalledWith(null)
+
+      host.setAttribute('data-bubbles3d-state', JSON.stringify({ revision: 0, bubbles: [{ ...specs[1]!, id: 10 }] }))
+      await flushMutation()
+      expect(typeof currentFrame()).toBe('function')
+      const fresh = fake.scene().children.find(child => child.userData.bubbleId === 10)!
+      const initialPosition = fresh.position.clone()
+      currentFrame()!(100000)
+      expect(fresh.position).toEqual(initialPosition)
+    } finally { cleanup(); host.remove() }
+  })
+
+  it('starts animation when a press consumes a new snapshot before its mutation callback runs', async () => {
+    const host = stage([])
+    const fake = fakeRenderer()
+    vi.spyOn(HTMLCanvasElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 400, 400))
+    const cleanup = createBubbles3dRuntime(host, { popped: vi.fn(), ready: vi.fn(), unavailable: vi.fn() }, () => fake.handle)
+    try {
+      const canvas = host.querySelector('.bubbles3d-canvas')!
+      host.setAttribute('data-bubbles3d-state', JSON.stringify({ revision: 0, bubbles: [{ ...specs[0]!, x: 0, y: 0 }] }))
+      pointer(canvas, 'pointerdown', 1, 200, 200)
+      pointer(document, 'pointercancel', 1, 200, 200)
+      await new Promise<void>(resolve => setTimeout(resolve, 0))
+      expect(typeof vi.mocked(fake.renderer.setAnimationLoop).mock.calls.at(-1)?.[0]).toBe('function')
+      expect(fake.scene().children.some(child => child.userData.bubbleId === 0 && child.visible)).toBe(true)
+    } finally { cleanup(); host.remove() }
+  })
+
+  it('starts the flat burst when a synchronous press and release consume an idle scene update', async () => {
+    const host = stage([])
+    const fake = fakeRenderer()
+    const drawing = { clearRect: vi.fn(), beginPath: vi.fn(), arc: vi.fn(), stroke: vi.fn(), fill: vi.fn(), globalAlpha: 1 } as unknown as CanvasRenderingContext2D
+    const popped = vi.fn()
+    const parsed = vi.spyOn(JSON, 'parse')
+    const loop = vi.mocked(fake.renderer.setAnimationLoop)
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(drawing)
+    vi.spyOn(HTMLCanvasElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 400, 400))
+    vi.spyOn(Audio, 'warmAudio').mockImplementation(() => {})
+    const cleanup = createBubbles3dRuntime(host, { popped, ready: vi.fn(), unavailable: vi.fn() }, () => fake.handle)
+    const currentFrame = () => loop.mock.calls.at(-1)?.[0] as ((time: number) => void) | null | undefined
+    try {
+      const canvas = host.querySelector('.bubbles3d-canvas')!
+      const createdRaw = JSON.stringify({ revision: 0, bubbles: [{ ...specs[0]!, x: 0, y: 0 }] })
+      host.setAttribute('data-bubbles3d-state', createdRaw)
+      pointer(canvas, 'pointerdown', 1, 200, 200)
+      pointer(document, 'pointerup', 1, 200, 200)
+      expect(popped).toHaveBeenCalledExactlyOnceWith(0, 0)
+      expect(typeof currentFrame()).toBe('function')
+      await new Promise<void>(resolve => setTimeout(resolve, 0))
+      expect(parsed.mock.calls.filter(([raw]) => raw === createdRaw)).toHaveLength(1)
+      expect(typeof currentFrame()).toBe('function')
+      currentFrame()!(0)
+      for (let index = 1; index <= 30 && currentFrame(); index++) currentFrame()!(index * 40)
+      expect(drawing.arc).toHaveBeenCalled()
+      expect(loop).toHaveBeenLastCalledWith(null)
+      expect(fake.scene().children.some(child => child.userData.bubbleId === 0 && child.visible)).toBe(false)
+    } finally { cleanup(); host.remove() }
+  })
+
+  it('clears the previously painted bubbles after hiding, clearing and showing the scene', async () => {
+    const host = stage()
+    const fake = fakeRenderer()
+    const painted: Array<Array<number>> = []
+    const render = vi.mocked(fake.renderer.render)
+    const originalRender = render.getMockImplementation()
+    render.mockImplementation((scene, camera) => {
+      originalRender?.(scene, camera)
+      painted.push((scene as Scene).children.filter(child => child instanceof Mesh && child.visible).map(child => child.userData.bubbleId as number))
+    })
+    const ready = vi.fn()
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
+    const cleanup = createBubbles3dRuntime(host, { popped: vi.fn(), ready, unavailable: vi.fn() }, () => fake.handle)
+    try {
+      const frame = vi.mocked(fake.renderer.setAnimationLoop).mock.calls.at(-1)![0] as (time: number) => void
+      frame(0)
+      expect(painted.at(-1)).toEqual([0, 1])
+      hidden.mockReturnValue(true)
+      document.dispatchEvent(new Event('visibilitychange'))
+      expect(fake.renderer.setAnimationLoop).toHaveBeenLastCalledWith(null)
+      host.setAttribute('data-bubbles3d-state', JSON.stringify({ revision: 1, bubbles: [] }))
+      await new Promise<void>(resolve => setTimeout(resolve, 0))
+      hidden.mockReturnValue(false)
+      document.dispatchEvent(new Event('visibilitychange'))
+      expect(painted.at(-1)).toEqual([])
+      expect(ready.mock.calls).toEqual([[0], [1]])
+      expect(fake.renderer.setAnimationLoop).toHaveBeenLastCalledWith(null)
+    } finally { cleanup(); host.remove() }
+  })
+
+  it('does not rebuild its disposed world when revision readiness synchronously unmounts it', () => {
+    const host = stage()
+    const fake = fakeRenderer()
+    const popped = vi.fn()
+    const unavailable = vi.fn()
+    const ready = vi.fn((revision: number) => { if (revision === 1) cleanup() })
+    vi.spyOn(HTMLCanvasElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 400, 400))
+    const cleanup = createBubbles3dRuntime(host, { popped, ready, unavailable }, () => fake.handle)
+    try {
+      const canvas = host.querySelector('.bubbles3d-canvas')!
+      const renders = vi.mocked(fake.renderer.render).mock.calls.length
+      host.setAttribute('data-bubbles3d-state', JSON.stringify({ revision: 1, bubbles: [{ ...specs[0]!, id: 20, x: 0 }] }))
+      pointer(canvas, 'pointerdown', 1, 200, 200)
+      pointer(document, 'pointerup', 1, 200, 200)
+      expect(ready.mock.calls).toEqual([[0], [1]])
+      expect(fake.scene().children).toHaveLength(0)
+      expect(fake.renderer.render).toHaveBeenCalledTimes(renders)
+      expect(fake.renderer.dispose).toHaveBeenCalledOnce()
+      expect(fake.handle.disposeEnvironment).toHaveBeenCalledOnce()
+      expect(popped).not.toHaveBeenCalled()
+      expect(unavailable).not.toHaveBeenCalled()
+      expect(host.querySelector('.bubbles3d-canvas')).toBeNull()
+    } finally { cleanup(); host.remove() }
+  })
+
+  it('does not paint a disposed renderer when a successful reduced-motion pop synchronously unmounts it', () => {
+    const host = stage()
+    const fake = fakeRenderer()
+    const unavailable = vi.fn()
+    const motion = { matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() } as unknown as MediaQueryList
+    vi.spyOn(window, 'matchMedia').mockReturnValue(motion)
+    vi.spyOn(HTMLCanvasElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 400, 400))
+    vi.spyOn(Audio, 'warmAudio').mockImplementation(() => {})
+    const popped = vi.fn(() => cleanup())
+    const cleanup = createBubbles3dRuntime(host, { popped, ready: vi.fn(), unavailable }, () => fake.handle)
+    try {
+      const canvas = host.querySelector('.bubbles3d-canvas')!
+      const left = fake.point(0)
+      const renders = vi.mocked(fake.renderer.render).mock.calls.length
+      pointer(canvas, 'pointerdown', 1, left.x, left.y)
+      pointer(document, 'pointerup', 1, left.x, left.y)
+      expect(popped).toHaveBeenCalledExactlyOnceWith(0, 0)
+      expect(fake.renderer.render).toHaveBeenCalledTimes(renders)
+      expect(fake.renderer.dispose).toHaveBeenCalledOnce()
+      expect(fake.handle.disposeEnvironment).toHaveBeenCalledOnce()
+      expect(fake.scene().children).toHaveLength(0)
+      expect(unavailable).not.toHaveBeenCalled()
+      expect(host.querySelector('.bubbles3d-canvas')).toBeNull()
+    } finally { cleanup(); host.remove() }
+  })
+
+  it.each(['mouse', 'pen'])('cancels secondary %s releases and button changes without blocking another touch', pointerType => {
+    const host = stage()
+    const fake = fakeRenderer()
+    const popped = vi.fn()
+    const warm = vi.spyOn(Audio, 'warmAudio').mockImplementation(() => {})
+    vi.spyOn(HTMLCanvasElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 400, 400))
+    const cleanup = createBubbles3dRuntime(host, { popped, ready: vi.fn(), unavailable: vi.fn() }, () => fake.handle)
+    try {
+      const canvas = host.querySelector('.bubbles3d-canvas')!
+      const left = fake.point(0)
+      const right = fake.point(1)
+      const dispatch = (target: EventTarget, type: string, id: number, button: number, buttons: number): void => {
+        target.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerType, pointerId: id, button, buttons, clientX: left.x, clientY: left.y }))
+      }
+      dispatch(canvas, 'pointerdown', 1, 0, 1)
+      dispatch(document, 'pointerup', 1, 2, 0)
+      expect(popped).not.toHaveBeenCalled()
+      expect(warm).not.toHaveBeenCalled()
+
+      dispatch(canvas, 'pointerdown', 2, 0, 1)
+      pointer(canvas, 'pointerdown', 9, right.x, right.y)
+      dispatch(document, 'pointermove', 2, -1, 2)
+      dispatch(document, 'pointerup', 2, 2, 0)
+      expect(popped).not.toHaveBeenCalled()
+      expect(warm).not.toHaveBeenCalled()
+      pointer(document, 'pointerup', 9, right.x, right.y)
+      expect(popped).toHaveBeenCalledExactlyOnceWith(1, 0)
+      expect(warm).toHaveBeenCalledOnce()
+      expect(fake.scene().children.find(child => child.userData.bubbleId === 0)!.visible).toBe(true)
+      dispatch(canvas, 'pointerdown', 3, 0, 1)
+      dispatch(document, 'pointermove', 3, -1, 2)
+      dispatch(document, 'pointerup', 3, 0, 0)
+      expect(popped).toHaveBeenCalledTimes(1)
+      expect(warm).toHaveBeenCalledOnce()
+      dispatch(canvas, 'pointerdown', 4, 0, 1)
+      dispatch(document, 'pointerup', 4, 0, 0)
+      expect(popped.mock.calls).toEqual([[1, 0], [0, 0]])
+      expect(warm).toHaveBeenCalledTimes(2)
+    } finally { cleanup(); host.remove() }
+  })
+
   it('pops different freely oriented shapes independently through mixed native and pointer contacts', () => {
     const host = stage([
       { ...specs[0]!, shape: 'tetrahedron', x: -0.6, y: -0.3 },
@@ -602,7 +958,7 @@ describe('3D bubble runtime', () => {
     pointer(document, 'pointerup', 1, left.x, left.y)
     pointer(canvas, 'pointerdown', 2, right.x, right.y)
     expect(popped).toHaveBeenCalledExactlyOnceWith(0, 0)
-    expect(fake.renderer.setAnimationLoop).toHaveBeenLastCalledWith(null)
+    expect(vi.mocked(fake.renderer.setAnimationLoop).mock.calls.every(([callback]) => callback === null)).toBe(true)
     expect(fake.scene().children.some(child => child.type === 'Group')).toBe(false)
     cleanup()
     cleanup()
