@@ -12,17 +12,35 @@ export interface Bubbles3dPopFx {
   readonly clear: () => void
   readonly dispose: () => void
 }
-export const BUBBLES3D_POP_FX_DURATION = 0.35
+export const BUBBLES3D_POP_FX_DURATION = 0.52
 export const BUBBLES3D_POP_FX_CAPACITY = 12
-const DOTS = 8
+export const BUBBLES3D_POP_FX_PARTICLES = 12
 const TAU = Math.PI * 2
-const DIRECTIONS = Array.from({ length: DOTS }, (_, index) => ({ x: Math.cos(index / DOTS * TAU), y: Math.sin(index / DOTS * TAU) }))
 const RAINBOW = ['#ff4757', '#ff7f00', '#ffd93d', '#2ed573', '#1e90ff', '#a855f7', '#ff69b4', '#7ce5df'] as const
-interface Burst { active: boolean; x: number; y: number; radius: number; color: string; rainbow: boolean; age: number }
+interface Particle {
+  x: number; y: number; dx: number; dy: number; travel: number; curve: number
+  size: number; delay: number; life: number; kind: number; color: string
+}
+interface Burst {
+  active: boolean; x: number; y: number; radius: number; color: string; age: number; life: number
+  count: number; ringAngle: number; ringGap: number; ringScale: number; particles: Particle[]
+}
 
-/** A fixed pool of flat rings and dots, driven by the existing scene loop. */
-export const createBubbles3dPopFx = (host: HTMLElement): Bubbles3dPopFx => {
-  const bursts: Burst[] = Array.from({ length: BUBBLES3D_POP_FX_CAPACITY }, () => ({ active: false, x: 0, y: 0, radius: 0, color: '', rainbow: false, age: 0 }))
+/** Flat droplets and glints, randomized once per pop and driven by the scene loop. */
+export const createBubbles3dPopFx = (host: HTMLElement, random: () => number = Math.random): Bubbles3dPopFx => {
+  const bursts: Burst[] = Array.from({ length: BUBBLES3D_POP_FX_CAPACITY }, () => ({
+    active: false, x: 0, y: 0, radius: 0, color: '', age: 0, life: 0,
+    count: 0, ringAngle: 0, ringGap: 0, ringScale: 0,
+    particles: Array.from({ length: BUBBLES3D_POP_FX_PARTICLES }, () => ({
+      x: 0, y: 0, dx: 0, dy: 0, travel: 0, curve: 0, size: 0, delay: 0, life: 0, kind: 0, color: '',
+    })),
+  }))
+  const unit = (): number => {
+    try {
+      const value = random()
+      return Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0.5
+    } catch { return 0.5 }
+  }
   let canvas: HTMLCanvasElement | undefined
   let context: CanvasRenderingContext2D | undefined
   let width = 0
@@ -104,8 +122,29 @@ export const createBubbles3dPopFx = (host: HTMLElement): Bubbles3dPopFx => {
     active.y = spec.y
     active.radius = Math.min(spec.radius, Math.max(width, height))
     active.color = spec.color
-    active.rainbow = spec.rainbow
     active.age = 0
+    active.life = BUBBLES3D_POP_FX_DURATION * (0.8 + unit() * 0.2)
+    active.count = Math.min(BUBBLES3D_POP_FX_PARTICLES, 8 + Math.floor(unit() * 5))
+    active.ringAngle = unit() * TAU
+    active.ringGap = 0.35 + unit() * 0.75
+    active.ringScale = 0.8 + unit() * 0.3
+    const palette = Math.floor(unit() * RAINBOW.length) % RAINBOW.length
+    for (let index = 0; index < active.count; index++) {
+      const particle = active.particles[index]!
+      const angle = active.ringAngle + index / active.count * TAU + (unit() - 0.5) * 1.1
+      const offset = active.radius * (0.2 + unit() * 0.6)
+      particle.dx = Math.cos(angle)
+      particle.dy = Math.sin(angle)
+      particle.x = particle.dx * offset
+      particle.y = particle.dy * offset
+      particle.travel = (active.radius * 0.55 + 22) * (0.65 + unit() * 0.95)
+      particle.curve = (unit() - 0.5) * particle.travel * 0.6
+      particle.size = Math.max(2, Math.min(5.2, active.radius * 0.09)) * (0.7 + unit() * 0.6)
+      particle.delay = unit() * 0.035
+      particle.life = (active.life - particle.delay) * (0.62 + unit() * 0.38)
+      particle.kind = index === 0 ? 1 : Math.min(2, Math.floor(unit() * 3))
+      particle.color = spec.rainbow ? RAINBOW[(palette + index) % RAINBOW.length]! : spec.color
+    }
   }
   const step = (delta: number, reducedMotion: boolean): boolean => {
     if (disposed || failed) return false
@@ -119,28 +158,77 @@ export const createBubbles3dPopFx = (host: HTMLElement): Bubbles3dPopFx => {
       for (const burst of bursts) {
         if (!burst.active) continue
         burst.age += dt
-        if (burst.age >= BUBBLES3D_POP_FX_DURATION) { burst.active = false; continue }
-        active = true
-        const progress = burst.age / BUBBLES3D_POP_FX_DURATION
-        const opacity = 1 - progress
-        context.globalAlpha = opacity * 0.75
-        context.strokeStyle = burst.rainbow ? '#ffffff' : burst.color
-        context.lineWidth = 2
-        context.beginPath()
-        context.arc(burst.x, burst.y, burst.radius * (0.62 + progress * 0.6), 0, TAU)
-        context.stroke()
-        context.globalAlpha = opacity
-        context.fillStyle = burst.color
-        const travel = burst.radius * (0.3 + progress * 0.75) + progress * 20
-        const radius = Math.max(1, Math.min(4, burst.radius * 0.06)) * (1 - progress * 0.55)
-        for (let index = 0; index < DOTS; index++) {
-          const direction = DIRECTIONS[index]!
-          if (burst.rainbow) context.fillStyle = RAINBOW[index]!
+        if (burst.age >= burst.life) { burst.active = false; continue }
+        let live = false
+        // The rim breaks apart quickly, rather than leaving a perfect expanding circle.
+        const rimProgress = burst.age / 0.18
+        if (rimProgress < 1) {
+          live = true
+          const rimRadius = burst.radius * (burst.ringScale + rimProgress * 0.5)
+          const secondAngle = burst.ringAngle + Math.PI + burst.ringGap
+          context.globalAlpha = (1 - rimProgress) * 0.8
+          context.strokeStyle = burst.color
+          context.lineWidth = 2
           context.beginPath()
-          context.arc(burst.x + direction.x * travel, burst.y + direction.y * travel, radius, 0, TAU)
+          context.arc(burst.x, burst.y, rimRadius, burst.ringAngle, burst.ringAngle + Math.PI - burst.ringGap)
+          context.moveTo(burst.x + Math.cos(secondAngle) * rimRadius, burst.y + Math.sin(secondAngle) * rimRadius)
+          context.arc(burst.x, burst.y, rimRadius, secondAngle, secondAngle + Math.PI * 0.65)
+          context.stroke()
+        }
+        if (burst.age < 0.06) {
+          live = true
+          context.globalAlpha = (1 - burst.age / 0.06) * 0.75
+          context.fillStyle = '#ffffff'
+          context.beginPath()
+          context.arc(burst.x, burst.y, burst.radius * (0.32 + burst.age * 3), 0, TAU)
           context.fill()
         }
-        painted = true
+        for (let index = 0; index < burst.count; index++) {
+          const particle = burst.particles[index]!
+          const age = burst.age - particle.delay
+          if (age < 0) { live = true; continue }
+          if (age >= particle.life) continue
+          live = true
+          const progress = age / particle.life
+          const spread = 1 - (1 - progress) ** 3
+          const curve = particle.curve * progress * progress
+          const x = burst.x + particle.x + particle.dx * particle.travel * spread - particle.dy * curve
+          const y = burst.y + particle.y + particle.dy * particle.travel * spread + particle.dx * curve + 12 * progress * progress
+          const size = particle.size * (1 - progress * 0.45)
+          const opacity = 1 - progress ** 1.3
+          context.globalAlpha = opacity * 0.5
+          context.strokeStyle = particle.color
+          context.lineWidth = Math.max(1, size * 0.7)
+          const tail = size * (particle.kind === 2 ? 4 : 2)
+          context.beginPath()
+          context.moveTo(x - particle.dx * tail, y - particle.dy * tail)
+          context.lineTo(x, y)
+          context.stroke()
+          context.globalAlpha = opacity
+          if (particle.kind === 1) {
+            const length = size * 1.8
+            context.strokeStyle = '#ffffff'
+            context.lineWidth = 1.4
+            context.beginPath()
+            context.moveTo(x - particle.dx * length, y - particle.dy * length)
+            context.lineTo(x + particle.dx * length, y + particle.dy * length)
+            context.moveTo(x + particle.dy * length * 0.65, y - particle.dx * length * 0.65)
+            context.lineTo(x - particle.dy * length * 0.65, y + particle.dx * length * 0.65)
+            context.stroke()
+          } else {
+            context.fillStyle = particle.color
+            context.beginPath()
+            context.arc(x, y, size, 0, TAU)
+            context.fill()
+            context.globalAlpha = opacity * 0.85
+            context.fillStyle = '#ffffff'
+            context.beginPath()
+            context.arc(x - size * 0.25, y - size * 0.25, size * 0.32, 0, TAU)
+            context.fill()
+          }
+        }
+        if (live) { active = true; painted = true }
+        else burst.active = false
       }
       context.globalAlpha = 1
       return active

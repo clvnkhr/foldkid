@@ -483,7 +483,7 @@ describe('3D bubble runtime', () => {
   it('stops an empty scene, starts on creation, and idles again after its last flat burst finishes', async () => {
     const host = stage([])
     const fake = fakeRenderer()
-    const drawing = { clearRect: vi.fn(), beginPath: vi.fn(), arc: vi.fn(), stroke: vi.fn(), fill: vi.fn(), globalAlpha: 1 } as unknown as CanvasRenderingContext2D
+    const drawing = { clearRect: vi.fn(), beginPath: vi.fn(), arc: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn(), fill: vi.fn(), globalAlpha: 1 } as unknown as CanvasRenderingContext2D
     const popped = vi.fn()
     const loop = vi.mocked(fake.renderer.setAnimationLoop)
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(drawing)
@@ -538,7 +538,7 @@ describe('3D bubble runtime', () => {
   it('starts the flat burst when a synchronous press and release consume an idle scene update', async () => {
     const host = stage([])
     const fake = fakeRenderer()
-    const drawing = { clearRect: vi.fn(), beginPath: vi.fn(), arc: vi.fn(), stroke: vi.fn(), fill: vi.fn(), globalAlpha: 1 } as unknown as CanvasRenderingContext2D
+    const drawing = { clearRect: vi.fn(), beginPath: vi.fn(), arc: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn(), fill: vi.fn(), globalAlpha: 1 } as unknown as CanvasRenderingContext2D
     const popped = vi.fn()
     const parsed = vi.spyOn(JSON, 'parse')
     const loop = vi.mocked(fake.renderer.setAnimationLoop)

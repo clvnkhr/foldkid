@@ -1,30 +1,61 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { BUBBLES3D_POP_FX_CAPACITY, BUBBLES3D_POP_FX_DURATION, createBubbles3dPopFx, type Bubble3dPopBurst } from './bubbles3dPopFx'
+import { BUBBLES3D_POP_FX_CAPACITY, BUBBLES3D_POP_FX_DURATION, BUBBLES3D_POP_FX_PARTICLES, createBubbles3dPopFx, type Bubble3dPopBurst } from './bubbles3dPopFx'
 
-interface Fill { readonly color: string | CanvasGradient | CanvasPattern; readonly alpha: number }
+type Segment = { readonly kind: 'arc'; readonly x: number; readonly y: number; readonly radius: number; readonly start: number; readonly end: number } |
+  { readonly kind: 'move' | 'line'; readonly x: number; readonly y: number }
+interface Paint { readonly color: string; readonly alpha: number; readonly width: number; readonly path: ReadonlyArray<Segment> }
 const drawing = () => {
-  const fills: Fill[] = []
+  const fills: Paint[] = []
+  const strokes: Paint[] = []
+  let path: Segment[] = []
   const context = {
-    clearRect: vi.fn(), beginPath: vi.fn(), arc: vi.fn(), stroke: vi.fn(),
-    fill: vi.fn(() => { fills.push({ color: context.fillStyle, alpha: context.globalAlpha }) }),
-    globalAlpha: 1, lineWidth: 1, strokeStyle: '', fillStyle: '',
+    clearRect: vi.fn(), beginPath: vi.fn(() => { path = [] }),
+    arc: vi.fn((x: number, y: number, radius: number, start: number, end: number) => { path.push({ kind: 'arc', x, y, radius, start, end }) }),
+    moveTo: vi.fn((x: number, y: number) => { path.push({ kind: 'move', x, y }) }),
+    lineTo: vi.fn((x: number, y: number) => { path.push({ kind: 'line', x, y }) }),
+    stroke: vi.fn(() => { strokes.push({ color: context.strokeStyle, alpha: context.globalAlpha, width: context.lineWidth, path: [...path] }) }),
+    fill: vi.fn(() => { fills.push({ color: context.fillStyle, alpha: context.globalAlpha, width: context.lineWidth, path: [...path] }) }),
+    globalAlpha: 1, globalCompositeOperation: 'source-over', lineWidth: 1, lineCap: 'butt', strokeStyle: '', fillStyle: '',
   }
-  return { context, fills }
+  return { context, fills, strokes }
 }
-const setup = () => {
+const seeded = (seed: number): (() => number) => {
+  let state = seed >>> 0
+  return () => { state = (Math.imul(state, 1664525) + 1013904223) >>> 0; return state / 4294967296 }
+}
+const setup = (random = seeded(1234)) => {
   const host = document.createElement('div')
   const sceneCanvas = document.createElement('canvas')
   sceneCanvas.className = 'bubbles3d-canvas'
   host.append(sceneCanvas)
   document.body.append(host)
-  const { context, fills } = drawing()
+  const { context, fills, strokes } = drawing()
   const getContext = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D)
-  const fx = createBubbles3dPopFx(host)
+  const fx = createBubbles3dPopFx(host, random)
   fx.resize(400, 200)
-  return { host, sceneCanvas, context, fills, getContext, fx }
+  return { host, sceneCanvas, context, fills, strokes, getContext, fx }
 }
 const spec = (changes: Partial<Bubble3dPopBurst> = {}): Bubble3dPopBurst => ({ x: 100, y: 50, radius: 40, color: '#ff6584', rainbow: false, ...changes })
+const trails = (strokes: ReadonlyArray<Paint>, color?: string): Paint[] => strokes.filter(paint =>
+  (color === undefined || paint.color === color) && paint.path.length === 2 && paint.path[0]?.kind === 'move' && paint.path[1]?.kind === 'line')
+const relative = (paints: ReadonlyArray<Paint>, x: number, y: number) => paints.map(paint => ({
+  ...paint, path: paint.path.map(segment => ({ ...segment, x: segment.x - x, y: segment.y - y })),
+}))
+const expectFinite = (paints: ReadonlyArray<Paint>): void => {
+  for (const paint of paints) {
+    expect(paint.alpha).toBeGreaterThanOrEqual(0)
+    expect(paint.alpha).toBeLessThanOrEqual(1)
+    expect(paint.width).toBeGreaterThan(0)
+    for (const segment of paint.path) {
+      expect(Number.isFinite(segment.x) && Number.isFinite(segment.y)).toBe(true)
+      if (segment.kind === 'arc') {
+        expect(Number.isFinite(segment.radius) && Number.isFinite(segment.start) && Number.isFinite(segment.end)).toBe(true)
+        expect(segment.radius).toBeGreaterThan(0)
+      }
+    }
+  }
+}
 
 afterEach(() => { vi.restoreAllMocks(); document.body.replaceChildren() })
 
@@ -55,61 +86,166 @@ describe('flat 3D bubble pop effects', () => {
     } finally { fx.dispose() }
   })
 
-  it('draws a ring and eight flat dots in the supplied CSS-pixel position and radius', () => {
-    const { context, fills, fx } = setup()
+  it('adds a brief center flash, broken rim, varied droplets and white glints', () => {
+    const { context, fills, strokes, fx } = setup()
     try {
       fx.burst(spec())
       expect(fx.step(0, false)).toBe(true)
       expect(context.clearRect).toHaveBeenCalledExactlyOnceWith(0, 0, 400, 200)
-      expect(context.arc.mock.calls[0]).toEqual([100, 50, 24.8, 0, Math.PI * 2])
-      expect(context.arc.mock.calls[1]).toEqual([112, 50, 2.4, 0, Math.PI * 2])
-      expect(context.stroke).toHaveBeenCalledOnce()
-      expect(context.fill).toHaveBeenCalledTimes(8)
-      expect(fills).toEqual(Array.from({ length: 8 }, () => ({ color: '#ff6584', alpha: 1 })))
+      expect(fills.some(paint => paint.color === '#ffffff' && paint.path.some(segment => segment.kind === 'arc' && segment.x === 100 && segment.y === 50))).toBe(true)
+      const rim = strokes[0]!.path.filter(segment => segment.kind === 'arc')
+      expect(rim).toHaveLength(2)
+      for (const arc of rim) if (arc.kind === 'arc') {
+        expect([arc.x, arc.y]).toEqual([100, 50])
+        expect(arc.end - arc.start).toBeGreaterThan(0)
+        expect(arc.end - arc.start).toBeLessThan(Math.PI * 2)
+      }
+      if (rim[0]?.kind === 'arc' && rim[1]?.kind === 'arc') expect(rim[0].end - rim[0].start).not.toBeCloseTo(rim[1].end - rim[1].start)
+      const fillStart = fills.length
+      const strokeStart = strokes.length
+      fx.step(0.07, false)
+      const droplets = fills.slice(fillStart).filter(paint => paint.color === spec().color)
+      const particles = trails(strokes.slice(strokeStart), spec().color)
+      expect(particles.length).toBeGreaterThanOrEqual(8)
+      expect(particles.length).toBeLessThanOrEqual(BUBBLES3D_POP_FX_PARTICLES)
+      expect(droplets.length).toBeGreaterThan(0)
+      expect(new Set(particles.map(paint => paint.width)).size).toBeGreaterThan(3)
+      expect(strokes.slice(strokeStart).some(paint => paint.color === '#ffffff' && paint.path.length === 4)).toBe(true)
+      expectFinite([...fills, ...strokes])
       expect(context.globalAlpha).toBe(1)
     } finally { fx.dispose() }
   })
 
-  it('moves dots outward and fades the effect over its bounded lifetime', () => {
-    const { context, fills, fx } = setup()
+  it('moves varied particles outward, fades them, and does no work after their bounded lifetime', () => {
+    const { context, strokes, fx } = setup()
     try {
       fx.burst(spec())
-      expect(fx.step(BUBBLES3D_POP_FX_DURATION / 2, false)).toBe(true)
-      expect(context.arc.mock.calls[0]).toEqual([100, 50, 36.8, 0, Math.PI * 2])
-      expect(context.arc.mock.calls[1]![0]).toBe(137)
-      expect(fills.every(fill => fill.alpha === 0.5)).toBe(true)
-      expect(fx.step(BUBBLES3D_POP_FX_DURATION / 2, false)).toBe(false)
-      const clearCalls = context.clearRect.mock.calls.length
-      const arcs = context.arc.mock.calls.length
+      expect(fx.step(0.04, false)).toBe(true)
+      const early = trails(strokes, spec().color)
+      const start = strokes.length
+      expect(fx.step(0.08, false)).toBe(true)
+      const later = trails(strokes.slice(start), spec().color)
+      expect(later).toHaveLength(early.length)
+      const distance = (paint: Paint): number => Math.hypot(paint.path[1]!.x - 100, paint.path[1]!.y - 50)
+      expect(later.reduce((sum, paint) => sum + distance(paint), 0)).toBeGreaterThan(early.reduce((sum, paint) => sum + distance(paint), 0))
+      expect(later.every((paint, index) => paint.alpha < early[index]!.alpha)).toBe(true)
+      expect(fx.step(BUBBLES3D_POP_FX_DURATION, false)).toBe(false)
+      const counts = () => [context.clearRect, context.arc, context.moveTo, context.lineTo, context.stroke, context.fill].map(mock => mock.mock.calls.length)
+      const idle = counts()
       for (let frame = 0; frame < 100; frame++) expect(fx.step(1 / 60, false)).toBe(false)
-      expect(context.clearRect).toHaveBeenCalledTimes(clearCalls)
-      expect(context.arc).toHaveBeenCalledTimes(arcs)
+      expect(counts()).toEqual(idle)
     } finally { fx.dispose() }
   })
 
-  it('keeps simultaneous pops within a fixed twelve-burst, ninety-six-dot pool', () => {
-    const { context, getContext, fx } = setup()
+  it('keeps simultaneous pops within a fixed twelve-burst, 144-particle pool', () => {
+    const { fills, strokes, getContext, fx } = setup(() => 1)
     try {
-      for (let id = 0; id < 40; id++) fx.burst(spec({ x: id, y: 10 }))
-      expect(fx.step(0, false)).toBe(true)
-      expect(context.stroke).toHaveBeenCalledTimes(BUBBLES3D_POP_FX_CAPACITY)
-      expect(context.fill).toHaveBeenCalledTimes(BUBBLES3D_POP_FX_CAPACITY * 8)
-      const ringPositions = context.arc.mock.calls.filter((_, index) => index % 9 === 0).map(call => call[0]).sort((a, b) => a! - b!)
-      expect(ringPositions).toEqual(Array.from({ length: 12 }, (_, index) => 28 + index))
+      for (let id = 0; id < 40; id++) fx.burst(spec({ x: id * 1000, y: 10 }))
+      expect(fx.step(0.07, false)).toBe(true)
+      expect(trails(strokes, spec().color)).toHaveLength(BUBBLES3D_POP_FX_CAPACITY * BUBBLES3D_POP_FX_PARTICLES)
+      expect(fills.length + strokes.length).toBeLessThanOrEqual(BUBBLES3D_POP_FX_CAPACITY * (BUBBLES3D_POP_FX_PARTICLES * 3 + 2))
+      const visiblePops = [...new Set(strokes.flatMap(paint => paint.path.map(segment => Math.round(segment.x / 1000))))].sort((a, b) => a - b)
+      expect(visiblePops).toEqual(Array.from({ length: 12 }, (_, index) => 28 + index))
       expect(getContext).toHaveBeenCalledOnce()
     } finally { fx.dispose() }
   })
 
-  it('renders rainbow dots without gradients, images, or extra canvases', () => {
-    const { host, context, fills, fx } = setup()
+  it('renders rainbow-colored trails and white highlights without extra canvases', () => {
+    const { host, fills, strokes, fx } = setup()
     try {
       fx.burst(spec({ rainbow: true }))
-      fx.step(0, false)
-      expect(new Set(fills.map(fill => fill.color)).size).toBe(8)
-      expect(context.strokeStyle).toBe('#ffffff')
+      fx.step(0.07, false)
+      expect(new Set(trails(strokes).map(paint => paint.color)).size).toBeGreaterThanOrEqual(6)
+      expect([...fills, ...strokes].some(paint => paint.color === '#ffffff')).toBe(true)
       expect(host.querySelectorAll('.bubbles3d-pop-fx')).toHaveLength(1)
     } finally { fx.dispose() }
   })
+
+  it('reproduces a seeded burst and varies the next pop instead of repeating an even pattern', () => {
+    const first = setup(seeded(1234))
+    let original: { fills: Paint[]; strokes: Paint[] }
+    try {
+      first.fx.burst(spec())
+      first.fx.step(0.07, false)
+      original = { fills: [...first.fills], strokes: [...first.strokes] }
+      first.fx.clear()
+      const fillStart = first.fills.length
+      const strokeStart = first.strokes.length
+      first.fx.burst(spec())
+      first.fx.step(0.07, false)
+      expect({ fills: first.fills.slice(fillStart), strokes: first.strokes.slice(strokeStart) }).not.toEqual(original)
+    } finally { first.fx.dispose() }
+    const repeated = setup(seeded(1234))
+    try {
+      repeated.fx.burst(spec())
+      repeated.fx.step(0.07, false)
+      expect({ fills: repeated.fills, strokes: repeated.strokes }).toEqual(original!)
+    } finally { repeated.fx.dispose() }
+  })
+
+  it('samples randomness only when a valid burst is born', () => {
+    const random = vi.fn(seeded(50))
+    const { fx } = setup(random)
+    try {
+      expect(random).not.toHaveBeenCalled()
+      fx.burst(spec({ radius: -1 }))
+      expect(random).not.toHaveBeenCalled()
+      fx.burst(spec())
+      const samples = random.mock.calls.length
+      expect(samples).toBeGreaterThan(0)
+      for (let frame = 0; frame < 5; frame++) fx.step(0.02, false)
+      fx.resize(400, 200)
+      expect(random).toHaveBeenCalledTimes(samples)
+      fx.clear()
+      fx.burst(spec())
+      expect(random.mock.calls.length).toBeGreaterThan(samples)
+    } finally { fx.dispose() }
+  })
+
+  it('keeps the supplied CSS-pixel center and scales feedback with the popped radius', () => {
+    const base = setup(seeded(7))
+    let original: { fills: ReturnType<typeof relative>; strokes: ReturnType<typeof relative> }
+    let smallRadius: number
+    try {
+      base.fx.burst(spec({ radius: 20 }))
+      base.fx.step(0.07, false)
+      original = { fills: relative(base.fills, 100, 50), strokes: relative(base.strokes, 100, 50) }
+      smallRadius = Math.max(...base.context.arc.mock.calls.map(call => call[2]))
+    } finally { base.fx.dispose() }
+    const moved = setup(seeded(7))
+    try {
+      moved.fx.burst(spec({ x: 210, y: 120, radius: 20 }))
+      moved.fx.step(0.07, false)
+      const translated = { fills: relative(moved.fills, 210, 120), strokes: relative(moved.strokes, 210, 120) }
+      // Decimal projection differences are harmless; compare rounded CSS pixels.
+      const rounded = (value: unknown): unknown => JSON.parse(JSON.stringify(value, (_, item: unknown) => typeof item === 'number' ? Math.round(item * 1e7) / 1e7 : item))
+      expect(rounded(translated)).toEqual(rounded(original!))
+    } finally { moved.fx.dispose() }
+    const large = setup(seeded(7))
+    try {
+      large.fx.burst(spec({ radius: 80 }))
+      large.fx.step(0.07, false)
+      expect(Math.max(...large.context.arc.mock.calls.map(call => call[2]))).toBeGreaterThan(smallRadius)
+      expectFinite([...large.fills, ...large.strokes])
+    } finally { large.fx.dispose() }
+  })
+
+  for (const invalid of [-2, 2, NaN, Infinity, 'throws'] as const) {
+    it(`keeps malformed random output (${invalid}) finite and harmless`, () => {
+      const { fills, strokes, fx } = setup(() => {
+        if (invalid === 'throws') throw new Error('Random unavailable')
+        return invalid
+      })
+      try {
+        expect(() => fx.burst(spec())).not.toThrow()
+        expect(fx.step(0.07, false)).toBe(true)
+        expect(trails(strokes, spec().color).length).toBeGreaterThanOrEqual(8)
+        expect(trails(strokes, spec().color).length).toBeLessThanOrEqual(BUBBLES3D_POP_FX_PARTICLES)
+        expectFinite([...fills, ...strokes])
+        expect(fx.step(BUBBLES3D_POP_FX_DURATION, false)).toBe(false)
+      } finally { fx.dispose() }
+    })
+  }
 
   it('ignores malformed positions, radii, colors, and geometry without acquiring canvas', () => {
     const { getContext, fx } = setup()
@@ -130,12 +266,22 @@ describe('flat 3D bubble pop effects', () => {
   })
 
   it('handles invalid deltas safely and expires a burst after a long interrupted frame', () => {
-    const { context, fx } = setup()
+    const { context, fills, strokes, fx } = setup()
     try {
       fx.burst(spec())
-      for (const delta of [NaN, Infinity, -1]) expect(fx.step(delta, false)).toBe(true)
-      expect(context.arc.mock.calls.filter((_, index) => index % 9 === 0).every(call => call[2] === 24.8)).toBe(true)
+      expect(fx.step(0, false)).toBe(true)
+      const initialFills = [...fills]
+      const initialStrokes = [...strokes]
+      for (const delta of [NaN, Infinity, -1]) {
+        const fillStart = fills.length
+        const strokeStart = strokes.length
+        expect(fx.step(delta, false)).toBe(true)
+        expect(fills.slice(fillStart)).toEqual(initialFills)
+        expect(strokes.slice(strokeStart)).toEqual(initialStrokes)
+      }
+      expectFinite([...fills, ...strokes])
       expect(fx.step(10, false)).toBe(false)
+      expect(context.globalAlpha).toBe(1)
     } finally { fx.dispose() }
   })
 
@@ -197,7 +343,7 @@ describe('flat 3D bubble pop effects', () => {
       expect(width).not.toHaveBeenCalled()
       expect(height).not.toHaveBeenCalled()
       expect(fx.step(0.1, false)).toBe(true)
-      expect(fx.step(0.15, false)).toBe(false)
+      expect(fx.step(BUBBLES3D_POP_FX_DURATION, false)).toBe(false)
       expect([overlay.width, overlay.height]).toEqual([401, 201])
       width.mockRestore()
       height.mockRestore()
