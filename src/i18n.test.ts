@@ -60,23 +60,40 @@ describe('i18n completeness', () => {
     expect(i18n.tf('whereIs', 'xx', '⭐')).toBe(i18n.translations.en.whereIs('⭐'))
   })
 
-  it('localizes 3D bubbles controls and formats accessible bubble names with the supplied locale number', () => {
-    const bubbleNames = {
-      en: 'Bubble', zh: '泡泡', fr: 'Bulle', de: 'Blase', fa: 'حباب', ms: 'Buih', 'zh-HK': '泡泡', ja: 'しゃぼんだま',
-    } as const
+  it('localizes 3D bubble creation instructions and formats scores with the supplied locale number', () => {
     const poppedLabels = {
       en: 'Popped: ', zh: '已戳破: ', fr: 'Éclatées : ', de: 'Geplatzt: ', fa: 'ترکیده: ', ms: 'Dipecahkan: ', 'zh-HK': '已戳破: ', ja: 'わったかず: ',
     } as const
     for (const lang of langKeys) {
       const number = new Intl.NumberFormat(lang).format(1234)
-      expect(i18n.tf('bubbles3dBubble', lang, number)).toBe(`${bubbleNames[lang]} ${number}`)
       expect(i18n.tf('bubbles3dPopped', lang, number)).toBe(`${poppedLabels[lang]}${number}`)
-      for (const key of ['bubbles3dTitle', 'bubbles3dPrompt', 'bubbles3dAdd', 'bubbles3dReset', 'bubbles3dUnavailable', 'pageTitleBubbles3d'] as const) {
+      for (const key of ['bubbles3dTitle', 'bubbles3dPrompt', 'bubbles3dEmpty', 'bubbles3dLimit', 'bubbles3dUnavailable', 'pageTitleBubbles3d', 'next'] as const) {
         expect(i18n.t(key, lang).length, `${lang}.${key}`).toBeGreaterThan(0)
       }
+      for (const key of ['bubbles3dAdd', 'bubbles3dReset', 'bubbles3dBubble']) expect(i18n.translations[lang]).not.toHaveProperty(key)
     }
-    expect(i18n.tf('bubbles3dBubble', 'xx', '12')).toBe('Bubble 12')
-    expect(i18n.t('bubbles3dPrompt')).toBe('Tap the floating shapes as they spin freely. Use several fingers at once!')
+    expect(i18n.t('bubbles3dPrompt')).toBe('Choose a shape, then tap or hold a color. Release to make a bubble; hold longer for a bigger one. Pop the floating bubbles!')
+    expect(i18n.t('bubbles3dEmpty')).toBe('Choose a shape and tap a color to make a bubble. Hold for a bigger bubble.')
+    expect(i18n.t('bubbles3dLimit')).toBe('Pop or clear some bubbles to make room.')
+    expect(i18n.t('bubbles3dEmpty', 'xx')).toBe(i18n.t('bubbles3dEmpty'))
+  })
+
+  it('speaks newly created 3D color and shape names in each language\'s word order', () => {
+    const coloredCubes = {
+      en: 'red cube',
+      zh: '红色 正方体',
+      fr: 'cube rouge',
+      de: 'rot würfel',
+      fa: 'مکعب قرمز',
+      ms: 'kubus merah',
+      'zh-HK': '紅色 正方體',
+      ja: 'あか 立方体',
+    } as const
+    for (const lang of langKeys) {
+      const color = i18n.t('colorRed', lang).toLowerCase()
+      const shape = i18n.t('bubbles3dShapeCube', lang).toLowerCase()
+      expect(i18n.tf('coloredShape', lang, color, shape), lang).toBe(coloredCubes[lang])
+    }
   })
 
   it('names every 3D shape in every language and formats numbered names with locale grammar', () => {

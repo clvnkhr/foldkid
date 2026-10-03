@@ -107,8 +107,11 @@ describe('codebase invariants', () => {
       for (const language of Object.keys(translations)) expect(t(key, language), `${shape.id} in ${language}`).not.toBe('')
     }
     const initial = Bubbles3d.init()
-    const { shape: _shape, ...missingShape } = initial.bubbles[0]!
-    for (const bubble of [missingShape, { ...initial.bubbles[0]!, shape: 'unknown-shape' }]) {
+    expect(initial.bubbles).toEqual([])
+    const validBubble = Bubbles3d.makeBubble(0, 'sphere', '#FF4757', 0)
+    const { shape: _shape, ...missingShape } = validBubble
+    const { rainbow: _rainbow, ...missingRainbow } = validBubble
+    for (const bubble of [missingShape, { ...validBubble, shape: 'unknown-shape' }, missingRainbow, { ...validBubble, rainbow: 'yes' }]) {
       expect(Option.isNone(S.decodeUnknownOption(Bubbles3d.Model)({ ...initial, bubbles: [bubble] }))).toBe(true)
       expect(Option.isNone(S.decodeUnknownOption(Main.Model)({ ...Main.init()[0], bubbles3d: { ...initial, bubbles: [bubble] } }))).toBe(true)
     }
@@ -139,6 +142,11 @@ describe('codebase invariants', () => {
   it('rejects invalid nested messages at Effect schema boundaries', () => {
     const messageCases = [
       ['3D Bubbles pop', Main.Message, { _tag: 'Bubbles3dClickedPop', id: '0', revision: 0 }],
+      ['3D Bubbles creation shape', Main.Message, { _tag: 'Bubbles3dCreatedBubble', shape: 'unknown-shape', color: '#FF4757', duration: 0, revision: 0, creationId: 0 }],
+      ['3D Bubbles creation color', Main.Message, { _tag: 'Bubbles3dCreatedBubble', shape: 'sphere', color: 'red', duration: 0, revision: 0, creationId: 0 }],
+      ['3D Bubbles creation duration', Main.Message, { _tag: 'Bubbles3dCreatedBubble', shape: 'sphere', color: '#FF4757', duration: '500', revision: 0, creationId: 0 }],
+      ['3D Bubbles creation ID', Main.Message, { _tag: 'Bubbles3dCreatedBubble', shape: 'sphere', color: '#FF4757', duration: 0, revision: 0, creationId: 'finger' }],
+      ['3D Bubbles selected shape', Main.Message, { _tag: 'Bubbles3dSelectedShape', shape: 'unknown-shape' }],
       ['Counter display mode', Counter.Message, { _tag: 'CounterSetDisplayMode', value: 'huge' }],
       ['Counter press pointer', Counter.Message, { _tag: 'CounterPointerDown', button: 'inc', timeStamp: 0, pointerId: 'finger' }],
       ['Main nested Counter cancellation', Main.Message, { _tag: 'CounterPressCancelled', pointerId: 'finger' }],

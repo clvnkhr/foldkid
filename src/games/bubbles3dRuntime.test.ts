@@ -1,13 +1,13 @@
-import { Euler, Mesh, PerspectiveCamera, Quaternion, Scene, Vector3, type BufferGeometry, type MeshPhysicalMaterial } from 'three'
+import { Euler, Group, Mesh, PerspectiveCamera, Quaternion, Scene, Vector3, type BufferGeometry, type MeshPhysicalMaterial } from 'three'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import * as Audio from '../audio'
 import { createBubbles3dRuntime, createBubbles3dWorld, readBubbles3dSnapshot, type Bubble3dSpec, type RendererHandle } from './bubbles3dRuntime'
-import { BUBBLE3D_SHAPES } from './bubbles3dShapes'
+import { BUBBLE3D_SHAPES, MAX_BUBBLE3D_SIZE, MIN_BUBBLE3D_SIZE } from './bubbles3dShapes'
 
 const specs: Bubble3dSpec[] = [
-  { id: 0, shape: 'sphere', color: '#ff6584', size: 0.6, x: -0.5, y: 0, z: 0 },
-  { id: 1, shape: 'cube', color: '#5bcafa', size: 0.6, x: 0.5, y: 0, z: 0 },
+  { id: 0, shape: 'sphere', color: '#ff6584', rainbow: false, size: 0.6, x: -0.5, y: 0, z: 0 },
+  { id: 1, shape: 'cube', color: '#5bcafa', rainbow: false, size: 0.6, x: 0.5, y: 0, z: 0 },
 ]
 const pointer = (target: EventTarget, type: string, id: number, x: number, y: number, timeStamp?: number): void => {
   const event = new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: id, pointerType: 'touch', clientX: x, clientY: y })
@@ -53,6 +53,142 @@ const fakeRenderer = () => {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 describe('3D bubble world', () => {
+  const meshesIn = (scene: Scene) => scene.children.filter(child => child instanceof Mesh) as Array<Mesh<BufferGeometry, MeshPhysicalMaterial>>
+  const expectContained = (world: ReturnType<typeof createBubbles3dWorld>): void => {
+    const verticalSlope = Math.tan(world.camera.fov * Math.PI / 360)
+    const horizontalSlope = verticalSlope * world.camera.aspect
+    for (const mesh of meshesIn(world.scene)) {
+      const radius = Math.max(mesh.scale.x, mesh.scale.y, mesh.scale.z)
+      const distance = world.camera.position.z - mesh.position.z
+      expect([...mesh.position.toArray(), ...mesh.scale.toArray()].every(Number.isFinite)).toBe(true)
+      expect(radius).toBeGreaterThan(0)
+      expect((distance * verticalSlope - Math.abs(mesh.position.y)) / Math.hypot(1, verticalSlope)).toBeGreaterThanOrEqual(radius - 0.000001)
+      expect((distance * horizontalSlope - Math.abs(mesh.position.x)) / Math.hypot(1, horizontalSlope)).toBeGreaterThanOrEqual(radius - 0.000001)
+      expect(Math.abs(mesh.position.z)).toBeLessThanOrEqual(2.7)
+    }
+  }
+
+  it('keeps the full rotating held-size bubble inside narrow and short viewports after collisions and resizing', () => {
+    const world = createBubbles3dWorld()
+    try {
+      world.apply({ revision: 0, bubbles: [
+        { ...specs[0]!, size: MAX_BUBBLE3D_SIZE, x: 1, y: 1, z: 1 },
+        { ...specs[1]!, size: MIN_BUBBLE3D_SIZE, x: -1, y: -1, z: -1 },
+        { ...specs[0]!, id: 2, shape: 'gear', size: MAX_BUBBLE3D_SIZE, x: 0.95, y: -0.95, z: 0.7 },
+      ] }, false)
+      for (const [width, height] of [[400, 400], [320, 900], [900, 180], [32, 1024], [180, 900], [400, 400]]) {
+        world.resize(width!, height!)
+        expectContained(world)
+        for (let frame = 0; frame < 100; frame++) {
+          world.step(0.04, false)
+          expectContained(world)
+        }
+      }
+      world.resize(0, Number.NaN)
+      expectContained(world)
+    } finally { world.dispose() }
+  })
+
+  it('preserves the tap-to-hold size ratio and never resizes survivors when another bubble is added or popped', () => {
+    const world = createBubbles3dWorld()
+    const bubbles = [
+      { ...specs[1]!, id: 0, size: MIN_BUBBLE3D_SIZE },
+      { ...specs[1]!, id: 1, size: MAX_BUBBLE3D_SIZE },
+    ]
+    try {
+      world.resize(90, 900)
+      world.apply({ revision: 0, bubbles }, true)
+      const [tap, held] = meshesIn(world.scene)
+      expect(held!.scale.x / tap!.scale.x).toBeCloseTo(MAX_BUBBLE3D_SIZE / MIN_BUBBLE3D_SIZE)
+      expect(held!.scale.x).toBeLessThan(MAX_BUBBLE3D_SIZE)
+      const original = tap!.scale.clone()
+      world.apply({ revision: 0, bubbles: [...bubbles, { ...bubbles[1]!, id: 2 }] }, true)
+      expect(tap!.scale).toEqual(original)
+      expect(world.pop(2, true)).toBe(true)
+      world.apply({ revision: 0, bubbles }, true)
+      expect(tap!.scale).toEqual(original)
+      world.resize(400, 400)
+      expect(tap!.scale.x).toBeCloseTo(MIN_BUBBLE3D_SIZE)
+      expect(held!.scale.x).toBeCloseTo(MAX_BUBBLE3D_SIZE)
+      expect(held!.scale.x / tap!.scale.x).toBeCloseTo(MAX_BUBBLE3D_SIZE / MIN_BUBBLE3D_SIZE)
+    } finally { world.dispose() }
+  })
+
+  it('uses the drawn radius for collisions and proportionate pop bursts', () => {
+    const world = createBubbles3dWorld()
+    try {
+      world.resize(100, 400)
+      world.apply({ revision: 0, bubbles: [
+        { ...specs[1]!, id: 0, size: MAX_BUBBLE3D_SIZE, x: 0, z: -0.05 },
+        { ...specs[1]!, id: 1, size: MAX_BUBBLE3D_SIZE, x: 0, z: 0.05 },
+      ] }, false)
+      const [first, second] = meshesIn(world.scene)
+      world.step(0, false)
+      const gap = first!.scale.x + second!.scale.x
+      expect(gap).toBeLessThan(MAX_BUBBLE3D_SIZE * 2)
+      expect(first!.position.distanceTo(second!.position)).toBeCloseTo(gap)
+      expectContained(world)
+      world.apply({ revision: 1, bubbles: [
+        { ...specs[1]!, id: 2, size: MIN_BUBBLE3D_SIZE },
+        { ...specs[1]!, id: 3, size: MAX_BUBBLE3D_SIZE },
+      ] }, false)
+      const [tap, held] = meshesIn(world.scene)
+      world.pop(2, false)
+      world.pop(3, false)
+      const bursts = world.scene.children.filter(child => child instanceof Group)
+      expect(bursts[0]!.scale.x).toBeCloseTo(tap!.scale.x / 0.6)
+      expect(bursts[1]!.scale.x).toBeCloseTo(held!.scale.x / 0.6)
+    } finally { world.dispose() }
+  })
+
+  it('raycasts the larger visible area of a held bubble', () => {
+    const world = createBubbles3dWorld()
+    try {
+      world.resize(400, 400)
+      world.apply({ revision: 0, bubbles: [{ ...specs[0]!, size: MAX_BUBBLE3D_SIZE, x: 0 }] }, true)
+      expect(world.pick(250, 200, 400, 400)).toBe(0)
+      world.apply({ revision: 1, bubbles: [{ ...specs[0]!, size: MIN_BUBBLE3D_SIZE, x: 0 }] }, true)
+      expect(world.pick(250, 200, 400, 400)).toBeUndefined()
+      expect(world.pick(200, 200, 400, 400)).toBe(0)
+    } finally { world.dispose() }
+  })
+
+  it('caches colorful rainbow surfaces separately without tinting solid bubbles and disposes their resources', () => {
+    const world = createBubbles3dWorld()
+    const baseDisposed = vi.fn()
+    const rainbowDisposed = vi.fn()
+    const particlesDisposed = vi.fn()
+    try {
+      world.apply({ revision: 0, bubbles: [
+        { ...specs[0]! }, { ...specs[0]!, id: 1, rainbow: true }, { ...specs[0]!, id: 2, rainbow: true },
+      ] }, true)
+      const [solid, rainbow, repeated] = meshesIn(world.scene)
+      expect(solid!.geometry).not.toBe(rainbow!.geometry)
+      expect(rainbow!.geometry).toBe(repeated!.geometry)
+      expect(solid!.geometry.getAttribute('color')).toBeUndefined()
+      expect(solid!.material.vertexColors).toBe(false)
+      expect(rainbow!.material.vertexColors).toBe(true)
+      expect(rainbow!.material.color.getHexString()).toBe('ffffff')
+      expect(rainbow!.material.attenuationColor.getHexString()).toBe('ffffff')
+      expect(rainbow!.material.iridescence).toBeGreaterThan(solid!.material.iridescence)
+      const colors = rainbow!.geometry.getAttribute('color')
+      expect(colors.count).toBe(rainbow!.geometry.getAttribute('position').count)
+      expect(Array.from(colors.array).every(value => Number.isFinite(value) && value >= 0 && value <= 1)).toBe(true)
+      const hues = new Set(Array.from({ length: colors.count }, (_, index) => [colors.getX(index), colors.getY(index), colors.getZ(index)].map(value => value.toFixed(2)).join(',')))
+      expect(hues.size).toBeGreaterThan(50)
+      solid!.geometry.addEventListener('dispose', baseDisposed)
+      rainbow!.geometry.addEventListener('dispose', rainbowDisposed)
+      world.pop(1, false)
+      const burst = world.scene.children.find(child => child instanceof Group)!
+      const particle = burst.children[0] as Mesh
+      expect(particle.geometry.getAttribute('color')).toBeDefined()
+      particle.geometry.addEventListener('dispose', particlesDisposed)
+    } finally { world.dispose() }
+    expect(baseDisposed).toHaveBeenCalledOnce()
+    expect(rainbowDisposed).toHaveBeenCalledOnce()
+    expect(particlesDisposed).toHaveBeenCalledOnce()
+  })
+
   it('uses perspective depth and actual Three.js raycasts for the nearest shape', () => {
     const world = createBubbles3dWorld()
     try {
@@ -182,7 +318,10 @@ describe('3D bubble world', () => {
       const everyShape = BUBBLE3D_SHAPES.map((shape, id) => ({ ...specs[0]!, id, shape: shape.id }))
       host.setAttribute('data-bubbles3d-state', JSON.stringify({ revision: 0, bubbles: everyShape }))
       expect(readBubbles3dSnapshot(host)?.bubbles).toEqual(everyShape)
-      for (const bubbles of [[specs[0], specs[0]], [{ ...specs[0], x: 2 }], [{ ...specs[0], size: -1 }], [{ ...specs[0], color: 'red' }], [{ ...specs[0], shape: 'unknown' }], [{ ...specs[0], shape: null }], [{ ...specs[0], shape: undefined }]]) {
+      const sizeBounds = [{ ...specs[0]!, size: MIN_BUBBLE3D_SIZE }, { ...specs[1]!, size: MAX_BUBBLE3D_SIZE, rainbow: true }]
+      host.setAttribute('data-bubbles3d-state', JSON.stringify({ revision: 0, bubbles: sizeBounds }))
+      expect(readBubbles3dSnapshot(host)?.bubbles).toEqual(sizeBounds)
+      for (const bubbles of [[specs[0], specs[0]], [{ ...specs[0], x: 2 }], [{ ...specs[0], size: MIN_BUBBLE3D_SIZE - 0.00001 }], [{ ...specs[0], size: MAX_BUBBLE3D_SIZE + 0.00001 }], [{ ...specs[0], size: Number.POSITIVE_INFINITY }], [{ ...specs[0], color: 'red' }], [{ ...specs[0], shape: 'unknown' }], [{ ...specs[0], shape: null }], [{ ...specs[0], shape: undefined }], [{ ...specs[0], rainbow: undefined }], [{ ...specs[0], rainbow: 'true' }]]) {
         host.setAttribute('data-bubbles3d-state', JSON.stringify({ revision: 0, bubbles }))
         expect(readBubbles3dSnapshot(host)).toBeUndefined()
       }

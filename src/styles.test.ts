@@ -172,6 +172,17 @@ describe('styles.css invariants', () => {
     expect(fallback).toContain('touch-action: pan-y')
   })
 
+  it('keeps 3D creation holds separate from ordinary touch buttons', () => {
+    const color = cssRule('.bubbles3d-color-button')
+    const shape = cssRule('.bubbles3d-shape-button')
+    expect(color).toContain('touch-action: none')
+    expect(color).toContain('min-height: 44px')
+    expect(shape).toContain('touch-action: manipulation')
+    expect(shape).toContain('overflow-wrap: anywhere')
+    expect(styles).toContain('.bubbles3d-color-button:focus-visible')
+    expect(styles).toContain('.bubbles3d-color-button--charging')
+  })
+
   it('keeps Find It card boxes stable while sizing single and pair emoji separately', () => {
     const emojiCell = cssRule('.emoji-cell')
     const pairsCell = cssRule('.emoji-cell--pairs')

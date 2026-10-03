@@ -269,8 +269,10 @@ export const Message = S.Union([
   ClickedBubbles,
   ClickedBubbles3d,
   Bubbles3d.ClickedPop,
-  Bubbles3d.ClickedAdd,
-  Bubbles3d.ClickedReset,
+  Bubbles3d.CreatedBubble,
+  Bubbles3d.SelectedShape,
+  Bubbles3d.NextShapePage,
+  Bubbles3d.ClickedClear,
   Bubbles3d.RendererReady,
   Bubbles3d.RendererFailed,
   Bubbles3d.SoundPlayed,
@@ -574,7 +576,7 @@ const updateBubbles3d = (
   model: Model,
   message: Bubbles3d.Message,
 ): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
-  const [next, cmds] = Bubbles3d.update(model.bubbles3d, message, model.muted)
+  const [next, cmds] = Bubbles3d.update(model.bubbles3d, message, model.muted, model.language, { rate: model.speechRate, pitch: model.speechPitch })
   return [{ ...model, bubbles3d: next }, cmds]
 }
 
@@ -850,8 +852,10 @@ const _update = (
       ClickedBubbles: () => [{ ...model, page: PageBubbles() }, []],
       ClickedBubbles3d: () => [{ ...model, page: PageBubbles3d() }, []],
       Bubbles3dClickedPop: (msg) => updateBubbles3d(model, msg),
-      Bubbles3dClickedAdd: (msg) => updateBubbles3d(model, msg),
-      Bubbles3dClickedReset: (msg) => updateBubbles3d(model, msg),
+      Bubbles3dCreatedBubble: (msg) => updateBubbles3d(model, msg),
+      Bubbles3dSelectedShape: (msg) => updateBubbles3d(model, msg),
+      Bubbles3dNextShapePage: (msg) => updateBubbles3d(model, msg),
+      Bubbles3dClickedClear: (msg) => updateBubbles3d(model, msg),
       Bubbles3dRendererReady: (msg) => updateBubbles3d(model, msg),
       Bubbles3dRendererFailed: (msg) => updateBubbles3d(model, msg),
       Bubbles3dSoundPlayed: (msg) => updateBubbles3d(model, msg),

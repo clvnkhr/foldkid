@@ -1,5 +1,5 @@
 import {
-  ACESFilmicToneMapping, DirectionalLight, Group, HemisphereLight, IcosahedronGeometry,
+  ACESFilmicToneMapping, Color, DirectionalLight, Float32BufferAttribute, Group, HemisphereLight, IcosahedronGeometry,
   Mesh, MeshBasicMaterial, MeshPhysicalMaterial, PerspectiveCamera, PMREMGenerator,
   Quaternion, Raycaster, Scene, Vector2, Vector3, WebGLRenderer,
   type BufferGeometry, type Texture,
@@ -9,12 +9,13 @@ import type { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.
 import { warmAudio } from '../audio'
 import { makeBubble3dEnvironment, makeBubble3dMaterial } from './bubbles3dAppearance'
 import { makeBubble3dGeometry } from './bubbles3dGeometry'
-import { isBubble3dShape, type Bubble3dShape } from './bubbles3dShapes'
+import { isBubble3dShape, MAX_BUBBLE3D_SIZE, MIN_BUBBLE3D_SIZE, type Bubble3dShape } from './bubbles3dShapes'
 
 export interface Bubble3dSpec {
   readonly id: number
   readonly shape: Bubble3dShape
   readonly color: string
+  readonly rainbow: boolean
   readonly size: number
   readonly x: number
   readonly y: number
@@ -40,8 +41,9 @@ export const readBubbles3dSnapshot = (element: HTMLElement): Snapshot | undefine
       if (typeof bubble !== 'object' || bubble === null) return undefined
       const spec = bubble as Partial<Bubble3dSpec>
       if (!isBubble3dShape(spec.shape)) return undefined
+      if (typeof spec.rainbow !== 'boolean') return undefined
       if (!Number.isInteger(spec.id) || spec.id! < 0 || ids.has(spec.id!) || typeof spec.color !== 'string' || !/^#[0-9a-f]{6}$/i.test(spec.color)) return undefined
-      if (typeof spec.size !== 'number' || !Number.isFinite(spec.size) || spec.size < 0.35 || spec.size > 0.75) return undefined
+      if (typeof spec.size !== 'number' || !Number.isFinite(spec.size) || spec.size < MIN_BUBBLE3D_SIZE || spec.size > MAX_BUBBLE3D_SIZE) return undefined
       if ([spec.x, spec.y, spec.z].some(position => typeof position !== 'number' || !Number.isFinite(position) || Math.abs(position) > 1)) return undefined
       ids.add(spec.id!)
     }
@@ -56,6 +58,24 @@ const failureRevision = (element: HTMLElement): number => {
   return Number.isInteger(revision) && revision >= 0 ? revision : 0
 }
 
+const rainbowGeometry = (base: BufferGeometry): BufferGeometry => {
+  const geometry = base.clone()
+  geometry.computeBoundingBox()
+  const size = geometry.boundingBox!.getSize(new Vector3())
+  const center = geometry.boundingBox!.getCenter(new Vector3())
+  const positions = geometry.getAttribute('position')
+  const colors: number[] = []
+  const color = new Color()
+  for (let index = 0; index < positions.count; index++) {
+    const height = (positions.getY(index) - center.y) / size.y + 0.5
+    const offset = (positions.getX(index) - center.x) / size.x * 0.12 + (positions.getZ(index) - center.z) / size.z * 0.08
+    color.setHSL((height * 0.88 + offset + 1) % 1, 0.94, 0.57)
+    colors.push(color.r, color.g, color.b)
+  }
+  geometry.setAttribute('color', new Float32BufferAttribute(colors, 3))
+  return geometry
+}
+
 export const createBubbles3dWorld = () => {
   const scene = new Scene()
   const camera = new PerspectiveCamera(42, 1, 0.1, 40)
@@ -67,26 +87,62 @@ export const createBubbles3dWorld = () => {
   rim.position.set(5, -2, -3)
   scene.add(hemisphere, key, rim)
   const geometries = new Map<Bubble3dShape, BufferGeometry>()
-  const geometryFor = (shape: Bubble3dShape): BufferGeometry => {
+  const rainbowGeometries = new Map<Bubble3dShape, BufferGeometry>()
+  const geometryFor = (shape: Bubble3dShape, rainbow: boolean): BufferGeometry => {
     const existing = geometries.get(shape)
-    if (existing) return existing
-    const geometry = makeBubble3dGeometry(shape)
-    geometries.set(shape, geometry)
+    const base = existing ?? makeBubble3dGeometry(shape)
+    if (!existing) geometries.set(shape, base)
+    if (!rainbow) return base
+    const colored = rainbowGeometries.get(shape)
+    if (colored) return colored
+    const geometry = rainbowGeometry(base)
+    rainbowGeometries.set(shape, geometry)
     return geometry
   }
   const particleGeometry = new IcosahedronGeometry(0.075, 0)
+  let rainbowParticleGeometry: BufferGeometry | undefined
   const bodies = new Map<number, Body>()
   const difference = new Vector3()
   const relativeVelocity = new Vector3()
+  const bodyBounds = new Vector3()
   const spin = new Quaternion()
   const bursts: Burst[] = []
   const raycaster = new Raycaster()
   let revision = -1
   let elapsed = 0
+  let viewportScale = 1
+  const depthLimit = 2.7
+  const wobbleAmount = 0.012
+  const maximumRadiusScale = 1 / (1 - wobbleAmount)
+  const radius = (body: Body): number => Math.max(body.mesh.scale.x, body.mesh.scale.y, body.mesh.scale.z)
+  const inset = (extent: number): number => Math.min(0.12, extent * 0.08)
 
   const limits = (body: Body): Vector3 => {
-    const height = Math.tan(camera.fov * Math.PI / 360) * (camera.position.z - body.mesh.position.z)
-    return new Vector3(Math.max(body.spec.size, height * camera.aspect - body.spec.size - 0.12), height - body.spec.size - 0.12, 2.7)
+    const verticalSlope = Math.tan(camera.fov * Math.PI / 360)
+    const horizontalSlope = verticalSlope * camera.aspect
+    const distance = camera.position.z - body.mesh.position.z
+    const height = distance * verticalSlope
+    const width = distance * horizontalSlope
+    return bodyBounds.set(
+      Math.max(0, width - radius(body) * Math.hypot(1, horizontalSlope) - inset(width)),
+      Math.max(0, height - radius(body) * Math.hypot(1, verticalSlope) - inset(height)),
+      depthLimit,
+    )
+  }
+  const confine = (body: Body): void => {
+    if (Math.abs(body.mesh.position.z) > depthLimit) {
+      const direction = Math.sign(body.mesh.position.z)
+      body.mesh.position.z = direction * depthLimit
+      if (body.velocity.z * direction > 0) body.velocity.z *= -1
+    }
+    const bounds = limits(body)
+    for (const axis of ['x', 'y'] as const) {
+      const bound = bounds[axis]
+      if (Math.abs(body.mesh.position[axis]) <= bound) continue
+      const direction = Math.sign(body.mesh.position[axis])
+      body.mesh.position[axis] = direction * bound
+      if (body.velocity[axis] * direction > 0) body.velocity[axis] *= -1
+    }
   }
   const removeBurst = (burst: Burst): void => {
     scene.remove(burst.group)
@@ -95,9 +151,11 @@ export const createBubbles3dWorld = () => {
   const burstAt = (body: Body): void => {
     const group = new Group()
     group.position.copy(body.mesh.position)
-    const material = new MeshBasicMaterial({ color: body.spec.color, transparent: true, depthWrite: false })
+    group.scale.setScalar(radius(body) / 0.6)
+    const material = new MeshBasicMaterial({ color: body.spec.rainbow ? '#ffffff' : body.spec.color, vertexColors: body.spec.rainbow, transparent: true, depthWrite: false })
+    if (body.spec.rainbow && !rainbowParticleGeometry) rainbowParticleGeometry = rainbowGeometry(particleGeometry)
     for (let index = 0; index < 14; index++) {
-      const particle = new Mesh(particleGeometry, material)
+      const particle = new Mesh(body.spec.rainbow ? rainbowParticleGeometry! : particleGeometry, material)
       const angle = index * 2.399963229728653
       particle.userData.velocity = new Vector3(Math.sin(angle), Math.cos(angle), Math.sin(angle * 0.7)).normalize().multiplyScalar(2.7 + index % 3)
       group.add(particle)
@@ -122,11 +180,13 @@ export const createBubbles3dWorld = () => {
     }
     for (const spec of snapshot.bubbles) {
       if (bodies.has(spec.id)) continue
-      const material = makeBubble3dMaterial(spec.color)
-      const mesh = new Mesh(geometryFor(spec.shape), material)
-      mesh.scale.setScalar(spec.size)
+      const material = makeBubble3dMaterial(spec.rainbow ? '#ffffff' : spec.color)
+      if (spec.rainbow) { material.vertexColors = true; material.iridescence = 0.9 }
+      const mesh = new Mesh(geometryFor(spec.shape, spec.rainbow), material)
+      mesh.scale.setScalar(spec.size * viewportScale)
       mesh.userData.bubbleId = spec.id
       mesh.userData.shape = spec.shape
+      mesh.userData.rainbow = spec.rainbow
       mesh.rotation.set(Math.sin(spec.id * 1.11 + 0.31) * 0.45, Math.cos(spec.id * 0.73 + 0.54) * 0.5, Math.sin(spec.id * 0.97 + 0.1) * Math.PI)
       mesh.position.z = spec.z * 2.5
       const body: Body = {
@@ -144,13 +204,23 @@ export const createBubbles3dWorld = () => {
   }
   const resize = (width: number, height: number): void => {
     const previousAspect = camera.aspect
-    camera.aspect = Math.max(1, width) / Math.max(1, height)
+    const previousScale = viewportScale
+    camera.aspect = (Number.isFinite(width) && width > 0 ? width : 1) / (Number.isFinite(height) && height > 0 ? height : 1)
     camera.updateProjectionMatrix()
+    const verticalSlope = Math.tan(camera.fov * Math.PI / 360)
+    const horizontalSlope = verticalSlope * camera.aspect
+    const distance = camera.position.z - depthLimit
+    const heightExtent = distance * verticalSlope
+    const widthExtent = distance * horizontalSlope
+    const fitRadius = Math.min(
+      (widthExtent - inset(widthExtent)) / Math.hypot(1, horizontalSlope),
+      (heightExtent - inset(heightExtent)) / Math.hypot(1, verticalSlope),
+    )
+    viewportScale = Math.min(1, fitRadius / (MAX_BUBBLE3D_SIZE * maximumRadiusScale))
     for (const body of bodies.values()) {
       body.mesh.position.x *= camera.aspect / previousAspect
-      const bounds = limits(body)
-      body.mesh.position.x = Math.max(-bounds.x, Math.min(bounds.x, body.mesh.position.x))
-      body.mesh.position.y = Math.max(-bounds.y, Math.min(bounds.y, body.mesh.position.y))
+      body.mesh.scale.multiplyScalar(viewportScale / previousScale)
+      confine(body)
     }
   }
   const step = (delta: number, reducedMotion: boolean): void => {
@@ -163,20 +233,15 @@ export const createBubbles3dWorld = () => {
     elapsed += dt
     const moving = [...bodies.values()].filter(body => body.mesh.visible)
     for (const body of moving) {
-      body.mesh.position.addScaledVector(body.velocity, dt)
-      const bounds = limits(body)
-      for (const axis of ['x', 'y', 'z'] as const) {
-        if (Math.abs(body.mesh.position[axis]) > bounds[axis]) {
-          body.mesh.position[axis] = Math.sign(body.mesh.position[axis]) * bounds[axis]
-          body.velocity[axis] *= -1
-        }
+      if (body.spec.shape === 'sphere') {
+        const size = body.spec.size * viewportScale
+        const wobble = 1 + Math.sin(elapsed * 2 + body.spec.id) * wobbleAmount
+        body.mesh.scale.set(size * wobble, size / wobble, size)
       }
+      body.mesh.position.addScaledVector(body.velocity, dt)
+      confine(body)
       spin.setFromAxisAngle(body.spinAxis, body.spinSpeed * dt)
       body.mesh.quaternion.premultiply(spin).normalize()
-      if (body.spec.shape === 'sphere') {
-        const wobble = 1 + Math.sin(elapsed * 2 + body.spec.id) * 0.012
-        body.mesh.scale.set(body.spec.size * wobble, body.spec.size / wobble, body.spec.size)
-      }
     }
     for (let left = 0; left < moving.length; left++) {
       for (let right = left + 1; right < moving.length; right++) {
@@ -184,7 +249,7 @@ export const createBubbles3dWorld = () => {
         const b = moving[right]!
         difference.copy(b.mesh.position).sub(a.mesh.position)
         const distance = difference.length()
-        const gap = a.spec.size + b.spec.size
+        const gap = radius(a) + radius(b)
         if (distance >= gap || distance < 0.001) continue
         const normal = difference.divideScalar(distance)
         a.mesh.position.addScaledVector(normal, -(gap - distance) / 2)
@@ -196,6 +261,7 @@ export const createBubbles3dWorld = () => {
         }
       }
     }
+    for (const body of moving) confine(body)
     for (let index = bursts.length - 1; index >= 0; index--) {
       const burst = bursts[index]!
       burst.age += dt
@@ -234,6 +300,9 @@ export const createBubbles3dWorld = () => {
     bursts.length = 0
     for (const geometry of geometries.values()) geometry.dispose()
     geometries.clear()
+    for (const geometry of rainbowGeometries.values()) geometry.dispose()
+    rainbowGeometries.clear()
+    rainbowParticleGeometry?.dispose()
     particleGeometry.dispose()
     scene.clear()
   }

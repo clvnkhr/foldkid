@@ -1,5 +1,8 @@
 import { Schema as S } from 'effect'
 
+export const MIN_BUBBLE3D_SIZE = 0.35
+export const MAX_BUBBLE3D_SIZE = 1.7
+
 export const BUBBLE3D_SHAPES = [
   { id: 'sphere', glyph: '●' },
   { id: 'cube', glyph: '◼' },

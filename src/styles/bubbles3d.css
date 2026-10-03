@@ -29,23 +29,59 @@
 }
 
 .bubbles3d-heading {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  flex-wrap: wrap;
+  display: flex; flex: 0 0 auto; align-items: center;
+  justify-content: space-between; gap: 0.5rem; flex-wrap: wrap;
   margin-bottom: 0.4rem;
   padding: 0.5rem 0.8rem;
   border-radius: 0.9rem;
   background: var(--card-bg);
 }
 
-.bubbles3d-heading > div { min-width: 0; }
-.bubbles3d-heading .title { margin-bottom: 0.15rem; font-size: 1.25rem; }
-.bubbles3d-prompt { color: var(--text-secondary); margin: 0; max-width: 42rem; font-size: 0.95rem; }
-.bubbles3d-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; }
-.bubbles3d-actions .btn { margin: 0; min-width: 0; min-height: 44px; padding: 0.5rem 1rem; overflow-wrap: anywhere; }
+.bubbles3d-heading .title { margin: 0; font-size: 1.25rem; }
+.bubbles3d-prompt { flex-basis: 100%; color: var(--text-secondary); margin: 0; font-size: 0.85rem; }
+.bubbles3d-clear { margin: 0; min-width: 0; min-height: 44px; padding: 0.5rem 1rem; overflow-wrap: anywhere; }
+.bubbles3d-score { margin: 0; color: var(--text-primary); font-size: 1rem; font-weight: 700; }
+
+.bubbles3d-controls {
+  display: grid; flex: 0 0 auto;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.8fr);
+  align-items: start; gap: 0.5rem;
+}
+
+.bubbles3d-shape-selector { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.35rem; }
+.bubbles3d-shape-button {
+  min-height: 44px; min-width: 0; padding: 0.35rem 0.6rem;
+  border: 2px solid transparent; border-radius: 0.75rem;
+  background: var(--card-bg); color: var(--text-primary);
+  font: inherit; font-size: 0.9rem; overflow-wrap: anywhere;
+  cursor: pointer; touch-action: manipulation;
+}
+.bubbles3d-shape-button[aria-pressed="true"] { border-color: var(--number-color); font-weight: 700; }
+.bubbles3d-shape-button:focus-visible, .bubbles3d-color-button:focus-visible { outline: 3px solid var(--number-color); outline-offset: 2px; }
+.bubbles3d-color-selector { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0.35rem; }
+.bubbles3d-color-button {
+  position: relative; min-width: 0; min-height: 44px; padding: 0;
+  border: 2px solid rgba(255, 255, 255, 0.6); border-radius: 0.9rem;
+  background: radial-gradient(circle at 28% 24%, rgba(255, 255, 255, 0.7), transparent 65%), var(--bubbles3d-color);
+  box-shadow: inset -3px -4px 7px rgba(15, 28, 60, 0.2);
+  font-size: 1.3rem; cursor: pointer; touch-action: none; overflow: hidden;
+}
+.bubbles3d-color-button[aria-pressed="true"] { border-color: var(--text-primary); }
+.bubbles3d-color-button:disabled { opacity: 0.45; cursor: default; }
+.bubbles3d-color-button--charging { outline: 3px solid var(--number-color); outline-offset: 1px; }
+.bubbles3d-color-button--charging::after {
+  content: ''; position: absolute; inset: auto 0 0; height: 5px;
+  width: var(--bubbles3d-charge-pct, 0%); background: rgba(255, 255, 255, 0.9); pointer-events: none;
+}
+.bubbles3d-readout { flex: 0 0 auto; min-height: 1.3em; margin: 0.3rem 0; border-radius: 0.5rem; background: var(--card-bg); color: var(--text-secondary); text-align: center; font-size: 0.9rem; }
+
+@media (min-width: 1100px) {
+  .bubbles3d-shape-selector { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .bubbles3d-color-selector { grid-template-columns: repeat(10, minmax(0, 1fr)); }
+}
+@media (max-height: 600px) {
+  .bubbles3d-prompt { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+}
 
 .bubbles3d-stage {
   position: relative;
@@ -102,7 +138,6 @@
 
 .bubbles3d-shape-icon { font-size: clamp(1.3rem, 4vw, 1.7rem); line-height: 1; }
 .bubbles3d-shape-number { font-size: 0.75rem; line-height: 1.2; }
-
 .bubbles3d-bubble-button:active { transform: scale(0.92); }
 .bubbles3d-bubble-button:focus-visible { outline: 3px solid #fff; outline-offset: 4px; }
 
@@ -149,15 +184,14 @@
   pointer-events: none;
 }
 
-.bubbles3d-score { flex: 0 0 auto; margin: 0.35rem 0 0; color: #e8edff; font-size: 1.05rem; font-weight: 700; text-align: center; }
-
+@media (max-width: 700px) {
+  .bubbles3d-controls { grid-template-columns: minmax(0, 1fr); }
+}
 @media (max-width: 560px) {
   .bubbles3d-heading { gap: 0.4rem; padding: 0.5rem; }
-  .bubbles3d-actions { width: 100%; }
-  .bubbles3d-actions .btn { flex: 1; padding-inline: 0.6rem; font-size: 1rem; }
+  .bubbles3d-clear { padding-inline: 0.6rem; font-size: 1rem; }
   .bubbles3d-bubble-buttons { gap: 0.6rem; padding-inline: 1rem; }
 }
-
 @media (prefers-reduced-motion: reduce) {
   .bubbles3d-bubble-button { transition: none; }
   .bubbles3d-bubble-button:active { transform: none; }
