@@ -183,6 +183,24 @@ describe('styles.css invariants', () => {
     expect(styles).toContain('.bubbles3d-color-button--charging')
   })
 
+  it('keeps the 3D board and fallback feedback on the effective app theme', () => {
+    const stage = cssRule('.bubbles3d-stage')
+    const fallback = cssRule('.bubbles3d-stage[data-renderer="ready"] .bubbles3d-bubble-buttons:focus-within')
+    const bubble = cssRule('.bubbles3d-bubble-button')
+    const focus = cssRule('.bubbles3d-bubble-button:focus-visible')
+    const labels = cssRule('.bubbles3d-shape-icon, .bubbles3d-shape-number')
+
+    expect(stage).toContain('var(--settings-bg)')
+    expect(stage).toContain('var(--cell-hover-bg)')
+    expect(stage).toContain('border: 1px solid var(--btn-secondary-bg)')
+    expect(fallback).toContain('background: var(--card-bg)')
+    expect(fallback).toContain('border: 1px solid var(--btn-secondary-bg)')
+    expect(cssRule('.bubbles3d-empty')).toContain('color: var(--text-primary)')
+    expect(bubble).toContain('color: var(--text-primary)')
+    expect(labels).toContain('background: var(--card-bg)')
+    expect(focus).toContain('outline: 3px solid var(--text-primary)')
+  })
+
   it('keeps Find It card boxes stable while sizing single and pair emoji separately', () => {
     const emojiCell = cssRule('.emoji-cell')
     const pairsCell = cssRule('.emoji-cell--pairs')

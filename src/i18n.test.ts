@@ -60,22 +60,20 @@ describe('i18n completeness', () => {
     expect(i18n.tf('whereIs', 'xx', '⭐')).toBe(i18n.translations.en.whereIs('⭐'))
   })
 
-  it('localizes 3D bubble creation instructions and formats scores with the supplied locale number', () => {
+  it('localizes 3D bubble statuses and formats scores with the supplied locale number', () => {
     const poppedLabels = {
       en: 'Popped: ', zh: '已戳破: ', fr: 'Éclatées : ', de: 'Geplatzt: ', fa: 'ترکیده: ', ms: 'Dipecahkan: ', 'zh-HK': '已戳破: ', ja: 'わったかず: ',
     } as const
     for (const lang of langKeys) {
       const number = new Intl.NumberFormat(lang).format(1234)
       expect(i18n.tf('bubbles3dPopped', lang, number)).toBe(`${poppedLabels[lang]}${number}`)
-      for (const key of ['bubbles3dTitle', 'bubbles3dPrompt', 'bubbles3dEmpty', 'bubbles3dLimit', 'bubbles3dUnavailable', 'pageTitleBubbles3d', 'next'] as const) {
+      for (const key of ['bubbles3dTitle', 'bubbles3dClearing', 'pageTitleBubbles3d', 'next'] as const) {
         expect(i18n.t(key, lang).length, `${lang}.${key}`).toBeGreaterThan(0)
       }
-      for (const key of ['bubbles3dAdd', 'bubbles3dReset', 'bubbles3dBubble']) expect(i18n.translations[lang]).not.toHaveProperty(key)
+      for (const key of ['bubbles3dAdd', 'bubbles3dReset', 'bubbles3dBubble', 'bubbles3dPrompt', 'bubbles3dEmpty', 'bubbles3dUnavailable', 'bubbles3dLimit']) expect(i18n.translations[lang]).not.toHaveProperty(key)
     }
-    expect(i18n.t('bubbles3dPrompt')).toBe('Choose a shape, then tap or hold a color. Release to make a bubble; hold longer for a bigger one. Pop the floating bubbles!')
-    expect(i18n.t('bubbles3dEmpty')).toBe('Choose a shape and tap a color to make a bubble. Hold for a bigger bubble.')
-    expect(i18n.t('bubbles3dLimit')).toBe('Pop or clear some bubbles to make room.')
-    expect(i18n.t('bubbles3dEmpty', 'xx')).toBe(i18n.t('bubbles3dEmpty'))
+    expect(i18n.t('bubbles3dClearing')).toBe('Popping bubbles…')
+    expect(i18n.t('bubbles3dClearing', 'xx')).toBe(i18n.t('bubbles3dClearing'))
   })
 
   it('speaks newly created 3D color and shape names in each language\'s word order', () => {
@@ -104,6 +102,8 @@ describe('i18n completeness', () => {
       'bubbles3dShapeHexagonalPrism', 'bubbles3dShapePyramid', 'bubbles3dShapeTriangularBipyramid', 'bubbles3dShapeCapsule',
       'bubbles3dShapeTorus', 'bubbles3dShapeTorusKnot', 'bubbles3dShapeStar', 'bubbles3dShapeHeart',
       'bubbles3dShapeCrescent', 'bubbles3dShapeGear', 'bubbles3dShapeCross', 'bubbles3dShapeDiamond',
+      'bubbles3dShapeHemisphere', 'bubbles3dShapeEllipsoid', 'bubbles3dShapeEgg', 'bubbles3dShapeFrustum',
+      'bubbles3dShapeHexagonalBipyramid',
     ] as const
     const numberedCubes = {
       en: (number: string) => `Cube ${number}`,
@@ -123,5 +123,50 @@ describe('i18n completeness', () => {
       expect(i18n.tf('bubbles3dShape', lang, i18n.t('bubbles3dShapeCube', lang), number)).toBe(numberedCubes[lang](number))
     }
     expect(i18n.tf('bubbles3dShape', 'xx', 'Cube', '12')).toBe('Cube 12')
+  })
+
+  it('uses donut and trefoil knot names for labels and spoken colored shapes in every language', () => {
+    const labels = {
+      en: ['Donut', 'Trefoil knot'],
+      zh: ['甜甜圈', '三叶结'],
+      fr: ['Donut', 'Nœud de trèfle'],
+      de: ['Donut', 'Kleeblattknoten'],
+      fa: ['دونات', 'گره سه‌پر'],
+      ms: ['Donat', 'Simpulan trefoil'],
+      'zh-HK': ['冬甩', '三葉結'],
+      ja: ['ドーナツ', '三葉結び目'],
+    } as const
+    const spokenNames = {
+      en: ['red donut', 'red trefoil knot'],
+      zh: ['红色 甜甜圈', '红色 三叶结'],
+      fr: ['donut rouge', 'nœud de trèfle rouge'],
+      de: ['rot donut', 'rot kleeblattknoten'],
+      fa: ['دونات قرمز', 'گره سه‌پر قرمز'],
+      ms: ['donat merah', 'simpulan trefoil merah'],
+      'zh-HK': ['紅色 冬甩', '紅色 三葉結'],
+      ja: ['あか ドーナツ', 'あか 三葉結び目'],
+    } as const
+    for (const lang of langKeys) {
+      const color = i18n.t('colorRed', lang).toLowerCase()
+      const names = [i18n.t('bubbles3dShapeTorus', lang), i18n.t('bubbles3dShapeTorusKnot', lang)]
+      expect(names, lang).toEqual(labels[lang])
+      expect(names.map(name => i18n.tf('coloredShape', lang, color, name.toLowerCase())), lang).toEqual(spokenNames[lang])
+    }
+  })
+
+  it('uses the appended shape names in labels and speech, with an accessible clear status', () => {
+    const newShapeNames = [
+      ['bubbles3dShapeHemisphere', 'Hemisphere'],
+      ['bubbles3dShapeEllipsoid', 'Ellipsoid'],
+      ['bubbles3dShapeEgg', 'Egg'],
+      ['bubbles3dShapeFrustum', 'Frustum'],
+      ['bubbles3dShapeHexagonalBipyramid', 'Hexagonal bipyramid'],
+    ] as const
+    for (const [key, name] of newShapeNames) {
+      expect(i18n.t(key)).toBe(name)
+      expect(i18n.tf('coloredShape', 'en', 'blue', i18n.t(key).toLowerCase())).toBe(`blue ${name.toLowerCase()}`)
+    }
+    expect(i18n.t('bubbles3dClearing')).toBe('Popping bubbles…')
+    expect(i18n.t('bubbles3dClearing', 'xx')).toBe('Popping bubbles…')
   })
 })

@@ -273,6 +273,8 @@ export const Message = S.Union([
   Bubbles3d.SelectedShape,
   Bubbles3d.NextShapePage,
   Bubbles3d.ClickedClear,
+  Bubbles3d.ClearBubble,
+  Bubbles3d.ClearCompleted,
   Bubbles3d.RendererReady,
   Bubbles3d.RendererFailed,
   Bubbles3d.SoundPlayed,
@@ -856,6 +858,8 @@ const _update = (
       Bubbles3dSelectedShape: (msg) => updateBubbles3d(model, msg),
       Bubbles3dNextShapePage: (msg) => updateBubbles3d(model, msg),
       Bubbles3dClickedClear: (msg) => updateBubbles3d(model, msg),
+      Bubbles3dClearBubble: (msg) => model.page._tag === 'PageBubbles3d' ? updateBubbles3d(model, msg) : [model, []],
+      Bubbles3dClearCompleted: (msg) => model.page._tag === 'PageBubbles3d' ? updateBubbles3d(model, msg) : [model, []],
       Bubbles3dRendererReady: (msg) => updateBubbles3d(model, msg),
       Bubbles3dRendererFailed: (msg) => updateBubbles3d(model, msg),
       Bubbles3dSoundPlayed: (msg) => updateBubbles3d(model, msg),
@@ -1131,10 +1135,13 @@ export const update = (
   const next = interrupted
     ? { ...updated, landingDragIndex: -1, landingDragSource: null, musicBox: { ...updated.musicBox, dragIndex: -1 } }
     : updated
+  const pausedClear = model.page._tag === 'PageBubbles3d' && next.page._tag !== 'PageBubbles3d' && next.bubbles3d.clearing
+    ? { ...next, bubbles3d: { ...next.bubbles3d, clearToken: next.bubbles3d.clearToken + 1 } }
+    : next
   const result = [
-    model.page._tag === 'PageCounter' && next.page._tag !== 'PageCounter'
-      ? { ...next, counter: { ...next.counter, presses: [], holding: false, pressedButton: null, pointerDownTime: 0 } }
-      : next,
+    model.page._tag === 'PageCounter' && pausedClear.page._tag !== 'PageCounter'
+      ? { ...pausedClear, counter: { ...pausedClear.counter, presses: [], holding: false, pressedButton: null, pointerDownTime: 0 } }
+      : pausedClear,
     commands,
   ] as const
   if (shouldPersistSettings(message)) {

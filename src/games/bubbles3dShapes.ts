@@ -28,6 +28,11 @@ export const BUBBLE3D_SHAPES = [
   { id: 'gear', glyph: '⚙' },
   { id: 'cross', glyph: '✚' },
   { id: 'diamond', glyph: '◆' },
+  { id: 'hemisphere', glyph: '◓' },
+  { id: 'ellipsoid', glyph: '⬯' },
+  { id: 'egg', glyph: '🥚' },
+  { id: 'frustum', glyph: '⏢' },
+  { id: 'hexagonalBipyramid', glyph: '✦' },
 ] as const
 
 export const Bubble3dShape = S.Literals(BUBBLE3D_SHAPES.map(shape => shape.id))

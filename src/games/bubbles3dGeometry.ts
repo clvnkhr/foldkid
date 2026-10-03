@@ -98,6 +98,39 @@ const cross = (): BufferGeometry => extrude(roundedPolygon([
   [0.3, -1], [-0.3, -1], [-0.3, -0.3], [-1, -0.3], [-1, 0.3], [-0.3, 0.3],
 ], 0.16))
 
+const hemisphere = (): BufferGeometry => {
+  // The axis-to-rim segment closes the base; a quarter circle softens its edge.
+  const points = [new Vector2(0, -0.06), new Vector2(0.86, -0.06)]
+  for (let index = 1; index <= 8; index++) {
+    const angle = -Math.PI / 2 + index * Math.PI / 16
+    points.push(new Vector2(0.86 + Math.cos(angle) * 0.14, 0.08 + Math.sin(angle) * 0.14))
+  }
+  for (let index = 1; index <= 24; index++) {
+    const angle = index * Math.PI / 48
+    points.push(new Vector2(Math.cos(angle), 0.08 + Math.sin(angle)))
+  }
+  return smoothGeometry(new LatheGeometry(points, 32))
+}
+
+const egg = (): BufferGeometry => smoothGeometry(new LatheGeometry(Array.from({ length: 33 }, (_, index) => {
+  const angle = Math.PI - index * Math.PI / 32
+  const y = Math.cos(angle)
+  return new Vector2(Math.sin(angle) * 0.72 * (1 - 0.22 * y), y)
+}), 32))
+
+const hexagonalBipyramid = (): BufferGeometry => {
+  const equator = Array.from({ length: 6 }, (_, index) => {
+    const angle = index * Math.PI / 3
+    return [Math.cos(angle), 0, Math.sin(angle)]
+  })
+  const faces = Array.from({ length: 6 }, (_, index) => {
+    const current = index + 2
+    const next = (index + 1) % 6 + 2
+    return [0, next, current, 1, current, next]
+  })
+  return roundedConvex(new PolyhedronGeometry([0, 1, 0, 0, -1, 0, ...equator.flat()], faces.flat(), 1, 0))
+}
+
 const roundDirections = (() => {
   const sphere = new IcosahedronGeometry(1, 2)
   const positions = sphere.getAttribute('position')
@@ -181,6 +214,11 @@ const geometryFor = (kind: Bubble3dShape): BufferGeometry => {
       new Vector2(0, -1), new Vector2(0.82, 0.2), new Vector2(0.82, 0.28),
       new Vector2(0.42, 0.72), new Vector2(0, 0.72),
     ], 8))
+    case 'hemisphere': return hemisphere()
+    case 'ellipsoid': return new SphereGeometry(1, 32, 24).scale(0.68, 1, 0.68)
+    case 'egg': return egg()
+    case 'frustum': return roundedConvex(new CylinderGeometry(0.4, 0.85, 1.55, 24))
+    case 'hexagonalBipyramid': return hexagonalBipyramid()
   }
 }
 

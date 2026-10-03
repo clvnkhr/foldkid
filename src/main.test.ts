@@ -252,6 +252,8 @@ describe('settings persistence', () => {
     { label: 'Bubbles3dSelectedShape', msg: Bubbles3d.SelectedShape({ shape: 'cube' }) },
     { label: 'Bubbles3dNextShapePage', msg: Bubbles3d.NextShapePage() },
     { label: 'Bubbles3dClickedClear', msg: Bubbles3d.ClickedClear() },
+    { label: 'Bubbles3dClearBubble', msg: Bubbles3d.ClearBubble({ id: 0, revision: 0, token: 0 }) },
+    { label: 'Bubbles3dClearCompleted', msg: Bubbles3d.ClearCompleted({ revision: 0, token: 0 }) },
     { label: 'Bubbles3dRendererReady', msg: Bubbles3d.RendererReady({ revision: 0 }) },
     { label: 'Bubbles3dRendererFailed', msg: Bubbles3d.RendererFailed({ revision: 0 }) },
     { label: 'Bubbles3dSoundPlayed', msg: Bubbles3d.SoundPlayed() },
@@ -535,6 +537,7 @@ describe('Main', () => {
     Story.story(
       Main.update,
       Story.with({ ...createModel(), muted: true }),
+      Story.message(ClickedBubbles3d()),
       Story.message(Bubbles3d.SelectedShape({ shape: 'cube' })),
       Story.message(Bubbles3d.NextShapePage()),
       Story.message(Bubbles3d.CreatedBubble({ shape: 'heart', color: 'rainbow', duration: 2200, revision: 0, creationId: 0 })),
@@ -547,6 +550,14 @@ describe('Main', () => {
       Story.message(Bubbles3d.ClickedPop({ id: 0, revision: 0 })),
       Story.message(Bubbles3d.CreatedBubble({ shape: 'cube', color: '#1E90FF', duration: 600, revision: 0, creationId: 1 })),
       Story.message(Bubbles3d.ClickedClear()),
+      Story.model(model => {
+        expect(model.bubbles3d.clearing).toBe(true)
+        expect(model.bubbles3d.bubbles.map(bubble => bubble.id)).toEqual([1])
+        expect(model.bubbles3d.revision).toBe(0)
+        expect(model.bubbles3d.clearToken).toBe(1)
+      }),
+      Story.message(Bubbles3d.ClearBubble({ id: 1, revision: 0, token: 1 })),
+      Story.message(Bubbles3d.ClearCompleted({ revision: 0, token: 1 })),
       Story.model(model => {
         expect(model.bubbles3d.bubbles).toEqual([])
         expect(model.bubbles3d.score).toBe(0)
@@ -564,6 +575,67 @@ describe('Main', () => {
         expect(model.bubbles3d.bubbles).toEqual([Bubbles3d.makeBubble(2, 'sphere', '#FF4757', 800)])
         expect(model.bubbles3d.nextId).toBe(3)
       }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it.each([false, true])('delegates sequential 3D clearing with the root mute setting: %s', muted => {
+    Story.story(
+      Main.update,
+      Story.with({ ...createModel(), muted }),
+      Story.message(ClickedBubbles3d()),
+      Story.message(Bubbles3d.CreatedBubble({ shape: 'hemisphere', color: '#FF4757', duration: 500, revision: 0, creationId: 0 })),
+      muted ? Story.Command.expectNone() : Story.Command.resolveAll(resolveBubbles3dChime, resolveBubbles3dSpeak),
+      Story.message(Bubbles3d.CreatedBubble({ shape: 'egg', color: '#1E90FF', duration: 700, revision: 0, creationId: 1 })),
+      muted ? Story.Command.expectNone() : Story.Command.resolveAll(resolveBubbles3dChime, resolveBubbles3dSpeak),
+      Story.message(Bubbles3d.ClickedClear()),
+      Story.message(Bubbles3d.ClearBubble({ id: 0, revision: 0, token: 1 })),
+      Story.model(model => {
+        expect(model.bubbles3d.bubbles.map(bubble => bubble.id)).toEqual([1])
+        expect(model.bubbles3d).toMatchObject({ clearing: true, score: 0, revision: 0 })
+      }),
+      muted ? Story.Command.expectNone() : Story.Command.resolveAll([{ name: 'Bubbles3dPlayPop' }, Bubbles3d.SoundPlayed()]),
+      Story.message(Bubbles3d.ClearBubble({ id: 1, revision: 0, token: 1 })),
+      muted ? Story.Command.expectNone() : Story.Command.resolveAll([{ name: 'Bubbles3dPlayPop' }, Bubbles3d.SoundPlayed()]),
+      Story.message(Bubbles3d.ClearCompleted({ revision: 0, token: 1 })),
+      Story.model(model => {
+        expect(model.bubbles3d).toMatchObject({ bubbles: [], clearing: false, score: 0, revision: 1, clearToken: 1, nextId: 2 })
+      }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('preserves a partially cleared 3D round when navigating away and back', () => {
+    let previous: Bubbles3d.Model | undefined
+    Story.story(
+      Main.update,
+      Story.with({ ...createModel(), muted: true }),
+      Story.message(ClickedBubbles3d()),
+      Story.message(Bubbles3d.CreatedBubble({ shape: 'hemisphere', color: '#FF4757', duration: 500, revision: 0, creationId: 0 })),
+      Story.message(Bubbles3d.CreatedBubble({ shape: 'egg', color: '#1E90FF', duration: 700, revision: 0, creationId: 1 })),
+      Story.message(Bubbles3d.ClickedClear()),
+      Story.message(Bubbles3d.ClearBubble({ id: 0, revision: 0, token: 1 })),
+      Story.message(ClickedLanding()),
+      Story.model(model => {
+        previous = model.bubbles3d
+        expect(model.bubbles3d.clearToken).toBe(2)
+      }),
+      Story.message(Bubbles3d.ClearBubble({ id: 1, revision: 0, token: 1 })),
+      Story.message(Bubbles3d.ClearBubble({ id: 1, revision: 0, token: 2 })),
+      Story.message(Bubbles3d.ClearCompleted({ revision: 0, token: 1 })),
+      Story.message(Bubbles3d.ClearCompleted({ revision: 0, token: 2 })),
+      Story.model(model => { expect(model.bubbles3d).toBe(previous) }),
+      Story.message(ClickedBubbles3d()),
+      Story.message(Bubbles3d.ClearBubble({ id: 1, revision: 0, token: 1 })),
+      Story.message(Bubbles3d.ClearCompleted({ revision: 0, token: 1 })),
+      Story.model(model => {
+        expect(model.bubbles3d).toBe(previous)
+        expect(model.bubbles3d).toMatchObject({ clearing: true, clearToken: 2, revision: 0 })
+        expect(model.bubbles3d.bubbles.map(bubble => bubble.id)).toEqual([1])
+      }),
+      Story.message(Bubbles3d.ClearBubble({ id: 1, revision: 0, token: 2 })),
+      Story.message(Bubbles3d.ClearCompleted({ revision: 0, token: 2 })),
+      Story.model(model => { expect(model.bubbles3d).toMatchObject({ clearing: false, bubbles: [], revision: 1 }) }),
       Story.Command.expectNone(),
     )
   })

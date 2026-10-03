@@ -115,6 +115,10 @@ describe('codebase invariants', () => {
       expect(Option.isNone(S.decodeUnknownOption(Bubbles3d.Model)({ ...initial, bubbles: [bubble] }))).toBe(true)
       expect(Option.isNone(S.decodeUnknownOption(Main.Model)({ ...Main.init()[0], bubbles3d: { ...initial, bubbles: [bubble] } }))).toBe(true)
     }
+    for (const invalid of [{ ...initial, clearing: 'yes' }, { ...initial, clearToken: '1' }]) {
+      expect(Option.isNone(S.decodeUnknownOption(Bubbles3d.Model)(invalid))).toBe(true)
+      expect(Option.isNone(S.decodeUnknownOption(Main.Model)({ ...Main.init()[0], bubbles3d: invalid }))).toBe(true)
+    }
   })
 
   it('initial game and app models decode through their Effect schemas', () => {
@@ -142,6 +146,10 @@ describe('codebase invariants', () => {
   it('rejects invalid nested messages at Effect schema boundaries', () => {
     const messageCases = [
       ['3D Bubbles pop', Main.Message, { _tag: 'Bubbles3dClickedPop', id: '0', revision: 0 }],
+      ['3D Bubbles clear ID', Main.Message, { _tag: 'Bubbles3dClearBubble', id: '0', revision: 0, token: 1 }],
+      ['3D Bubbles clear revision', Main.Message, { _tag: 'Bubbles3dClearBubble', id: 0, revision: '0', token: 1 }],
+      ['3D Bubbles clear token', Main.Message, { _tag: 'Bubbles3dClearBubble', id: 0, revision: 0, token: '1' }],
+      ['3D Bubbles clear completion', Main.Message, { _tag: 'Bubbles3dClearCompleted', revision: 0, token: '1' }],
       ['3D Bubbles creation shape', Main.Message, { _tag: 'Bubbles3dCreatedBubble', shape: 'unknown-shape', color: '#FF4757', duration: 0, revision: 0, creationId: 0 }],
       ['3D Bubbles creation color', Main.Message, { _tag: 'Bubbles3dCreatedBubble', shape: 'sphere', color: 'red', duration: 0, revision: 0, creationId: 0 }],
       ['3D Bubbles creation duration', Main.Message, { _tag: 'Bubbles3dCreatedBubble', shape: 'sphere', color: '#FF4757', duration: '500', revision: 0, creationId: 0 }],

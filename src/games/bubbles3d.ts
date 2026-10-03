@@ -8,11 +8,13 @@ import { normalizeLanguage, t, tf, type StringKey } from '../i18n'
 import { speak, type SpeechOptions } from '../speech'
 import { createBubbles3dControls } from './bubbles3dControls'
 import { BUBBLE3D_COLORS, Bubble3dColor, bubble3dColorKey, bubble3dSizeForDuration, isBubble3dColor } from './bubbles3dCreation'
+import { BUBBLES3D_POP_FX_DURATION } from './bubbles3dPopFx'
 import { BUBBLE3D_SHAPES, Bubble3dShape, bubble3dShapeDefinition, isBubble3dShape } from './bubbles3dShapes'
 
 export const MAX_BUBBLES = 60
 export const SHAPES_PER_PAGE = 5
 export const SHAPE_PAGE_COUNT = Math.ceil(BUBBLE3D_SHAPES.length / SHAPES_PER_PAGE)
+export const CLEAR_POP_INTERVAL_MS = 120
 
 export const BUBBLE3D_SHAPE_KEYS = {
   sphere: 'bubbles3dShapeSphere', cube: 'bubbles3dShapeCube', cuboid: 'bubbles3dShapeCuboid', roundedCube: 'bubbles3dShapeRoundedCube',
@@ -21,6 +23,8 @@ export const BUBBLE3D_SHAPE_KEYS = {
   hexagonalPrism: 'bubbles3dShapeHexagonalPrism', pyramid: 'bubbles3dShapePyramid', triangularBipyramid: 'bubbles3dShapeTriangularBipyramid', capsule: 'bubbles3dShapeCapsule',
   torus: 'bubbles3dShapeTorus', torusKnot: 'bubbles3dShapeTorusKnot', star: 'bubbles3dShapeStar', heart: 'bubbles3dShapeHeart',
   crescent: 'bubbles3dShapeCrescent', gear: 'bubbles3dShapeGear', cross: 'bubbles3dShapeCross', diamond: 'bubbles3dShapeDiamond',
+  hemisphere: 'bubbles3dShapeHemisphere', ellipsoid: 'bubbles3dShapeEllipsoid', egg: 'bubbles3dShapeEgg',
+  frustum: 'bubbles3dShapeFrustum', hexagonalBipyramid: 'bubbles3dShapeHexagonalBipyramid',
 } as const satisfies Readonly<Record<Bubble3dShape, StringKey>>
 
 export const Bubble = S.Struct({ id: S.Number, shape: Bubble3dShape, color: S.String, rainbow: S.Boolean, size: S.Number, x: S.Number, y: S.Number, z: S.Number })
@@ -31,6 +35,7 @@ export const Model = S.Struct({
   bubbles: S.Array(Bubble), score: S.Number, nextId: S.Number, revision: S.Number, rendererStatus: RendererStatus,
   selectedShape: Bubble3dShape, selectedColor: S.Union([S.Literal(''), Bubble3dColor]), shapePage: S.Number,
   lastCreationId: S.Number, lastCreation: S.NullOr(Creation),
+  clearing: S.Boolean, clearToken: S.Number,
 })
 export type Model = typeof Model.Type
 
@@ -39,10 +44,12 @@ export const CreatedBubble = m('Bubbles3dCreatedBubble', { shape: Bubble3dShape,
 export const SelectedShape = m('Bubbles3dSelectedShape', { shape: Bubble3dShape })
 export const NextShapePage = m('Bubbles3dNextShapePage')
 export const ClickedClear = m('Bubbles3dClickedClear')
+export const ClearBubble = m('Bubbles3dClearBubble', { id: S.Number, revision: S.Number, token: S.Number })
+export const ClearCompleted = m('Bubbles3dClearCompleted', { revision: S.Number, token: S.Number })
 export const RendererReady = m('Bubbles3dRendererReady', { revision: S.Number })
 export const RendererFailed = m('Bubbles3dRendererFailed', { revision: S.Number })
 export const SoundPlayed = m('Bubbles3dSoundPlayed')
-export const Message = S.Union([ClickedPop, CreatedBubble, SelectedShape, NextShapePage, ClickedClear, RendererReady, RendererFailed, SoundPlayed])
+export const Message = S.Union([ClickedPop, CreatedBubble, SelectedShape, NextShapePage, ClickedClear, ClearBubble, ClearCompleted, RendererReady, RendererFailed, SoundPlayed])
 export type Message = typeof Message.Type
 
 export const makeBubble = (id: number, shape: Bubble3dShape, color: Bubble3dColor, duration: number): Bubble => {
@@ -58,6 +65,7 @@ export const makeBubble = (id: number, shape: Bubble3dShape, color: Bubble3dColo
 export const init = (): Model => ({
   bubbles: [], score: 0, nextId: 0, revision: 0, rendererStatus: 'loading',
   selectedShape: 'sphere', selectedColor: '', shapePage: 0, lastCreationId: -1, lastCreation: null,
+  clearing: false, clearToken: 0,
 })
 
 export const spokenCreation = (shape: Bubble3dShape, color: Bubble3dColor, language: string): string =>
@@ -84,7 +92,7 @@ export const update = (model: Model, message: Message, muted: boolean, language:
         return [{ ...model, bubbles: model.bubbles.filter(bubble => bubble.id !== msg.id), score: model.score + 1 }, muted ? [] : [playPop()]]
       },
       Bubbles3dCreatedBubble: msg => {
-        if (msg.revision !== model.revision || !Number.isSafeInteger(msg.creationId) || msg.creationId < 0 || msg.creationId <= model.lastCreationId ||
+        if (model.clearing || msg.revision !== model.revision || !Number.isSafeInteger(msg.creationId) || msg.creationId < 0 || msg.creationId <= model.lastCreationId ||
           !Number.isFinite(msg.duration) || msg.duration < 0 || !isBubble3dShape(msg.shape) || !isBubble3dColor(msg.color) || model.bubbles.length >= MAX_BUBBLES) return [model, []]
         return [{
           ...model, bubbles: [...model.bubbles, makeBubble(model.nextId, msg.shape, msg.color, msg.duration)], nextId: model.nextId + 1,
@@ -93,7 +101,17 @@ export const update = (model: Model, message: Message, muted: boolean, language:
       },
       Bubbles3dSelectedShape: msg => isBubble3dShape(msg.shape) && msg.shape !== model.selectedShape ? [{ ...model, selectedShape: msg.shape }, []] : [model, []],
       Bubbles3dNextShapePage: () => [{ ...model, shapePage: (model.shapePage + 1) % SHAPE_PAGE_COUNT }, []],
-      Bubbles3dClickedClear: () => [{ ...model, bubbles: [], score: 0, lastCreation: null, selectedColor: '', revision: model.revision + 1 }, []],
+      Bubbles3dClickedClear: () => model.clearing ? [model, []] : [{
+        ...model, score: 0, lastCreation: null, selectedColor: '', clearToken: model.clearToken + 1,
+        clearing: model.bubbles.length > 0, revision: model.revision + (model.bubbles.length === 0 ? 1 : 0),
+      }, []],
+      Bubbles3dClearBubble: msg => {
+        if (!model.clearing || msg.token !== model.clearToken || msg.revision !== model.revision ||
+          !Number.isSafeInteger(msg.id) || msg.id < 0 || !model.bubbles.some(bubble => bubble.id === msg.id)) return [model, []]
+        return [{ ...model, bubbles: model.bubbles.filter(bubble => bubble.id !== msg.id) }, muted ? [] : [playPop()]]
+      },
+      Bubbles3dClearCompleted: msg => !model.clearing || msg.token !== model.clearToken || msg.revision !== model.revision || model.bubbles.length > 0
+        ? [model, []] : [{ ...model, clearing: false, score: 0, revision: model.revision + 1 }, []],
       Bubbles3dRendererReady: msg => msg.revision === model.revision && model.rendererStatus !== 'ready' ? [{ ...model, rendererStatus: 'ready' }, []] : [model, []],
       Bubbles3dRendererFailed: msg => msg.revision === model.revision && model.rendererStatus !== 'unavailable' ? [{ ...model, rendererStatus: 'unavailable' }, []] : [model, []],
       Bubbles3dSoundPlayed: () => [model, []],
@@ -132,6 +150,21 @@ export const mountCreationControls = (element: Element): Stream.Stream<Message> 
   }),
 )
 
+// This mounted stream is interrupted on navigation and resumes with the remaining IDs on return.
+export const clearBubblesStream = (ids: ReadonlyArray<number>, revision: number, token: number): Stream.Stream<Message> => Stream.callback<Message>(queue =>
+  Effect.gen(function* () {
+    yield* Render.afterCommit
+    for (const id of ids) {
+      yield* Effect.sleep(CLEAR_POP_INTERVAL_MS)
+      Queue.offerUnsafe(queue, ClearBubble({ id, revision, token }))
+    }
+    // Let the last burst finish before the round revision clears decorative feedback.
+    yield* Effect.sleep(BUBBLES3D_POP_FX_DURATION * 1000 + 60)
+    Queue.offerUnsafe(queue, ClearCompleted({ revision, token }))
+    return yield* Effect.never
+  }),
+)
+
 export const view = (model: Model, language: string) => {
   const h = html<Message>()
   const numbers = new Intl.NumberFormat(normalizeLanguage(language))
@@ -142,8 +175,7 @@ export const view = (model: Model, language: string) => {
       h.div([h.Class('bubbles3d-heading')], [
         h.h1([h.Class('title')], [t('bubbles3dTitle', language)]),
         h.p([h.Class('bubbles3d-score'), h.Attribute('role', 'status'), h.Attribute('aria-live', 'polite'), h.Attribute('aria-atomic', 'true')], [tf('bubbles3dPopped', language, numbers.format(model.score))]),
-        h.button([h.Class('btn btn-secondary bubbles3d-clear'), h.Attribute('type', 'button'), h.OnClick(ClickedClear())], [t('clear', language)]),
-        h.p([h.Class('bubbles3d-prompt'), h.Id('bubbles3d-prompt')], [t('bubbles3dPrompt', language)]),
+        h.button([h.Class('btn btn-secondary bubbles3d-clear'), h.Attribute('type', 'button'), h.Disabled(model.clearing), h.OnClick(ClickedClear())], [t('clear', language)]),
       ]),
       h.div([h.Class('bubbles3d-controls')], [
         h.div([h.Class('bubbles3d-shape-selector'), h.Attribute('role', 'group'), h.Attribute('aria-label', t('bubbles3dTitle', language))], [
@@ -161,13 +193,13 @@ export const view = (model: Model, language: string) => {
           h.Class('bubbles3d-color-button'), h.Key(color.value), h.Attribute('type', 'button'),
           h.Style({ '--bubbles3d-color': color.value === 'rainbow' ? 'linear-gradient(135deg, #FF4757, #FFD93D, #2ED573, #1E90FF, #A855F7)' : color.value }),
           h.Attribute('data-color', color.value), h.Attribute('data-shape', model.selectedShape), h.Attribute('data-multitouch-owned', 'true'),
-          h.Attribute('aria-label', t(color.key, language)), h.Attribute('aria-pressed', String(color.value === model.selectedColor)), h.Disabled(atLimit),
+          h.Attribute('aria-label', t(color.key, language)), h.Attribute('aria-pressed', String(color.value === model.selectedColor)), h.Disabled(atLimit || model.clearing),
         ], color.value === 'rainbow' ? [h.span([h.AriaHidden(true)], ['🌈'])] : []))),
       ]),
       h.p([h.Class('bubbles3d-readout'), h.Attribute('role', 'status'), h.Attribute('aria-live', 'polite'), h.Attribute('aria-atomic', 'true')], [
-        atLimit ? t('bubbles3dLimit', language) : model.lastCreation ? spokenCreation(model.lastCreation.shape, model.lastCreation.color, language) : t(BUBBLE3D_SHAPE_KEYS[model.selectedShape], language),
+        model.clearing ? t('bubbles3dClearing', language) : model.lastCreation ? spokenCreation(model.lastCreation.shape, model.lastCreation.color, language) : t(BUBBLE3D_SHAPE_KEYS[model.selectedShape], language),
       ]),
-      h.div([h.Class('bubbles3d-stage'), h.Attribute('data-renderer', model.rendererStatus), h.Attribute('aria-busy', (model.rendererStatus === 'loading').toString())], [
+      h.div([h.Class('bubbles3d-stage'), h.Attribute('data-renderer', model.rendererStatus), h.Attribute('aria-busy', String(model.rendererStatus === 'loading' || model.clearing))], [
         h.div([
           h.Class('bubbles3d-scene'),
           h.Attribute('aria-hidden', 'true'),
@@ -175,9 +207,12 @@ export const view = (model: Model, language: string) => {
           h.Attribute('data-bubbles3d-state', JSON.stringify({ bubbles: model.bubbles, revision: model.revision })),
           h.OnMount({ name: 'bubbles3dScene', f: mountBubbles3d }),
         ], []),
-        ...(model.rendererStatus === 'unavailable' ? [h.p([h.Class('bubbles3d-unavailable'), h.Attribute('role', 'status'), h.Attribute('aria-live', 'polite')], [t('bubbles3dUnavailable', language)])] : []),
-        ...(model.bubbles.length === 0 ? [h.p([h.Class('bubbles3d-empty')], [t(model.score > 0 ? 'allPopped' : 'bubbles3dEmpty', language)])] : []),
-        h.div([h.Class('bubbles3d-bubble-buttons'), h.Attribute('role', 'group'), h.Attribute('aria-label', t('bubbles3dTitle', language)), h.Attribute('aria-describedby', 'bubbles3d-prompt')], model.bubbles.map((bubble, index) => {
+        ...(model.bubbles.length === 0 && model.score > 0 && !model.clearing ? [h.p([h.Class('bubbles3d-empty')], [t('allPopped', language)])] : []),
+        ...(model.clearing ? [h.div([
+          h.Key(`bubbles3d-clear-${model.clearToken}`), h.Attribute('hidden', ''), h.AriaHidden(true),
+          h.OnMount({ name: 'bubbles3dClearing', f: () => clearBubblesStream(model.bubbles.map(bubble => bubble.id), model.revision, model.clearToken) }),
+        ], [])] : []),
+        h.div([h.Class('bubbles3d-bubble-buttons'), h.Attribute('role', 'group'), h.Attribute('aria-label', t('bubbles3dTitle', language))], model.bubbles.map((bubble, index) => {
           const number = numbers.format(index + 1)
           const shape = bubble3dShapeDefinition(bubble.shape)
           return h.button([

@@ -7,6 +7,7 @@ import { normalizeLanguage, t, tf } from '../i18n'
 import * as Speech from '../speech'
 import * as Bubbles3d from './bubbles3d'
 import { BUBBLE3D_COLORS, type Bubble3dColor } from './bubbles3dCreation'
+import { BUBBLES3D_POP_FX_DURATION } from './bubbles3dPopFx'
 import { BUBBLE3D_SHAPES, MAX_BUBBLE3D_SIZE, MIN_BUBBLE3D_SIZE, type Bubble3dShape } from './bubbles3dShapes'
 
 const speech = { rate: 0.65, pitch: 1.7, lang: 'fr' }
@@ -28,13 +29,14 @@ const populated = (count = 2): Bubbles3d.Model => {
 const shapeLabel = (bubble: Bubbles3d.Bubble, language: string, index: number): string =>
   tf('bubbles3dShape', language, t(Bubbles3d.BUBBLE3D_SHAPE_KEYS[bubble.shape], language), new Intl.NumberFormat(language).format(index + 1))
 
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers() })
 
 describe('3D Bubbles creation', () => {
   it('starts empty with explicit creation and selector state', () => {
     expect(Bubbles3d.init()).toEqual({
       bubbles: [], score: 0, nextId: 0, revision: 0, rendererStatus: 'loading',
       selectedShape: 'sphere', selectedColor: '', shapePage: 0, lastCreationId: -1, lastCreation: null,
+      clearing: false, clearToken: 0,
     })
   })
 
@@ -83,7 +85,7 @@ describe('3D Bubbles creation', () => {
     )
   })
 
-  it('supports all 24 choices without cycling the created shape or issuing feedback while muted', () => {
+  it('supports every shape choice without cycling the created shape or issuing feedback while muted', () => {
     Story.story(
       mutedUpdate,
       Story.with(Bubbles3d.init()),
@@ -150,21 +152,31 @@ describe('3D Bubbles creation', () => {
     )
   })
 
-  it('clears the round without recycling IDs and invalidates a finger held through the clear', () => {
+  it('clears one bubble at a time without recycling IDs and invalidates a finger held through the clear', () => {
     Story.story(
       mutedUpdate,
       Story.with(populated()),
       Story.message(Bubbles3d.ClickedPop({ id: 0, revision: 0 })),
       Story.message(Bubbles3d.ClickedClear()),
       Story.model(model => {
-        expect(model.bubbles).toEqual([])
+        expect(model.bubbles.map(bubble => bubble.id)).toEqual([1])
         expect(model.score).toBe(0)
         expect(model.nextId).toBe(2)
         expect(model.lastCreationId).toBe(1)
-        expect(model.revision).toBe(1)
+        expect(model.lastCreation).toBeNull()
+        expect(model.selectedColor).toBe('')
+        expect(model.clearing).toBe(true)
+        expect(model.clearToken).toBe(1)
+        expect(model.revision).toBe(0)
       }),
       Story.message(created(2)),
-      Story.message(Bubbles3d.ClickedPop({ id: 1, revision: 0 })),
+      Story.message(Bubbles3d.ClearBubble({ id: 1, revision: 0, token: 1 })),
+      Story.model(model => { expect(model.bubbles).toEqual([]); expect(model.clearing).toBe(true); expect(model.revision).toBe(0) }),
+      Story.message(Bubbles3d.ClearCompleted({ revision: 0, token: 1 })),
+      Story.model(model => { expect(model.clearing).toBe(false); expect(model.revision).toBe(1) }),
+      Story.message(created(2)),
+      Story.message(Bubbles3d.ClearBubble({ id: 1, revision: 0, token: 1 })),
+      Story.message(Bubbles3d.ClearCompleted({ revision: 0, token: 1 })),
       Story.message(Bubbles3d.RendererReady({ revision: 0 })),
       Story.message(Bubbles3d.RendererFailed({ revision: 0 })),
       Story.model(model => { expect(model.bubbles).toEqual([]); expect(model.rendererStatus).toBe('loading') }),
@@ -180,11 +192,83 @@ describe('3D Bubbles creation', () => {
       Story.with(Bubbles3d.init()),
       Story.message(Bubbles3d.ClickedClear()),
       Story.message(created(0)),
-      Story.model(model => { expect(model.bubbles).toEqual([]); expect(model.revision).toBe(1) }),
+      Story.model(model => { expect(model.bubbles).toEqual([]); expect(model.revision).toBe(1); expect(model.clearing).toBe(false); expect(model.clearToken).toBe(1) }),
       Story.message(created(1, { revision: 1 })),
       Story.model(model => expect(model.bubbles).toHaveLength(1)),
       Story.Command.expectNone(),
     )
+  })
+
+  it('plays one pop per automatic removal while rejecting repeat clears and repeated or stale clear messages', () => {
+    const [clearing] = mutedUpdate(populated(), Bubbles3d.ClickedClear())
+    const invalid = [
+      ...[-1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, 999].map(id => Bubbles3d.ClearBubble({ id, revision: 0, token: 1 })),
+      ...[-1, 0, 0.5, NaN, Infinity].map(token => Bubbles3d.ClearBubble({ id: 0, revision: 0, token })),
+      ...[-1, 1, 0.5, NaN, Infinity].map(revision => Bubbles3d.ClearBubble({ id: 0, revision, token: 1 })),
+      Bubbles3d.ClickedClear(), created(2),
+      Bubbles3d.ClearCompleted({ revision: 0, token: 1 }),
+    ]
+    for (const message of invalid) expect(update(clearing, message)).toEqual([clearing, []])
+    Story.story(
+      update,
+      Story.with(clearing),
+      Story.message(Bubbles3d.ClearBubble({ id: 0, revision: 0, token: 1 })),
+      Story.model(model => { expect(model.bubbles.map(bubble => bubble.id)).toEqual([1]); expect(model.score).toBe(0) }),
+      Story.Command.resolveAll(popSound),
+      Story.message(Bubbles3d.ClearBubble({ id: 0, revision: 0, token: 1 })),
+      Story.message(Bubbles3d.ClearCompleted({ revision: 0, token: 1 })),
+      Story.Command.expectNone(),
+      Story.message(Bubbles3d.ClearBubble({ id: 1, revision: 0, token: 1 })),
+      Story.Command.resolveAll(popSound),
+      Story.message(Bubbles3d.ClearCompleted({ revision: 0, token: 0 })),
+      Story.message(Bubbles3d.ClearCompleted({ revision: 1, token: 1 })),
+      Story.model(model => expect(model.clearing).toBe(true)),
+      Story.message(Bubbles3d.ClearCompleted({ revision: 0, token: 1 })),
+      Story.model(model => { expect(model.clearing).toBe(false); expect(model.revision).toBe(1); expect(model.score).toBe(0) }),
+      Story.message(Bubbles3d.ClearBubble({ id: 1, revision: 0, token: 1 })),
+      Story.message(Bubbles3d.ClearCompleted({ revision: 0, token: 1 })),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('keeps manually popping during a clear playable and ignores later automatic removal of that bubble', () => {
+    Story.story(
+      update,
+      Story.with(populated()),
+      Story.message(Bubbles3d.ClickedClear()),
+      Story.message(Bubbles3d.ClickedPop({ id: 0, revision: 0 })),
+      Story.model(model => { expect(model.score).toBe(1); expect(model.clearing).toBe(true) }),
+      Story.Command.resolveAll(popSound),
+      Story.message(Bubbles3d.ClearBubble({ id: 0, revision: 0, token: 1 })),
+      Story.Command.expectNone(),
+      Story.message(Bubbles3d.ClearBubble({ id: 1, revision: 0, token: 1 })),
+      Story.Command.resolveAll(popSound),
+      Story.message(Bubbles3d.ClearCompleted({ revision: 0, token: 1 })),
+      Story.model(model => { expect(model.bubbles).toEqual([]); expect(model.score).toBe(0); expect(model.clearing).toBe(false) }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('keeps muted sequential clearing silent and rejects messages from an earlier clear in a later round', () => {
+    const pop = vi.spyOn(Audio, 'pop')
+    Story.story(
+      mutedUpdate,
+      Story.with(populated(1)),
+      Story.message(Bubbles3d.ClickedClear()),
+      Story.message(Bubbles3d.ClearBubble({ id: 0, revision: 0, token: 1 })),
+      Story.message(Bubbles3d.ClearCompleted({ revision: 0, token: 1 })),
+      Story.message(created(1, { revision: 1 })),
+      Story.message(Bubbles3d.ClickedClear()),
+      Story.model(model => { expect(model.clearToken).toBe(2); expect(model.revision).toBe(1); expect(model.bubbles.map(bubble => bubble.id)).toEqual([1]) }),
+      Story.message(Bubbles3d.ClearBubble({ id: 1, revision: 1, token: 1 })),
+      Story.message(Bubbles3d.ClearCompleted({ revision: 1, token: 1 })),
+      Story.model(model => { expect(model.bubbles).toHaveLength(1); expect(model.clearing).toBe(true) }),
+      Story.message(Bubbles3d.ClearBubble({ id: 1, revision: 1, token: 2 })),
+      Story.message(Bubbles3d.ClearCompleted({ revision: 1, token: 2 })),
+      Story.model(model => { expect(model.bubbles).toEqual([]); expect(model.revision).toBe(2); expect(model.clearing).toBe(false) }),
+      Story.Command.expectNone(),
+    )
+    expect(pop).not.toHaveBeenCalled()
   })
 
   it('pops independent bubbles once each and resolves every sound acknowledgement', () => {
@@ -212,9 +296,9 @@ describe('3D Bubbles creation', () => {
     expect(mutedUpdate(unavailable, Bubbles3d.RendererFailed({ revision: 0 }))).toEqual([unavailable, []])
   })
 
-  it('cycles five shape pages without changing the selected shape', () => {
+  it('cycles six shape pages without changing the selected shape', () => {
     expect(Bubbles3d.SHAPES_PER_PAGE).toBe(5)
-    expect(Bubbles3d.SHAPE_PAGE_COUNT).toBe(5)
+    expect(Bubbles3d.SHAPE_PAGE_COUNT).toBe(6)
     Story.story(
       mutedUpdate,
       Story.with({ ...Bubbles3d.init(), selectedShape: 'heart' }),
@@ -313,16 +397,69 @@ describe('3D Bubbles feedback and lifecycle', () => {
     const result = await Effect.runPromise(Stream.runHead(Bubbles3d.mountBubbles3d(host, () => Promise.reject(new Error('import failed')))).pipe(Effect.timeout('1 second')))
     expect(result).toEqual(Option.some(Bubbles3d.RendererFailed({ revision: 3 })))
   })
+
+  it('emits ordered clear removals at intervals and waits for the last visual burst before completing', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation(callback => { queueMicrotask(() => callback(0)); return 1 })
+    const messages: Bubbles3d.Message[] = []
+    const fiber = Effect.runFork(Stream.runForEach(Bubbles3d.clearBubblesStream([4, 9, 2], 3, 7), message => Effect.sync(() => { messages.push(message) })))
+    try {
+      await vi.advanceTimersByTimeAsync(0)
+      await vi.advanceTimersByTimeAsync(Bubbles3d.CLEAR_POP_INTERVAL_MS - 1)
+      expect(messages).toEqual([])
+      await vi.advanceTimersByTimeAsync(1)
+      expect(messages).toEqual([Bubbles3d.ClearBubble({ id: 4, revision: 3, token: 7 })])
+      await vi.advanceTimersByTimeAsync(Bubbles3d.CLEAR_POP_INTERVAL_MS * 2)
+      expect(messages).toEqual([
+        Bubbles3d.ClearBubble({ id: 4, revision: 3, token: 7 }),
+        Bubbles3d.ClearBubble({ id: 9, revision: 3, token: 7 }),
+        Bubbles3d.ClearBubble({ id: 2, revision: 3, token: 7 }),
+      ])
+      await vi.advanceTimersByTimeAsync(BUBBLES3D_POP_FX_DURATION * 1000 + 59)
+      expect(messages).toHaveLength(3)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(messages.at(-1)).toEqual(Bubbles3d.ClearCompleted({ revision: 3, token: 7 }))
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(messages).toHaveLength(4)
+    } finally { await Effect.runPromise(Fiber.interrupt(fiber)) }
+  })
+
+  it('cancels a clear on unmount and resumes only the remaining bubble IDs after returning', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation(callback => { queueMicrotask(() => callback(0)); return 1 })
+    const messages: Bubbles3d.Message[] = []
+    const consume = (ids: ReadonlyArray<number>) => Effect.runFork(Stream.runForEach(Bubbles3d.clearBubblesStream(ids, 2, 5), message => Effect.sync(() => { messages.push(message) })))
+    const interrupted = consume([2, 4])
+    try {
+      await vi.advanceTimersByTimeAsync(0)
+      await vi.advanceTimersByTimeAsync(Bubbles3d.CLEAR_POP_INTERVAL_MS)
+      expect(messages).toEqual([Bubbles3d.ClearBubble({ id: 2, revision: 2, token: 5 })])
+      await Effect.runPromise(Fiber.interrupt(interrupted))
+      await vi.advanceTimersByTimeAsync(10000)
+      expect(messages).toHaveLength(1)
+      const resumed = consume([4])
+      try {
+        await vi.advanceTimersByTimeAsync(0)
+        await vi.advanceTimersByTimeAsync(Bubbles3d.CLEAR_POP_INTERVAL_MS + BUBBLES3D_POP_FX_DURATION * 1000 + 60)
+        expect(messages).toEqual([
+          Bubbles3d.ClearBubble({ id: 2, revision: 2, token: 5 }),
+          Bubbles3d.ClearBubble({ id: 4, revision: 2, token: 5 }),
+          Bubbles3d.ClearCompleted({ revision: 2, token: 5 }),
+        ])
+      } finally { await Effect.runPromise(Fiber.interrupt(resumed)) }
+    } finally { await Effect.runPromise(Fiber.interrupt(interrupted)) }
+  })
 })
 
 describe('3D Bubbles accessible controls', () => {
-  it('exposes empty-state instructions, pressed shape selection, native Next/Clear, and a polite score', () => {
+  it('exposes pressed shape selection, native Next/Clear, and a polite score without explanatory overlays', () => {
     Scene.scene(
       { update: mutedUpdate, view },
       Scene.with(Bubbles3d.init()),
       Scene.expect(Scene.selector('.bubbles3d-stage')).toHaveAttr('aria-busy', 'true'),
       Scene.expect(Scene.selector('.bubbles3d-scene')).toHaveAttr('aria-hidden', 'true'),
-      Scene.expect(Scene.text(t('bubbles3dEmpty', 'en'))).toExist(),
+      Scene.expect(Scene.selector('.bubbles3d-prompt')).toBeAbsent(),
+      Scene.expect(Scene.selector('.bubbles3d-empty')).toBeAbsent(),
       Scene.expect(Scene.role('button', { name: t('bubbles3dShapeSphere', 'en') })).toHaveAttr('aria-pressed', 'true'),
       Scene.expect(Scene.role('button', { name: t('clear', 'en') })).toBeEnabled(),
       Scene.expect(Scene.selector('.bubbles3d-score[role="status"][aria-live="polite"]')).toHaveText(tf('bubbles3dPopped', 'en', '0')),
@@ -336,7 +473,7 @@ describe('3D Bubbles accessible controls', () => {
     )
   })
 
-  it('shows all 24 shapes over five pages and preserves the selected shape while paging', () => {
+  it('shows every shape over six pages and preserves the selected shape while paging', () => {
     for (let page = 0; page < Bubbles3d.SHAPE_PAGE_COUNT; page++) {
       Scene.scene(
         { update: mutedUpdate, view },
@@ -345,7 +482,7 @@ describe('3D Bubbles accessible controls', () => {
         ...BUBBLE3D_SHAPES.slice(page * Bubbles3d.SHAPES_PER_PAGE, (page + 1) * Bubbles3d.SHAPES_PER_PAGE).map(shape =>
           Scene.expect(Scene.role('button', { name: t(Bubbles3d.BUBBLE3D_SHAPE_KEYS[shape.id], 'en') })).toBeEnabled(),
         ),
-        Scene.expectAll(Scene.all.selector('.bubbles3d-shape-button[aria-pressed]')).toHaveCount(page === Bubbles3d.SHAPE_PAGE_COUNT - 1 ? 4 : 5),
+        Scene.expectAll(Scene.all.selector('.bubbles3d-shape-button[aria-pressed]')).toHaveCount(Math.min(Bubbles3d.SHAPES_PER_PAGE, BUBBLE3D_SHAPES.length - page * Bubbles3d.SHAPES_PER_PAGE)),
         Scene.Command.expectNone(),
       )
     }
@@ -364,8 +501,13 @@ describe('3D Bubbles accessible controls', () => {
       Scene.expect(Scene.selector('.bubbles3d-readout[role="status"][aria-live="polite"]')).toHaveText(Bubbles3d.spokenCreation('cube', '#FF4757', language)),
       Scene.expect(Scene.role('button', { name: shapeLabel(model.bubbles[0]!, language, 0) })).toBeEnabled(),
       Scene.click(Scene.role('button', { name: t('clear', language) })),
-      Scene.expect(Scene.text(t('bubbles3dEmpty', language))).toExist(),
-      Scene.expect(Scene.role('button', { name: t('clear', language) })).toBeEnabled(),
+      Scene.expect(Scene.role('button', { name: t('clear', language) })).toBeDisabled(),
+      ...BUBBLE3D_COLORS.map(color => Scene.expect(Scene.role('button', { name: t(color.key, language) })).toBeDisabled()),
+      Scene.expect(Scene.selector('.bubbles3d-stage')).toHaveAttr('aria-busy', 'true'),
+      Scene.expect(Scene.selector('.bubbles3d-readout[role="status"][aria-live="polite"]')).toHaveText(t('bubbles3dClearing', language)),
+      Scene.Mount.expectHas({ name: 'bubbles3dClearing' }),
+      Scene.Mount.resolve({ name: 'bubbles3dClearing' }, Bubbles3d.ClearBubble({ id: 0, revision: 0, token: 1 })),
+      Scene.expectAll(Scene.all.selector('.bubbles3d-bubble-button')).toHaveCount(1),
       Scene.Command.expectNone(),
     )
   })
@@ -376,11 +518,30 @@ describe('3D Bubbles accessible controls', () => {
       { update: mutedUpdate, view },
       Scene.with(model),
       Scene.Mount.resolveAll([{ name: 'bubbles3dScene' }, Bubbles3d.RendererFailed({ revision: 0 })], mountedControls),
-      Scene.expect(Scene.text(t('bubbles3dUnavailable', 'en'))).toExist(),
-      Scene.expect(Scene.selector('.bubbles3d-unavailable')).toHaveAttr('aria-live', 'polite'),
+      Scene.expect(Scene.selector('.bubbles3d-unavailable')).toBeAbsent(),
       Scene.expect(Scene.selector('.bubbles3d-stage')).toHaveAttr('data-renderer', 'unavailable'),
       Scene.click(Scene.role('button', { name: shapeLabel(model.bubbles[0]!, 'en', 0) })),
       Scene.expect(Scene.selector('.bubbles3d-score')).toHaveText(tf('bubbles3dPopped', 'en', '1')),
+      Scene.Command.expectNone(),
+    )
+  })
+
+  it('ends the mounted clear and restores enabled controls only after all bubbles are removed', () => {
+    const [clearing] = mutedUpdate(populated(1), Bubbles3d.ClickedClear())
+    const [removed] = mutedUpdate(clearing, Bubbles3d.ClearBubble({ id: 0, revision: 0, token: 1 }))
+    Scene.scene(
+      { update: mutedUpdate, view },
+      Scene.with({ ...removed, rendererStatus: 'ready' }),
+      Scene.Mount.resolveAll(mountedScene, mountedControls),
+      Scene.expect(Scene.role('button', { name: t('clear', 'en') })).toBeDisabled(),
+      Scene.expect(Scene.selector('.bubbles3d-stage')).toHaveAttr('aria-busy', 'true'),
+      Scene.expectAll(Scene.all.selector('.bubbles3d-bubble-button')).toBeEmpty(),
+      Scene.Mount.resolve({ name: 'bubbles3dClearing' }, Bubbles3d.ClearCompleted({ revision: 0, token: 1 })),
+      Scene.Mount.expectEnded({ name: 'bubbles3dClearing' }),
+      Scene.expect(Scene.role('button', { name: t('clear', 'en') })).toBeEnabled(),
+      ...BUBBLE3D_COLORS.map(color => Scene.expect(Scene.role('button', { name: t(color.key, 'en') })).toBeEnabled()),
+      Scene.expect(Scene.selector('.bubbles3d-stage')).toHaveAttr('aria-busy', 'false'),
+      Scene.expect(Scene.selector('.bubbles3d-readout')).toHaveText(t('bubbles3dShapeSphere', 'en')),
       Scene.Command.expectNone(),
     )
   })
@@ -394,7 +555,7 @@ describe('3D Bubbles accessible controls', () => {
       ...BUBBLE3D_COLORS.map(color => Scene.expect(Scene.role('button', { name: t(color.key, 'en') })).toBeDisabled()),
       Scene.expect(Scene.role('button', { name: t('clear', 'en') })).toBeEnabled(),
       Scene.expect(Scene.role('button', { name: shapeLabel(model.bubbles[0]!, 'en', 0) })).toBeEnabled(),
-      Scene.expect(Scene.text(t('bubbles3dLimit', 'en'))).toExist(),
+      Scene.expect(Scene.selector('.bubbles3d-readout')).toHaveText('red cube'),
       Scene.Command.expectNone(),
     )
   })
