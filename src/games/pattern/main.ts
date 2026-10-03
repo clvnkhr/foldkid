@@ -1,4 +1,4 @@
-import { Effect, Match as M, Option as O, pipe, Schema as S } from 'effect'
+import { Effect, Match as M, pipe, Schema as S } from 'effect'
 import { Command } from 'foldkit'
 import { Html, html } from 'foldkit/html'
 import { m } from 'foldkit/message'
@@ -186,9 +186,11 @@ export const view = (model: Model, language: string = 'en'): Html => {
                   ? model.sequence[model.showIndex] as number
                   : -1
                 const isActive = activeIdx === i
-                return h.div([
+                return h.button([
                   h.Class(`pat-tile pat-tile--${i}${isActive ? ' pat-tile--active' : ''}`),
-                  h.OnPointerUp(() => O.some(ClickedTile({ index: i }))),
+                  h.OnClick(ClickedTile({ index: i })),
+                  h.Disabled(model.gameState !== 'playing'),
+                  h.AriaLabel(t((['colorRed', 'colorGreen', 'colorBlue', 'colorYellow'] as const)[i]!, language)),
                   ...(isActive ? [h.Key(`pat-tile-${i}-${model.showIndex}`)] : []),
                 ], [])
               }),

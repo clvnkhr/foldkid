@@ -42,13 +42,18 @@
 }
 
 .pat-tile {
+  border: 0;
   aspect-ratio: 1;
   border-radius: clamp(12px, 3vmin, 20px);
   cursor: pointer;
-  touch-action: manipulation;
   transition: filter 0.45s ease-out, transform 0.45s ease-out, box-shadow 0.45s ease-out;
   position: relative;
   overflow: hidden;
+}
+
+.pat-tile:focus-visible {
+  outline: 3px solid var(--text-primary);
+  outline-offset: 3px;
 }
 
 .pat-tile::after {

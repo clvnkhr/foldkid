@@ -1,7 +1,8 @@
 import { Effect, Match as M, Queue, Schema as S, Stream } from 'effect'
-import { Command } from 'foldkit'
+import { Command, Render } from 'foldkit'
 import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
+import { attachWhiteboard } from './drawWhiteboard'
 
 const MODEL_LABELS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabdefghnqrt'.split('')
 const NUMBER_TARGETS = MODEL_LABELS.filter(char => /\d/.test(char))
@@ -900,8 +901,6 @@ const strokeColorForCanvas = (canvas: HTMLCanvasElement): string => {
     : selectedColor
 }
 
-export const __drawTest = { findLeftRightSplit, strokeColorForCanvas }
-
 const normalizeGrid = (data: Uint8ClampedArray, width: number, height: number): Grid | null => {
   const bounds = findInkBounds(data, width, height)
   if (!bounds) return null
@@ -1196,42 +1195,36 @@ const recognizeFromBoard = async (canvas: HTMLCanvasElement, mode: RecognitionMo
   return recognizeCenteredCanvas(centered, mode, debugImages)
 }
 
-const boardImageToCanvas = (src: string): Promise<HTMLCanvasElement> =>
-  new Promise((resolve, reject) => {
-    const image = new Image()
-    image.onload = () => {
-      const canvas = document.createElement('canvas')
-      canvas.width = image.naturalWidth
-      canvas.height = image.naturalHeight
-      const context = canvas.getContext('2d')
-      if (!context) {
-        reject(new Error('Unable to create canvas context'))
-        return
-      }
-      context.drawImage(image, 0, 0)
-      resolve(canvas)
-    }
-    image.onerror = () => reject(new Error('Unable to load board image'))
-    image.src = src
-  })
-
-const recognizeBoardImage = async (target: string, mode: RecognitionMode, boardImage: string): Promise<RecognitionMessage> => {
-  try {
-    const canvas = await boardImageToCanvas(boardImage)
-    const result = await recognizeFromBoard(canvas, mode, target.length)
-    return result ? BoardRecognized({ ...result, target, mode, boardImage }) : RecognitionFailed()
-  } catch {
-    return RecognitionFailed()
-  }
+// Runtime revisions guard asynchronous recognition without storing canvas
+// contents or active contacts in the application model.
+const boardRuntimes = new WeakMap<HTMLCanvasElement, { target: string; revision: number; request: number }>()
+const recognitionIsCurrent = (canvas: HTMLCanvasElement, target: string, mode: RecognitionMode): (() => boolean) => {
+  const runtime = boardRuntimes.get(canvas)
+  const revision = runtime?.revision
+  const request = runtime ? ++runtime.request : undefined
+  return () => runtime !== undefined && canvas.isConnected && boardRuntimes.get(canvas) === runtime
+    && runtime.target === target && runtime.revision === revision && runtime.request === request && modeFromCanvas(canvas) === mode
 }
 
-const recognizeCurrentBoard = async (target: string, mode: RecognitionMode): Promise<RecognitionMessage> => {
+const copyBoard = (canvas: HTMLCanvasElement): HTMLCanvasElement => {
+  const snapshot = canvas.ownerDocument.createElement('canvas')
+  snapshot.width = canvas.width
+  snapshot.height = canvas.height
+  const context = snapshot.getContext('2d')
+  if (!context) throw new Error('Unable to copy board')
+  context.drawImage(canvas, 0, 0)
+  return snapshot
+}
+
+const recognizeCurrentBoard = async (target: string, mode: RecognitionMode, recognize = recognizeFromBoard): Promise<RecognitionMessage> => {
   try {
     const canvas = document.querySelector<HTMLCanvasElement>('#draw-board')
     if (!canvas) return RecognitionFailed()
-    const boardImage = canvas.toDataURL('image/png')
-    const result = await recognizeFromBoard(canvas, mode, target.length)
-    return result ? BoardRecognized({ ...result, target, mode, boardImage }) : RecognitionFailed()
+    const isCurrent = recognitionIsCurrent(canvas, target, mode)
+    const snapshot = copyBoard(canvas)
+    const boardImage = snapshot.toDataURL('image/png')
+    const result = await recognize(snapshot, mode, target.length)
+    return result && isCurrent() ? BoardRecognized({ ...result, target, mode, boardImage }) : RecognitionFailed()
   } catch {
     return RecognitionFailed()
   }
@@ -1240,7 +1233,9 @@ const recognizeCurrentBoard = async (target: string, mode: RecognitionMode): Pro
 const RecognizeBoardImage = (args: { target: string; mode: RecognitionMode; boardImage: string }): Command.Command<Message> => ({
   name: 'DrawReprocessBoard',
   args,
-  effect: Effect.promise(() => recognizeBoardImage(args.target, args.mode, args.boardImage)),
+  // Another finger may have added ink since the previous saved image. The
+  // new mode always recognizes the drawing that is currently on screen.
+  effect: Render.afterCommit.pipe(Effect.andThen(Effect.promise(() => recognizeCurrentBoard(args.target, args.mode)))),
 })
 
 const RecognizeCurrentBoard = (args: { target: string; mode: RecognitionMode }): Command.Command<Message> => ({
@@ -1255,83 +1250,56 @@ const modeFromCanvas = (canvas: HTMLCanvasElement): RecognitionMode =>
 const brushSizeFromCanvas = (canvas: HTMLCanvasElement): number =>
   normalizeBrushSize(Number.parseFloat(canvas.dataset.brushSize ?? ''))
 
-const mountWhiteboard = (target: string) => (element: Element): Stream.Stream<Message> =>
+const mountWhiteboard = (target: string, recognize = recognizeFromBoard) => (element: Element): Stream.Stream<Message> =>
   Stream.callback<Message>(queue =>
     Effect.gen(function* () {
       yield* Effect.acquireRelease(
         Effect.sync(() => {
           const canvas = element as HTMLCanvasElement
-          const context = canvas.getContext('2d')
-          const activePointers = new Set<number>()
-
-          if (context) {
-            context.lineCap = 'round'
-            context.lineJoin = 'round'
-            context.strokeStyle = strokeColorForCanvas(canvas)
-            context.lineWidth = brushSizeFromCanvas(canvas)
+          let mounted = true
+          const runtime = { target, revision: 0, request: 0 }
+          boardRuntimes.set(canvas, runtime)
+          const invalidateRecognition = (): void => { runtime.revision++ }
+          const dispose = attachWhiteboard(canvas, {
+            color: () => strokeColorForCanvas(canvas),
+            size: () => brushSizeFromCanvas(canvas),
+            onChange: invalidateRecognition,
+            onFinish: () => {
+              if (canvas.dataset.freeMode !== 'true') return
+              const mode = modeFromCanvas(canvas)
+              const boardIsCurrent = recognitionIsCurrent(canvas, target, mode)
+              const isCurrent = (): boolean => mounted && boardIsCurrent() && canvas.dataset.freeMode === 'true'
+              // Recognition owns a fixed snapshot while other fingers can begin drawing again.
+              try {
+                const snapshot = copyBoard(canvas)
+                const boardImage = snapshot.toDataURL('image/png')
+                void recognize(snapshot, mode, target.length).then(result => {
+                  if (result && isCurrent()) Queue.offerUnsafe(queue, BoardRecognized({ ...result, target, mode, boardImage }))
+                }).catch(() => {
+                  if (isCurrent()) Queue.offerUnsafe(queue, RecognitionFailed())
+                })
+              } catch {
+                if (isCurrent()) Queue.offerUnsafe(queue, RecognitionFailed())
+              }
+            },
+          })
+          const observer = new MutationObserver(invalidateRecognition)
+          observer.observe(canvas, { attributes: true, attributeFilter: ['data-free-mode', 'data-recognition-mode'] })
+          return () => {
+            mounted = false
+            invalidateRecognition()
+            if (boardRuntimes.get(canvas) === runtime) boardRuntimes.delete(canvas)
+            observer.disconnect()
+            dispose()
           }
-
-          const point = (event: PointerEvent): readonly [number, number] => {
-            const rect = canvas.getBoundingClientRect()
-            return [
-              ((event.clientX - rect.left) / rect.width) * canvas.width,
-              ((event.clientY - rect.top) / rect.height) * canvas.height,
-            ]
-          }
-
-          const drawTo = (event: PointerEvent): void => {
-            if (!context || !activePointers.has(event.pointerId)) return
-            event.preventDefault()
-            context.strokeStyle = strokeColorForCanvas(canvas)
-            context.lineWidth = brushSizeFromCanvas(canvas)
-            const [x, y] = point(event)
-            context.lineTo(x, y)
-            context.stroke()
-          }
-
-          const onDown = (event: PointerEvent): void => {
-            if (!context) return
-            event.preventDefault()
-            canvas.setPointerCapture(event.pointerId)
-            activePointers.add(event.pointerId)
-            context.strokeStyle = strokeColorForCanvas(canvas)
-            context.lineWidth = brushSizeFromCanvas(canvas)
-            const [x, y] = point(event)
-            context.beginPath()
-            context.moveTo(x, y)
-            context.lineTo(x + 0.01, y + 0.01)
-            context.stroke()
-          }
-
-          const onUp = (event: PointerEvent): void => {
-            if (!activePointers.has(event.pointerId)) return
-            event.preventDefault()
-            activePointers.delete(event.pointerId)
-            if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId)
-            if (canvas.dataset.freeMode !== 'true') return
-            const mode = modeFromCanvas(canvas)
-            void recognizeFromBoard(canvas, mode, target.length).then(result => {
-              if (result) Queue.offerUnsafe(queue, BoardRecognized({ ...result, target, mode, boardImage: canvas.toDataURL('image/png') }))
-            })
-          }
-
-          canvas.addEventListener('pointerdown', onDown)
-          canvas.addEventListener('pointermove', drawTo)
-          canvas.addEventListener('pointerup', onUp)
-          canvas.addEventListener('pointercancel', onUp)
-
-          return { canvas, onDown, drawTo, onUp }
         }),
-        ({ canvas, onDown, drawTo, onUp }) => Effect.sync(() => {
-          canvas.removeEventListener('pointerdown', onDown)
-          canvas.removeEventListener('pointermove', drawTo)
-          canvas.removeEventListener('pointerup', onUp)
-          canvas.removeEventListener('pointercancel', onUp)
-        }),
+        dispose => Effect.sync(dispose),
       )
       return yield* Effect.never
     }),
   )
+
+export const __drawTest = { findLeftRightSplit, strokeColorForCanvas, mountWhiteboard, recognizeCurrentBoard }
 
 export const view = (model: Model) => {
   const h = html<Message>()

@@ -2,14 +2,15 @@ import { Effect, Match as M, Option, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { Document, html } from 'foldkit/html'
 
-import { ApplyImport, CancelResetSettings, ClickedAudioTest, ClickedBsl, ClickedBubbles, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedGrowingNumbers, ClickedLanding, ClickedDraw, ClickedMagneticBlocks, ClickedMemory, ClickedMusicBox, ClickedPhonemeGarden, ClickedRps, ClickedShapeWorkshop, ClickedSpeakerCalculator, ClickedSettings, ClickedTalkingClock, ClickedTalkingKeyboard, ClickedWhackamole, ClickedPattern, ConfirmResetSettings, CopyExportData, DismissMessage, ExportSettings, ImportSettings, ImportedSettings, LandingDragEnded, LandingDragStarted, LandingDroppedOn, LandingSettingsDragEnded, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, ResetSettings, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsDragEnded, SettingsDragMoved, SettingsDragStarted, SettingsImportFailed, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
+import { ApplyImport, CancelResetSettings, ClickedAudioTest, ClickedBsl, ClickedBubbles, ClickedBubbles3d, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedGrowingNumbers, ClickedLanding, ClickedDraw, ClickedMagneticBlocks, ClickedMemory, ClickedMusicBox, ClickedPhonemeGarden, ClickedRps, ClickedShapeWorkshop, ClickedSpeakerCalculator, ClickedSettings, ClickedTalkingClock, ClickedTalkingKeyboard, ClickedWhackamole, ClickedPattern, ConfirmResetSettings, CopyExportData, DismissMessage, ExportSettings, ImportSettings, ImportedSettings, LandingDragEnded, LandingDragStarted, LandingDroppedOn, LandingSettingsDragEnded, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, ResetSettings, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsDragEnded, SettingsDragMoved, SettingsDragStarted, SettingsImportFailed, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
 
-import { Page, PageAudioTest, PageBsl, PageBubbles, PageCounter, PageFindIt, PageGrowingNumbers, PageLanding, PageDraw, PageMagneticBlocks, PageMemory, PageMusicBox, PagePhonemeGarden, PageRps, PageShapeWorkshop, PageSpeakerCalculator, PageTalkingClock, PageTalkingKeyboard, PageWhackamole, PagePattern } from './route'
+import { Page, PageAudioTest, PageBsl, PageBubbles, PageBubbles3d, PageCounter, PageFindIt, PageGrowingNumbers, PageLanding, PageDraw, PageMagneticBlocks, PageMemory, PageMusicBox, PagePhonemeGarden, PageRps, PageShapeWorkshop, PageSpeakerCalculator, PageTalkingClock, PageTalkingKeyboard, PageWhackamole, PagePattern } from './route'
 
 import * as FindIt from './games/findit'
 import * as MusicBox from './games/musicbox'
 import * as Counter from './games/counter'
 import * as Bubbles from './games/bubbles'
+import * as Bubbles3d from './games/bubbles3d'
 import * as Draw from './games/draw'
 import * as Memory from './games/memory'
 import * as PhonemeGarden from './games/phonemeGarden'
@@ -28,6 +29,8 @@ import { view as audioTestView } from './pages/audiotest'
 import { Language, normalizeLanguage, t, tf } from './i18n'
 import { DEFAULT_SPEECH_PITCH, DEFAULT_SPEECH_RATE, speak } from './speech'
 import { pointerReorder } from './pointerReorder'
+import { multitouchClickStream, withMultitouchClicks } from './multitouch'
+import { settingsResizeStream } from './subscriptions'
 
 const ICON_UNMUTED = '🔊'
 const ICON_MUTED = '🔇'
@@ -113,9 +116,9 @@ const sameStringArray = (a: readonly string[], b: readonly string[]): boolean =>
 
 const isLandingOrder = (value: readonly number[] | undefined): value is number[] =>
   Array.isArray(value) &&
-  value.length === LANDING_GAME_COUNT &&
-  new Set(value).size === LANDING_GAME_COUNT &&
-  value.every(index => Number.isInteger(index) && index >= 0 && index < LANDING_GAME_COUNT)
+  value.length > 0 && value.length <= LANDING_GAME_COUNT &&
+  new Set(value).size === value.length &&
+  value.every(index => Number.isInteger(index) && index >= 0 && index < value.length)
 
 const normalizeLandingHiddenGames = (value: readonly boolean[] | undefined): boolean[] => {
   if (!Array.isArray(value)) return [...DEFAULT_LANDING_HIDDEN_GAMES]
@@ -221,6 +224,7 @@ export const Model = S.Struct({
   counter: Counter.Model,
   findIt: FindIt.Model,
   bubbles: Bubbles.Model,
+  bubbles3d: Bubbles3d.Model,
   draw: Draw.Model,
   memory: Memory.Model,
   phonemeGarden: PhonemeGarden.Model,
@@ -244,6 +248,7 @@ export const Model = S.Struct({
   landingOrder: S.Array(S.Number),
   landingHiddenGames: S.Array(S.Boolean),
   landingDragIndex: S.Number,
+  landingDragSource: S.Union([S.Literal('landing'), S.Literal('settings'), S.Null]),
 })
 
 export type Model = typeof Model.Type
@@ -262,6 +267,13 @@ export const Message = S.Union([
   ClickedCounter,
   ClickedFindIt,
   ClickedBubbles,
+  ClickedBubbles3d,
+  Bubbles3d.ClickedPop,
+  Bubbles3d.ClickedAdd,
+  Bubbles3d.ClickedReset,
+  Bubbles3d.RendererReady,
+  Bubbles3d.RendererFailed,
+  Bubbles3d.SoundPlayed,
   ClickedDraw,
   ClickedMusicBox,
   ClickedMemory,
@@ -307,6 +319,7 @@ export const Message = S.Union([
   LandingSettingsDragEnded,
   LandingToggleGameVisibility,
   Counter.PointerDown,
+  Counter.PressCancelled,
   Counter.PressedIncrement,
   Counter.PressedDecrement,
   Counter.ClickedReset,
@@ -486,6 +499,7 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
         sayColor: saved.bubblesSayColor ?? false,
         shapeMode: saved.bubblesShapeMode ?? false,
       },
+      bubbles3d: Bubbles3d.init(),
       draw: Draw.normalizeTargetForPool({
         ...Draw.init(),
         topN: Draw.normalizeTopN(saved.drawTopN),
@@ -520,10 +534,11 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
       exportData: '',
       settingsOverlay: '',
       landingOrder: isLandingOrder(saved.landingOrder)
-        ? [...saved.landingOrder]
+        ? [...saved.landingOrder, ...DEFAULT_LANDING_ORDER.slice(saved.landingOrder.length)]
         : [...DEFAULT_LANDING_ORDER],
       landingHiddenGames: normalizeLandingHiddenGames(saved.landingHiddenGames),
       landingDragIndex: -1,
+      landingDragSource: null,
     },
     cmds,
   ]
@@ -553,6 +568,14 @@ const updateMusicBox = (
 ): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
   const [next, cmds] = MusicBox.update(model.musicBox, message)
   return [{ ...model, musicBox: next }, cmds]
+}
+
+const updateBubbles3d = (
+  model: Model,
+  message: Bubbles3d.Message,
+): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
+  const [next, cmds] = Bubbles3d.update(model.bubbles3d, message, model.muted)
+  return [{ ...model, bubbles3d: next }, cmds]
 }
 
 const updateBubbles = (
@@ -744,11 +767,14 @@ const applyImportData = (model: Model, s: PersistedSettings): Model => {
       songOrder: normalizeSongOrder(s.musicBoxSongOrder, model.musicBox.songOrder),
       hiddenSongs: normalizeHiddenSongs(s.musicBoxHiddenSongs),
       drumVolume: normalizeDrumVolume(s.musicBoxDrumVolume, model.musicBox.drumVolume),
+      dragIndex: -1,
     },
     landingOrder: isLandingOrder(s.landingOrder)
-      ? [...s.landingOrder]
+      ? [...s.landingOrder, ...DEFAULT_LANDING_ORDER.slice(s.landingOrder.length)]
       : model.landingOrder,
     landingHiddenGames: normalizeLandingHiddenGames(s.landingHiddenGames ?? model.landingHiddenGames),
+    landingDragIndex: -1,
+    landingDragSource: null,
     showResetConfirm: false,
     importExportMessage: t('settingsImportSuccess', model.language),
   }
@@ -769,7 +795,11 @@ const parseImportData = (data: string): ParseImportResult => {
       return { _tag: 'VersionMismatch' }
     }
     const decoded = decodeSettingsExport(parsed)
-    if (Option.isSome(decoded)) return { _tag: 'Success', value: decoded.value.settings }
+    if (Option.isSome(decoded)) {
+      const settings = decoded.value.settings
+      if (settings.landingOrder !== undefined && !isLandingOrder(settings.landingOrder)) return { _tag: 'Invalid' }
+      return { _tag: 'Success', value: settings }
+    }
     return { _tag: 'Invalid' }
   } catch {
     return { _tag: 'Invalid' }
@@ -810,7 +840,7 @@ const _update = (
         [],
       ],
       SystemDarkModeChanged: () => [{ ...model }, []],
-      ClickedSettings: () => [{ ...model, showSettings: !model.showSettings }, []],
+      ClickedSettings: () => [{ ...model, showSettings: !model.showSettings, isDraggingSettings: false }, []],
       SetLanguage: (msg) => [{ ...model, language: msg.value }, []],
       ToggleMute: () => [{ ...model, muted: !model.muted }, []],
       SetSpeechRate: (msg) => [{ ...model, speechRate: msg.value }, []],
@@ -818,6 +848,13 @@ const _update = (
       ClickedCounter: () => [{ ...model, page: PageCounter() }, []],
       ClickedFindIt: () => [{ ...model, page: PageFindIt() }, []],
       ClickedBubbles: () => [{ ...model, page: PageBubbles() }, []],
+      ClickedBubbles3d: () => [{ ...model, page: PageBubbles3d() }, []],
+      Bubbles3dClickedPop: (msg) => updateBubbles3d(model, msg),
+      Bubbles3dClickedAdd: (msg) => updateBubbles3d(model, msg),
+      Bubbles3dClickedReset: (msg) => updateBubbles3d(model, msg),
+      Bubbles3dRendererReady: (msg) => updateBubbles3d(model, msg),
+      Bubbles3dRendererFailed: (msg) => updateBubbles3d(model, msg),
+      Bubbles3dSoundPlayed: (msg) => updateBubbles3d(model, msg),
       ClickedDraw: () => [{ ...model, page: PageDraw() }, []],
       ClickedMusicBox: () => [{ ...model, page: PageMusicBox() }, []],
       ClickedMemory: () => [{ ...model, page: PageMemory() }, []],
@@ -855,41 +892,46 @@ const _update = (
       TalkingClockSetPhraseStyle: (msg) => updateTalkingClock(model, msg),
       TalkingClockCheckCurrentTime: (msg) => updateTalkingClock(model, msg),
       TalkingClockSoundPlayed: (msg) => updateTalkingClock(model, msg),
-      LandingDragStarted: (msg) => [{ ...model, landingDragIndex: msg.index }, []],
+      LandingDragStarted: (msg) => model.landingDragSource !== null || !Number.isInteger(msg.index) || msg.index < 0 || msg.index >= model.landingOrder.filter(i => !model.landingHiddenGames[i]).length
+        ? [model, []] : [{ ...model, landingDragIndex: msg.index, landingDragSource: 'landing' }, []],
       LandingDroppedOn: (msg) => {
-        if (model.landingDragIndex < 0 || model.landingDragIndex === msg.index) return [{ ...model, landingDragIndex: -1 }, []]
+        if (model.landingDragSource !== 'landing') return [model, []]
+        if (!Number.isInteger(msg.index) || msg.index < 0 || model.landingDragIndex < 0 || model.landingDragIndex === msg.index) return [{ ...model, landingDragIndex: -1, landingDragSource: null }, []]
         const visible = model.landingOrder.filter(i => !model.landingHiddenGames[i])
         const movedIdx = visible[model.landingDragIndex]
         const targetIdx = visible[msg.index]
-        if (movedIdx === undefined || targetIdx === undefined) return [{ ...model, landingDragIndex: -1 }, []]
+        if (movedIdx === undefined || targetIdx === undefined) return [{ ...model, landingDragIndex: -1, landingDragSource: null }, []]
         const order = [...model.landingOrder]
         const fromPos = order.indexOf(movedIdx)
         const toPos = order.indexOf(targetIdx)
-        if (fromPos < 0 || toPos < 0) return [{ ...model, landingDragIndex: -1 }, []]
+        if (fromPos < 0 || toPos < 0) return [{ ...model, landingDragIndex: -1, landingDragSource: null }, []]
         order.splice(fromPos, 1)
         order.splice(toPos, 0, movedIdx)
-        const next = { ...model, landingOrder: order, landingDragIndex: -1 }
+        const next = { ...model, landingOrder: order, landingDragIndex: -1, landingDragSource: null }
         return [next, [persistSettings(next)]]
       },
-      LandingDragEnded: () => [{ ...model, landingDragIndex: -1 }, []],
-      LandingSettingsDragStarted: (msg) => [{ ...model, landingDragIndex: msg.index }, []],
+      LandingDragEnded: () => model.landingDragSource === 'landing' ? [{ ...model, landingDragIndex: -1, landingDragSource: null }, []] : [model, []],
+      LandingSettingsDragStarted: (msg) => model.landingDragSource !== null || !Number.isInteger(msg.index) || msg.index < 0 || msg.index >= model.landingOrder.length
+        ? [model, []] : [{ ...model, landingDragIndex: msg.index, landingDragSource: 'settings' }, []],
       LandingSettingsDroppedOn: (msg) => {
-        if (model.landingDragIndex < 0 || model.landingDragIndex === msg.index) return [{ ...model, landingDragIndex: -1 }, []]
-        if (model.landingDragIndex >= model.landingOrder.length || msg.index >= model.landingOrder.length) return [{ ...model, landingDragIndex: -1 }, []]
-        const next = { ...model, landingOrder: moveArrayItem(model.landingOrder, model.landingDragIndex, msg.index), landingDragIndex: -1 }
+        if (model.landingDragSource !== 'settings') return [model, []]
+        if (!Number.isInteger(msg.index) || msg.index < 0 || model.landingDragIndex < 0 || model.landingDragIndex === msg.index) return [{ ...model, landingDragIndex: -1, landingDragSource: null }, []]
+        if (model.landingDragIndex >= model.landingOrder.length || msg.index >= model.landingOrder.length) return [{ ...model, landingDragIndex: -1, landingDragSource: null }, []]
+        const next = { ...model, landingOrder: moveArrayItem(model.landingOrder, model.landingDragIndex, msg.index), landingDragIndex: -1, landingDragSource: null }
         return [next, []]
       },
-      LandingSettingsDragEnded: () => [{ ...model, landingDragIndex: -1 }, []],
+      LandingSettingsDragEnded: () => model.landingDragSource === 'settings' ? [{ ...model, landingDragIndex: -1, landingDragSource: null }, []] : [model, []],
       LandingToggleGameVisibility: (msg) => {
-        if (msg.index < 0 || msg.index >= LANDING_GAME_COUNT) return [{ ...model, landingDragIndex: -1 }, []]
+        if (!Number.isInteger(msg.index) || msg.index < 0 || msg.index >= LANDING_GAME_COUNT) return [model, []]
         const hidden = [...model.landingHiddenGames]
         const currentlyHidden = hidden[msg.index] === true
         const visibleCount = model.landingOrder.filter(i => !hidden[i]).length
-        if (!currentlyHidden && visibleCount <= 1) return [{ ...model, landingDragIndex: -1 }, []]
+        if (!currentlyHidden && visibleCount <= 1) return [model, []]
         hidden[msg.index] = !currentlyHidden
-        return [{ ...model, landingHiddenGames: hidden, landingDragIndex: -1 }, []]
+        return [{ ...model, landingHiddenGames: hidden, landingDragIndex: -1, landingDragSource: null }, []]
       },
       CounterPointerDown: (msg) => updateCounter(model, msg),
+      CounterPressCancelled: (msg) => updateCounter(model, msg),
       CounterPressedIncrement: (msg) => updateCounter(model, msg),
       CounterPressedDecrement: (msg) => updateCounter(model, msg),
       CounterClickedReset: (msg) => updateCounter(model, msg),
@@ -1009,16 +1051,18 @@ const _update = (
       MusicBoxSongDragStarted: (msg) => updateMusicBox(model, msg),
       MusicBoxSongDroppedOn: (msg) => updateMusicBox(model, msg),
       MusicBoxSongDragEnded: (msg) => updateMusicBox(model, msg),
-      SettingsDragStarted: (msg) => [
+      SettingsDragStarted: (msg) => model.isDraggingSettings || !Number.isFinite(msg.screenX) ? [model, []] : [
         { ...model, isDraggingSettings: true, settingsDragStartMouseX: msg.screenX },
         [],
       ],
       SettingsDragMoved: (msg) => {
+        if (!model.isDraggingSettings || !Number.isFinite(msg.screenX)) return [model, []]
         const delta = model.settingsDragStartMouseX - msg.screenX
         const newWidth = Math.max(60, Math.min(400, model.settingsPanelWidth + delta))
         return [{ ...model, settingsPanelWidth: newWidth, settingsDragStartMouseX: msg.screenX }, []]
       },
       SettingsDragEnded: () => {
+        if (!model.isDraggingSettings) return [model, []]
         let next = { ...model, isDraggingSettings: false }
         if (model.settingsPanelWidth < 90) {
           next = { ...next, showSettings: false, settingsPanelWidth: 150 }
@@ -1078,7 +1122,17 @@ export const update = (
   model: Model,
   message: Message,
 ): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
-  const result = _update(model, message)
+  const [updated, commands] = _update(model, message)
+  const interrupted = model.page._tag !== updated.page._tag || (model.showSettings && !updated.showSettings)
+  const next = interrupted
+    ? { ...updated, landingDragIndex: -1, landingDragSource: null, musicBox: { ...updated.musicBox, dragIndex: -1 } }
+    : updated
+  const result = [
+    model.page._tag === 'PageCounter' && next.page._tag !== 'PageCounter'
+      ? { ...next, counter: { ...next.counter, presses: [], holding: false, pressedButton: null, pointerDownTime: 0 } }
+      : next,
+    commands,
+  ] as const
   if (shouldPersistSettings(message)) {
     return [result[0], [...result[1], persistSettings(result[0])]]
   }
@@ -1095,6 +1149,7 @@ const pageTitle = (model: Model): string =>
       PageCounter: () => t('pageTitleCounter', model.language),
       PageFindIt: () => t('pageTitleFindIt', model.language),
       PageBubbles: () => t('pageTitleBubbles', model.language),
+      PageBubbles3d: () => t('pageTitleBubbles3d', model.language),
       PageDraw: () => t('pageTitleDraw', model.language),
       PageMusicBox: () => t('pageTitleMusicBox', model.language),
       PageMemory: () => t('pageTitleMemoryCards', model.language),
@@ -1113,27 +1168,20 @@ const pageTitle = (model: Model): string =>
     }),
   )
 
-export const preventDoubleTapZoomStream = (): Stream.Stream<never> =>
-  Stream.callback<never>(() =>
-    Effect.gen(function* () {
-      yield* Effect.acquireRelease(
-        Effect.sync(() => {
-          let lastTouchEnd = 0
-          const onTouchEnd = (event: TouchEvent): void => {
-            const now = Date.now()
-            if (now - lastTouchEnd <= 300) event.preventDefault()
-            lastTouchEnd = now
-          }
-          document.addEventListener('touchend', onTouchEnd, { passive: false })
-          return onTouchEnd
-        }),
-        onTouchEnd => Effect.sync(() => {
-          document.removeEventListener('touchend', onTouchEnd)
-        }),
-      )
-      return yield* Effect.never
-    }),
-  )
+const counterTiltPermissionStream = (element: Element): Stream.Stream<never> =>
+  Stream.callback<never>(() => Effect.gen(function* () {
+    yield* Effect.acquireRelease(
+      Effect.sync(() => {
+        const requestPermission = (): void => {
+          if (element.getAttribute('data-tilt-enabled') === 'false') void Counter.requestCounterOrientationPermission()
+        }
+        element.addEventListener('click', requestPermission)
+        return () => element.removeEventListener('click', requestPermission)
+      }),
+      cleanup => Effect.sync(cleanup),
+    )
+    return yield* Effect.never
+  }))
 
 export const view = (model: Model): Document => {
   const h = html<Message>()
@@ -1147,8 +1195,8 @@ export const view = (model: Model): Document => {
 
   return {
     title: pageTitle(model),
-    body: h.div(
-      [h.Class(`app${isDark ? ' dark' : ''} lang-${model.language}`), h.OnMount({
+    body: withMultitouchClicks(h.div(
+      [h.Class(`app${isDark ? ' dark' : ''}${model.page._tag === 'PageBubbles3d' ? ' app--bubbles3d' : ''} lang-${model.language}`), h.OnMount({
         name: 'watchDarkMode',
         f: () => Stream.fromEventListener(
           window.matchMedia('(prefers-color-scheme: dark)'),
@@ -1157,8 +1205,8 @@ export const view = (model: Model): Document => {
           Stream.map(() => SystemDarkModeChanged()),
         ),
       }), h.OnMount({
-        name: 'preventDoubleTapZoom',
-        f: preventDoubleTapZoomStream,
+        name: 'multitouchClicks',
+        f: multitouchClickStream,
       })],
       [
           !isLanding
@@ -1199,7 +1247,7 @@ export const view = (model: Model): Document => {
         h.div([h.Class('settings-panel'), h.Style({ display: model.showSettings ? '' : 'none', width: `${model.settingsPanelWidth}px` })], [
           h.div([
             h.Class('settings-drag-handle'),
-            h.OnPointerDown((_pointerType, _button, screenX) => Option.some(SettingsDragStarted({ screenX }))),
+            h.OnMount({ name: 'settingsResize', f: settingsResizeStream }),
           ], ['⠿']),
           h.div([h.Class('settings-header')], [
             h.h2([], [t('settings', model.language)]),
@@ -1296,17 +1344,9 @@ export const view = (model: Model): Document => {
                 h.button(
                   [
                     h.Class(model.counter.tiltGravity ? 'btn btn-primary' : 'btn btn-secondary'),
-                    h.OnPointerUp(() => {
-                      const value = !model.counter.tiltGravity
-                      if (value) void Counter.requestCounterOrientationPermission()
-                      return Option.some(Counter.SetTiltGravity({ value }))
-                    }),
-                    h.OnKeyUpPreventDefault((key) => {
-                      if (key !== 'Enter' && key !== ' ') return Option.none()
-                      const value = !model.counter.tiltGravity
-                      if (value) void Counter.requestCounterOrientationPermission()
-                      return Option.some(Counter.SetTiltGravity({ value }))
-                    }),
+                    h.Attribute('data-tilt-enabled', String(model.counter.tiltGravity)),
+                    h.OnClick(Counter.SetTiltGravity({ value: !model.counter.tiltGravity })),
+                    h.OnMount({ name: 'counterTiltPermission', f: counterTiltPermissionStream }),
                   ],
                   [t('counterTiltGravity', model.language)],
                 ),
@@ -1643,7 +1683,7 @@ export const view = (model: Model): Document => {
                   const game = LANDING_GAMES[gameIdx]!
                   const isHidden = model.landingHiddenGames[gameIdx] === true
                   const isLastVisibleGame = !isHidden && model.landingOrder.filter(i => !model.landingHiddenGames[i]).length <= 1
-                  const isDragged = model.landingDragIndex === displayIdx
+                  const isDragged = model.landingDragSource === 'settings' && model.landingDragIndex === displayIdx
                   return h.div(
                     [
                       h.Key(`game-${gameIdx}`),
@@ -1705,10 +1745,11 @@ export const view = (model: Model): Document => {
         ]),
           M.value(model.page).pipe(
             M.tagsExhaustive({
-              PageLanding: () => landingView([...model.landingOrder], model.landingHiddenGames, model.language, model.landingDragIndex),
+              PageLanding: () => landingView([...model.landingOrder], model.landingHiddenGames, model.language, model.landingDragSource === 'landing' ? model.landingDragIndex : -1),
               PageCounter: () => Counter.view(model.counter, model.language),
               PageFindIt: () => FindIt.view(model.findIt, model.language),
               PageBubbles: () => Bubbles.view(model.bubbles, model.language),
+              PageBubbles3d: () => Bubbles3d.view(model.bubbles3d, model.language),
               PageDraw: () => Draw.view(model.draw),
               PageMusicBox: () => MusicBox.view(model.musicBox, model.language),
               PageMemory: () => Memory.view(model.memory, model.language),
@@ -1773,6 +1814,6 @@ export const view = (model: Model): Document => {
             ])
             : null,
         ],
-      ),
+      )),
     };
   }

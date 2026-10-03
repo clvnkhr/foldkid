@@ -1,6 +1,8 @@
 import { Option, Schema as S } from 'effect'
 import { afterEach, describe, expect, it } from 'vitest'
 import * as Bubbles from './games/bubbles'
+import * as Bubbles3d from './games/bubbles3d'
+import { BUBBLE3D_SHAPES } from './games/bubbles3dShapes'
 import * as Counter from './games/counter'
 import * as FindIt from './games/findit'
 import * as Memory from './games/memory'
@@ -98,11 +100,26 @@ describe('codebase invariants', () => {
     }
   })
 
+  it('every 3D shape has a localized name and valid schema identity', () => {
+    expect(Object.keys(Bubbles3d.BUBBLE3D_SHAPE_KEYS).sort()).toEqual(BUBBLE3D_SHAPES.map(shape => shape.id).sort())
+    for (const shape of BUBBLE3D_SHAPES) {
+      const key = Bubbles3d.BUBBLE3D_SHAPE_KEYS[shape.id]
+      for (const language of Object.keys(translations)) expect(t(key, language), `${shape.id} in ${language}`).not.toBe('')
+    }
+    const initial = Bubbles3d.init()
+    const { shape: _shape, ...missingShape } = initial.bubbles[0]!
+    for (const bubble of [missingShape, { ...initial.bubbles[0]!, shape: 'unknown-shape' }]) {
+      expect(Option.isNone(S.decodeUnknownOption(Bubbles3d.Model)({ ...initial, bubbles: [bubble] }))).toBe(true)
+      expect(Option.isNone(S.decodeUnknownOption(Main.Model)({ ...Main.init()[0], bubbles3d: { ...initial, bubbles: [bubble] } }))).toBe(true)
+    }
+  })
+
   it('initial game and app models decode through their Effect schemas', () => {
     const modelCases = [
       ['Counter', Counter.Model, Counter.init],
       ['FindIt', FindIt.Model, FindIt.init()],
       ['Bubbles', Bubbles.Model, Bubbles.init()],
+      ['3D Bubbles', Bubbles3d.Model, Bubbles3d.init()],
       ['Memory', Memory.Model, Memory.init()],
       ['MusicBox', MusicBox.Model, MusicBox.init()],
       ['GrowingNumbers', GrowingNumbers.Model, GrowingNumbers.init],
@@ -115,9 +132,16 @@ describe('codebase invariants', () => {
     }
   })
 
+  it('rejects an unknown owner of a landing reorder', () => {
+    expect(Option.isNone(S.decodeUnknownOption(Main.Model)({ ...Main.init()[0], landingDragSource: 'another-list' }))).toBe(true)
+  })
+
   it('rejects invalid nested messages at Effect schema boundaries', () => {
     const messageCases = [
+      ['3D Bubbles pop', Main.Message, { _tag: 'Bubbles3dClickedPop', id: '0', revision: 0 }],
       ['Counter display mode', Counter.Message, { _tag: 'CounterSetDisplayMode', value: 'huge' }],
+      ['Counter press pointer', Counter.Message, { _tag: 'CounterPointerDown', button: 'inc', timeStamp: 0, pointerId: 'finger' }],
+      ['Main nested Counter cancellation', Main.Message, { _tag: 'CounterPressCancelled', pointerId: 'finger' }],
       ['FindIt emoji pack', FindIt.Message, { _tag: 'FindItSetEmojiPackEnabled', key: 'space', value: true }],
       ['Bubbles color duration', Bubbles.Message, { _tag: 'BubblesClickedColor', color: '#fff', duration: 'fast' }],
       ['Memory card id', Memory.Message, { _tag: 'MemoryClickedCard', id: '0' }],

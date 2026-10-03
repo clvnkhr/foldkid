@@ -132,12 +132,12 @@ describe('Pattern', () => {
     )
   })
 
-  it('registers a mouse pointer-up on a tile', () => {
+  it('activates a native tile button by click', () => {
     const play = playingWithSeq([0, 1, 2])
     Scene.scene(
       { update, view },
       Scene.with(play),
-      Scene.pointerUp(Scene.selector('.pat-tile--0'), { pointerType: 'mouse' }),
+      Scene.click(Scene.role('button', { name: 'Red' })),
       Scene.expect(Scene.selector('.pat-dot--filled')).toExist(),
       Scene.Command.resolveAll(resolveTile0),
       Scene.Command.expectNone(),

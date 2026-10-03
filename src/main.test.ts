@@ -2,9 +2,11 @@ import { Effect, Fiber, Option, Schema as S, Stream } from 'effect'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { Story } from 'foldkit/test'
 import * as Main from './main'
+import { multitouchClickStream } from './multitouch'
 import * as Counter from './games/counter'
 import * as FindIt from './games/findit'
 import * as Bubbles from './games/bubbles'
+import * as Bubbles3d from './games/bubbles3d'
 import * as Draw from './games/draw'
 import * as Memory from './games/memory'
 import * as MusicBox from './games/musicbox'
@@ -14,7 +16,7 @@ import * as TalkingKeyboard from './games/talkingKeyboard'
 import * as GrowingNumbers from './games/growingNumbers'
 import * as ShapeWorkshop from './games/shapeWorkshop'
 import { LANDING_GAME_COUNT, LANDING_GAMES } from './pages/landing'
-import { ApplyImport, ClickedLanding, ClickedCounter, ClickedFindIt, ClickedBubbles, ClickedDarkMode, ClickedGrowingNumbers, ClickedMagneticBlocks, ClickedMemory, ClickedShapeWorkshop, ClickedTalkingKeyboard, ConfirmResetSettings, ExportSettings, ImportedSettings, LandingDragStarted, LandingDroppedOn, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsPersisted, ToggleMute } from './message'
+import { ApplyImport, ClickedLanding, ClickedCounter, ClickedFindIt, ClickedBubbles, ClickedBubbles3d, ClickedDarkMode, ClickedGrowingNumbers, ClickedMagneticBlocks, ClickedMemory, ClickedSettings, ClickedShapeWorkshop, ClickedTalkingKeyboard, ConfirmResetSettings, ExportSettings, ImportedSettings, LandingDragEnded, LandingDragStarted, LandingDroppedOn, LandingSettingsDragEnded, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsPersisted, ToggleMute } from './message'
 
 const resolveSettings = [{ name: 'PersistSettings' }, SettingsPersisted()] as const
 const resolveBubblesChime = [{ name: 'PlayChime' }, Bubbles.SoundPlayed()] as const
@@ -104,6 +106,99 @@ beforeEach(() => {
   localStorage.clear()
 })
 
+describe('landing catalogue migration', () => {
+  const previousCount = LANDING_GAME_COUNT - 1
+  const previousOrder = Array.from({ length: previousCount }, (_, index) => index).reverse()
+  const previousHidden = Array.from({ length: previousCount }, (_, index) => index === 2 || index === 6)
+  const migratedOrder = [...previousOrder, previousCount]
+  const migratedHidden = [...previousHidden, false]
+  const malformedOrders = [
+    { label: 'duplicate', order: previousOrder.map((index, position) => position === 0 ? 0 : index) },
+    { label: 'gap', order: previousOrder.filter(index => index !== 2) },
+  ]
+
+  it('loads a historical reversed order and visibility without changing existing game indices', () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      version: 1,
+      language: 'fr',
+      landingOrder: previousOrder,
+      landingHiddenGames: previousHidden,
+    }))
+    const [loaded, commands] = Main.init()
+
+    expect(loaded.language).toBe('fr')
+    expect(loaded.landingOrder).toEqual(migratedOrder)
+    expect(loaded.landingHiddenGames).toEqual(migratedHidden)
+    expect(loaded.landingHiddenGames[previousCount]).toBe(false)
+    expect(LANDING_GAMES[2]?.title).toBe('bubblesTitle')
+    expect(LANDING_GAMES[previousCount]?.title).toBe('bubbles3dTitle')
+    expect(commands).toHaveLength(0)
+  })
+
+  it('imports, persists, exports and reimports the old catalogue order with the new game appended', async () => {
+    const legacyExport = JSON.stringify({
+      version: 1,
+      settings: { language: 'ja', landingOrder: previousOrder, landingHiddenGames: previousHidden },
+    })
+    const [imported, commands] = Main.update(createModel(), ImportedSettings({ data: legacyExport }))
+    expect(imported.language).toBe('ja')
+    expect(imported.landingOrder).toEqual(migratedOrder)
+    expect(imported.landingHiddenGames).toEqual(migratedHidden)
+    expect(commands.map(command => command.name)).toEqual(['PersistSettings'])
+    const command = commands[0]
+    if (!command) throw new Error('missing PersistSettings command')
+    expect(await Effect.runPromise(command.effect)).toEqual(SettingsPersisted())
+    const [loaded] = Main.init()
+    expect(loaded.landingOrder).toEqual(migratedOrder)
+    expect(loaded.landingHiddenGames).toEqual(migratedHidden)
+
+    const [exported, exportCommands] = Main.update(imported, ExportSettings())
+    const data = JSON.parse(exported.exportData) as { version: number; settings: { landingOrder: number[]; landingHiddenGames: boolean[] } }
+    expect(data.version).toBe(1)
+    expect(data.settings.landingOrder).toEqual(migratedOrder)
+    expect(data.settings.landingHiddenGames).toEqual(migratedHidden)
+    expect(exportCommands).toHaveLength(0)
+    Story.story(
+      Main.update,
+      Story.with(createModel()),
+      Story.message(ImportedSettings({ data: exported.exportData })),
+      Story.model(model => {
+        expect(model.language).toBe('ja')
+        expect(model.landingOrder).toEqual(migratedOrder)
+        expect(model.landingHiddenGames).toEqual(migratedHidden)
+      }),
+      Story.Command.resolveAll(resolveSettings),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it.each(malformedOrders)('falls back to the default order for a saved $label', ({ order }) => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ landingOrder: order }))
+    const [loaded] = Main.init()
+    expect(loaded.landingOrder).toEqual(Array.from({ length: LANDING_GAME_COUNT }, (_, index) => index))
+  })
+
+  it.each(malformedOrders)('rejects an imported $label without partially changing settings', ({ order }) => {
+    const base = { ...createModel(), language: 'ja' as const, muted: true, landingOrder: migratedOrder, landingHiddenGames: migratedHidden }
+    Story.story(
+      Main.update,
+      Story.with(base),
+      Story.message(ImportedSettings({ data: JSON.stringify({
+        version: 1,
+        settings: { language: 'fr', muted: false, landingOrder: order, landingHiddenGames: previousHidden.map(() => false) },
+      }) })),
+      Story.model(model => {
+        expect(model.language).toBe('ja')
+        expect(model.muted).toBe(true)
+        expect(model.landingOrder).toEqual(base.landingOrder)
+        expect(model.landingHiddenGames).toEqual(base.landingHiddenGames)
+        expect(model.importExportMessage).toBeTruthy()
+      }),
+      Story.Command.expectNone(),
+    )
+  })
+})
+
 describe('settings persistence', () => {
   const settingsMessages: Array<{ label: string; msg: Main.Message; resolves?: ReadonlyArray<readonly [{ readonly name: string }, Main.Message]> }> = [
     { label: 'ClickedDarkMode', msg: ClickedDarkMode() },
@@ -149,6 +244,13 @@ describe('settings persistence', () => {
     { label: 'ClickedCounter', msg: ClickedCounter() },
     { label: 'ClickedFindIt', msg: ClickedFindIt() },
     { label: 'ClickedBubbles', msg: ClickedBubbles() },
+    { label: 'ClickedBubbles3d', msg: ClickedBubbles3d() },
+    { label: 'Bubbles3dClickedPop', msg: Bubbles3d.ClickedPop({ id: 0, revision: 0 }), resolves: [[{ name: 'Bubbles3dPlayPop' }, Bubbles3d.SoundPlayed()]] },
+    { label: 'Bubbles3dClickedAdd', msg: Bubbles3d.ClickedAdd() },
+    { label: 'Bubbles3dClickedReset', msg: Bubbles3d.ClickedReset() },
+    { label: 'Bubbles3dRendererReady', msg: Bubbles3d.RendererReady({ revision: 0 }) },
+    { label: 'Bubbles3dRendererFailed', msg: Bubbles3d.RendererFailed({ revision: 0 }) },
+    { label: 'Bubbles3dSoundPlayed', msg: Bubbles3d.SoundPlayed() },
     { label: 'ClickedMemory', msg: ClickedMemory() },
     { label: 'ClickedGrowingNumbers', msg: ClickedGrowingNumbers() },
     { label: 'ClickedShapeWorkshop', msg: ClickedShapeWorkshop() },
@@ -163,6 +265,7 @@ describe('settings persistence', () => {
       resolves: [[{ name: 'ShapeWorkshopFlyPiece' }, ShapeWorkshop.PieceFlightFinished({ index: 0, token: 1 })]],
     },
     { label: 'CounterPointerDown', msg: Counter.PointerDown({ timeStamp: 0, button: 'inc' }) },
+    { label: 'CounterPressCancelled', msg: Counter.PressCancelled({ pointerId: 1 }) },
     { label: 'FindItClickedCell', msg: FindIt.ClickedCell({ id: 0 }) },
     { label: 'BubblesClickedPop', msg: Bubbles.ClickedPop({ id: 0 }) },
     { label: 'MemoryClickedCard', msg: Memory.ClickedCard({ id: 0 }) },
@@ -367,6 +470,230 @@ describe('Main', () => {
       Story.message(ClickedCounter()),
       Story.model((model) => {
         expect(model.page._tag).toBe('PageCounter')
+      }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('ClickedBubbles3d opens the 3D bubbles page', () => {
+    Story.story(
+      Main.update,
+      Story.with(createModel()),
+      Story.message(ClickedBubbles3d()),
+      Story.model(model => { expect(model.page._tag).toBe('PageBubbles3d') }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it.each([false, true])('forwards the root mute setting to 3D bubble pops: %s', muted => {
+    Story.story(
+      Main.update,
+      Story.with({ ...createModel(), muted }),
+      Story.message(ClickedBubbles3d()),
+      Story.message(Bubbles3d.ClickedPop({ id: 0, revision: 0 })),
+      Story.model(model => {
+        expect(model.bubbles3d.score).toBe(1)
+        expect(model.bubbles3d.bubbles).toHaveLength(Bubbles3d.INITIAL_BUBBLES - 1)
+        expect(model.bubbles3d.bubbles.some(bubble => bubble.id === 0)).toBe(false)
+      }),
+      muted ? Story.Command.expectNone() : Story.Command.resolveAll([{ name: 'Bubbles3dPlayPop' }, Bubbles3d.SoundPlayed()]),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('delegates 3D bubble add and reset while invalidating the old round', () => {
+    const addedCount = Bubbles3d.INITIAL_BUBBLES + Bubbles3d.ADD_BUBBLES
+    Story.story(
+      Main.update,
+      Story.with({ ...createModel(), muted: true }),
+      Story.message(Bubbles3d.ClickedAdd()),
+      Story.model(model => {
+        expect(model.bubbles3d.bubbles).toHaveLength(addedCount)
+        expect(model.bubbles3d.nextId).toBe(addedCount)
+      }),
+      Story.message(Bubbles3d.ClickedPop({ id: 0, revision: 0 })),
+      Story.message(Bubbles3d.ClickedReset()),
+      Story.model(model => {
+        expect(model.bubbles3d.bubbles).toHaveLength(Bubbles3d.INITIAL_BUBBLES)
+        expect(model.bubbles3d.score).toBe(0)
+        expect(model.bubbles3d.revision).toBe(1)
+        expect(model.bubbles3d.nextId).toBe(addedCount + Bubbles3d.INITIAL_BUBBLES)
+        expect(model.bubbles3d.bubbles.every(bubble => bubble.id >= addedCount)).toBe(true)
+      }),
+      Story.message(Bubbles3d.ClickedPop({ id: addedCount, revision: 0 })),
+      Story.model(model => { expect(model.bubbles3d.score).toBe(0) }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('preserves 3D bubble state when navigating away and back', () => {
+    let previous: Bubbles3d.Model | undefined
+    Story.story(
+      Main.update,
+      Story.with({ ...createModel(), muted: true }),
+      Story.message(ClickedBubbles3d()),
+      Story.message(Bubbles3d.ClickedAdd()),
+      Story.message(Bubbles3d.ClickedPop({ id: 0, revision: 0 })),
+      Story.model(model => { previous = model.bubbles3d }),
+      Story.message(ClickedLanding()),
+      Story.model(model => {
+        expect(model.page._tag).toBe('PageLanding')
+        expect(model.bubbles3d).toBe(previous)
+      }),
+      Story.message(ClickedBubbles3d()),
+      Story.model(model => {
+        expect(model.page._tag).toBe('PageBubbles3d')
+        expect(model.bubbles3d).toBe(previous)
+        expect(model.bubbles3d.score).toBe(1)
+      }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('delegates Counter cancellation without completing other held buttons', () => {
+    Story.story(
+      Main.update,
+      Story.with(createModel()),
+      Story.message(ClickedCounter()),
+      Story.message(Counter.PointerDown({ pointerId: 7, timeStamp: 100, button: 'inc' })),
+      Story.message(Counter.PointerDown({ pointerId: 8, timeStamp: 200, button: 'dec' })),
+      Story.message(Counter.PressCancelled({ pointerId: 7 })),
+      Story.model(model => {
+        expect(model.counter.presses).toEqual([{ pointerId: 8, timeStamp: 200, button: 'dec' }])
+        expect(model.counter.holding).toBe(true)
+        expect(model.counter.pressedButton).toBe('dec')
+        expect(model.counter.count).toBe(0)
+      }),
+      Story.Command.expectNone(),
+      Story.message(Counter.PressCancelled({ pointerId: 8 })),
+      Story.model(model => {
+        expect(model.counter.presses).toEqual([])
+        expect(model.counter.holding).toBe(false)
+        expect(model.counter.pressedButton).toBeNull()
+        expect(model.counter.count).toBe(0)
+      }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it.each([
+    { destination: 'landing', message: ClickedLanding(), page: 'PageLanding' },
+    { destination: 'Find It', message: ClickedFindIt(), page: 'PageFindIt' },
+    { destination: 'Bubbles', message: ClickedBubbles(), page: 'PageBubbles' },
+    { destination: '3D Bubbles', message: ClickedBubbles3d(), page: 'PageBubbles3d' },
+    { destination: 'Memory', message: ClickedMemory(), page: 'PageMemory' },
+    { destination: 'Magnetic Blocks', message: ClickedMagneticBlocks(), page: 'PageMagneticBlocks' },
+    { destination: 'Talking Keyboard', message: ClickedTalkingKeyboard(), page: 'PageTalkingKeyboard' },
+    { destination: 'Growing Numbers', message: ClickedGrowingNumbers(), page: 'PageGrowingNumbers' },
+    { destination: 'Shape Workshop', message: ClickedShapeWorkshop(), page: 'PageShapeWorkshop' },
+  ])('clears Counter holds when navigating to $destination and ignores their late releases', ({ message, page }) => {
+    const base = createModel()
+    Story.story(
+      Main.update,
+      Story.with({ ...base, counter: { ...base.counter, count: 42, fontSize: 8, displayMode: 'word' as const, tiltGravity: true } }),
+      Story.message(ClickedCounter()),
+      Story.message(Counter.PointerDown({ pointerId: 7, timeStamp: 100, button: 'inc' })),
+      Story.message(Counter.PointerDown({ pointerId: 8, timeStamp: 200, button: 'dec' })),
+      Story.message(message),
+      Story.model(model => {
+        expect(model.page._tag).toBe(page)
+        expect(model.counter).toEqual({ ...base.counter, count: 42, fontSize: 8, displayMode: 'word', tiltGravity: true })
+      }),
+      Story.Command.expectNone(),
+      Story.message(Counter.PressedIncrement({ pointerId: 7, button: 'inc', duration: 500 })),
+      Story.message(Counter.PressedDecrement({ pointerId: 8, button: 'dec', duration: 700 })),
+      Story.model(model => {
+        expect(model.counter.count).toBe(42)
+        expect(model.counter.fontSize).toBe(8)
+        expect(model.counter.presses).toEqual([])
+      }),
+      Story.Command.expectNone(),
+      Story.message(ClickedCounter()),
+      Story.model(model => {
+        expect(model.page._tag).toBe('PageCounter')
+        expect(model.counter.holding).toBe(false)
+        expect(model.counter.pressedButton).toBeNull()
+        expect(model.counter.presses).toEqual([])
+      }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('keeps concurrent landing and settings reorder gestures from stealing each other', () => {
+    const base = createModel()
+    Story.story(
+      Main.update,
+      Story.with({ ...base, showSettings: true }),
+      Story.message(LandingDragStarted({ index: 0 })),
+      Story.message(LandingSettingsDragStarted({ index: 2 })),
+      Story.message(LandingSettingsDroppedOn({ index: 1 })),
+      Story.Command.resolveAll(resolveSettings),
+      Story.message(LandingSettingsDragEnded()),
+      Story.model(model => {
+        expect(model.landingOrder).toEqual(base.landingOrder)
+        expect(model.landingDragIndex).toBe(0)
+        expect(model.landingDragSource).toBe('landing')
+      }),
+      Story.message(LandingDroppedOn({ index: 1 })),
+      Story.Command.resolveAll(resolveSettings),
+      Story.model(model => {
+        expect(model.landingOrder.slice(0, 2)).toEqual([1, 0])
+        expect(model.landingDragSource).toBeNull()
+      }),
+      Story.message(LandingSettingsDragStarted({ index: 0 })),
+      Story.message(LandingDragStarted({ index: 2 })),
+      Story.message(LandingDroppedOn({ index: 1 })),
+      Story.message(LandingDragEnded()),
+      Story.model(model => {
+        expect(model.landingOrder.slice(0, 2)).toEqual([1, 0])
+        expect(model.landingDragIndex).toBe(0)
+        expect(model.landingDragSource).toBe('settings')
+      }),
+      Story.message(LandingSettingsDragEnded()),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it.each([ClickedFindIt(), ClickedSettings()])('clears reorders on navigation or settings close and rejects late drops ($_tag)', message => {
+    const base = createModel()
+    Story.story(
+      Main.update,
+      Story.with({ ...base, showSettings: true }),
+      Story.message(LandingSettingsDragStarted({ index: 0 })),
+      Story.message(MusicBox.SongDragStarted({ index: 0 })),
+      Story.message(message),
+      Story.model(model => {
+        expect(model.landingDragIndex).toBe(-1)
+        expect(model.landingDragSource).toBeNull()
+        expect(model.musicBox.dragIndex).toBe(-1)
+      }),
+      Story.message(LandingSettingsDroppedOn({ index: 1 })),
+      Story.Command.resolveAll(resolveSettings),
+      Story.message(MusicBox.SongDroppedOn({ index: 1 })),
+      Story.Command.resolveAll(resolveSettings),
+      Story.model(model => {
+        expect(model.landingOrder).toEqual(base.landingOrder)
+        expect(model.musicBox.songOrder).toEqual(base.musicBox.songOrder)
+      }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('rejects malformed reorder starts and targets', () => {
+    const base = createModel()
+    for (const index of [-1, 0.5, NaN, Infinity, LANDING_GAME_COUNT]) {
+      expect(Main.update(base, LandingDragStarted({ index }))).toEqual([base, []])
+      expect(Main.update(base, LandingSettingsDragStarted({ index }))).toEqual([base, []])
+    }
+    Story.story(
+      Main.update,
+      Story.with(base),
+      Story.message(LandingSettingsDragStarted({ index: 0 })),
+      Story.message(LandingSettingsDroppedOn({ index: -1 })),
+      Story.Command.resolveAll(resolveSettings),
+      Story.model(model => {
+        expect(model.landingOrder).toEqual(base.landingOrder)
+        expect(model.landingDragSource).toBeNull()
       }),
       Story.Command.expectNone(),
     )
@@ -867,7 +1194,7 @@ describe('Main', () => {
   })
 
   describe('mount lifecycles', () => {
-    it('removes the double-tap touch listener when the stream is interrupted', async () => {
+    it('removes the multitouch release listener when the stream is interrupted', async () => {
       const originalAdd = document.addEventListener.bind(document)
       const originalRemove = document.removeEventListener.bind(document)
       const added: EventListener[] = []
@@ -887,7 +1214,7 @@ describe('Main', () => {
       }) as Document['removeEventListener']
 
       try {
-        const fiber = Effect.runFork(Stream.runDrain(Main.preventDoubleTapZoomStream()))
+        const fiber = Effect.runFork(Stream.runDrain(multitouchClickStream(document.body)))
         await new Promise(resolve => setTimeout(resolve, 0))
 
         expect(added).toHaveLength(1)

@@ -59,4 +59,52 @@ describe('i18n completeness', () => {
     expect(i18n.t('appName', 'xx')).toBe(i18n.translations.en.appName)
     expect(i18n.tf('whereIs', 'xx', '⭐')).toBe(i18n.translations.en.whereIs('⭐'))
   })
+
+  it('localizes 3D bubbles controls and formats accessible bubble names with the supplied locale number', () => {
+    const bubbleNames = {
+      en: 'Bubble', zh: '泡泡', fr: 'Bulle', de: 'Blase', fa: 'حباب', ms: 'Buih', 'zh-HK': '泡泡', ja: 'しゃぼんだま',
+    } as const
+    const poppedLabels = {
+      en: 'Popped: ', zh: '已戳破: ', fr: 'Éclatées : ', de: 'Geplatzt: ', fa: 'ترکیده: ', ms: 'Dipecahkan: ', 'zh-HK': '已戳破: ', ja: 'わったかず: ',
+    } as const
+    for (const lang of langKeys) {
+      const number = new Intl.NumberFormat(lang).format(1234)
+      expect(i18n.tf('bubbles3dBubble', lang, number)).toBe(`${bubbleNames[lang]} ${number}`)
+      expect(i18n.tf('bubbles3dPopped', lang, number)).toBe(`${poppedLabels[lang]}${number}`)
+      for (const key of ['bubbles3dTitle', 'bubbles3dPrompt', 'bubbles3dAdd', 'bubbles3dReset', 'bubbles3dUnavailable', 'pageTitleBubbles3d'] as const) {
+        expect(i18n.t(key, lang).length, `${lang}.${key}`).toBeGreaterThan(0)
+      }
+    }
+    expect(i18n.tf('bubbles3dBubble', 'xx', '12')).toBe('Bubble 12')
+    expect(i18n.t('bubbles3dPrompt')).toBe('Tap the floating shapes as they spin freely. Use several fingers at once!')
+  })
+
+  it('names every 3D shape in every language and formats numbered names with locale grammar', () => {
+    const shapeKeys = [
+      'bubbles3dShapeSphere', 'bubbles3dShapeCube', 'bubbles3dShapeCuboid', 'bubbles3dShapeRoundedCube',
+      'bubbles3dShapeTetrahedron', 'bubbles3dShapeOctahedron', 'bubbles3dShapeDodecahedron', 'bubbles3dShapeIcosahedron',
+      'bubbles3dShapeCone', 'bubbles3dShapeCylinder', 'bubbles3dShapeTriangularPrism', 'bubbles3dShapePentagonalPrism',
+      'bubbles3dShapeHexagonalPrism', 'bubbles3dShapePyramid', 'bubbles3dShapeTriangularBipyramid', 'bubbles3dShapeCapsule',
+      'bubbles3dShapeTorus', 'bubbles3dShapeTorusKnot', 'bubbles3dShapeStar', 'bubbles3dShapeHeart',
+      'bubbles3dShapeCrescent', 'bubbles3dShapeGear', 'bubbles3dShapeCross', 'bubbles3dShapeDiamond',
+    ] as const
+    const numberedCubes = {
+      en: (number: string) => `Cube ${number}`,
+      zh: (number: string) => `第${number}个正方体`,
+      fr: (number: string) => `Cube ${number}`,
+      de: (number: string) => `Würfel ${number}`,
+      fa: (number: string) => `مکعب شمارهٔ ${number}`,
+      ms: (number: string) => `Kubus ${number}`,
+      'zh-HK': (number: string) => `第${number}個正方體`,
+      ja: (number: string) => `立方体 ${number}ばん`,
+    } as const
+    for (const lang of langKeys) {
+      const names = shapeKeys.map(key => i18n.t(key, lang))
+      expect(names.every(name => name.length > 0), `${lang} names every shape`).toBe(true)
+      expect(new Set(names).size, `${lang} has distinct shape names`).toBe(shapeKeys.length)
+      const number = new Intl.NumberFormat(lang).format(1234)
+      expect(i18n.tf('bubbles3dShape', lang, i18n.t('bubbles3dShapeCube', lang), number)).toBe(numberedCubes[lang](number))
+    }
+    expect(i18n.tf('bubbles3dShape', 'xx', 'Cube', '12')).toBe('Cube 12')
+  })
 })

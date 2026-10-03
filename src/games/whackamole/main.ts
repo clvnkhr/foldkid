@@ -3,7 +3,7 @@ import { Command } from 'foldkit'
 import { Html, html } from 'foldkit/html'
 import { m } from 'foldkit/message'
 import { pop, chime, boing, swoosh, getContext, playTone } from '../../audio'
-import { t } from '../../i18n'
+import { t, tf } from '../../i18n'
 
 const HOLE_COUNT = 9
 
@@ -481,19 +481,21 @@ export const view = (model: Model, language: string = 'en'): Html => {
             })], [
               ...Array.from({ length: HOLE_COUNT }, (_, i) => {
                 const type = model.holes[i] ?? 0
-                return h.div(
+                return h.button(
                   [
                     h.Class(moleClass(type)),
+                    h.AriaLabel(tf('whackHole', language, new Intl.NumberFormat(language).format(i + 1))),
+                    h.OnClick(ClickedHole({ index: i })),
                     h.Attribute('data-whack-index', i.toString()),
                     h.OnPointerDown(() => {
                       if (type > 0) launchImpact(i, type)
-                      return O.some(ClickedHole({ index: i }))
+                      return O.none()
                     }),
                   ],
                   [
-                    h.div([h.Class('whack-hole')], []),
+                    h.div([h.Class('whack-hole'), h.AriaHidden(true)], []),
                     type > 0
-                      ? h.div([h.Class('whack-mole')], [
+                      ? h.div([h.Class('whack-mole'), h.AriaHidden(true)], [
                           h.div([h.Class('whack-mole-head')], [
                             h.div([h.Class('whack-mole-ear whack-mole-ear--l')], []),
                             h.div([h.Class('whack-mole-ear whack-mole-ear--r')], []),

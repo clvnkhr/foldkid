@@ -1,6 +1,6 @@
 import { Effect } from 'effect'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { click, pop, chime, boing, swoosh, resetContext } from './audio'
+import { click, pop, chime, boing, swoosh, resetContext, warmAudio } from './audio'
 import * as MusicBox from './games/musicbox'
 
 const originalAudioContext = globalThis.AudioContext
@@ -89,6 +89,22 @@ afterEach(() => {
 })
 
 describe('audio', () => {
+  it.each(['throw', 'reject'] as const)('does not interrupt gestures or feedback commands when audio resume %s fails', async failure => {
+    vi.useFakeTimers()
+    class UnavailableContext extends MockAudioContext {
+      override state: AudioContextState = 'suspended'
+      override resume(): Promise<void> {
+        if (failure === 'throw') throw new Error('resume unavailable')
+        return Promise.reject(new Error('resume rejected'))
+      }
+    }
+    globalThis.AudioContext = UnavailableContext as unknown as typeof AudioContext
+    expect(() => warmAudio()).not.toThrow()
+    expect(await Effect.runPromise(click('result').effect)).toBe('result')
+    await Promise.resolve()
+    vi.runAllTimers()
+  })
+
   it('click returns command with PlayClick name', () => {
     const cmd = click('msg')
     expect(cmd.name).toBe('PlayClick')

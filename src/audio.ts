@@ -17,8 +17,7 @@ export const resetContext = (): void => {
 
 /** Unlock browser audio and speech while still inside a qualifying gesture. */
 export const warmAudio = (): void => {
-  const ctx = getContext()
-  if (ctx?.state === 'suspended') ctx.resume().catch(() => {})
+  getContext()
   if (speechWarm || typeof globalThis.speechSynthesis === 'undefined' || typeof globalThis.SpeechSynthesisUtterance === 'undefined') return
   const synth = globalThis.speechSynthesis
   try {
@@ -50,7 +49,9 @@ export const getContext = (): AudioContext | undefined => {
     try { ctx = new AudioContext() } catch { return undefined }
     MutableRef.set(sharedCtx, ctx)
   }
-  if (ctx.state === 'suspended') ctx.resume().catch(() => {})
+  if (ctx.state === 'suspended') {
+    try { ctx.resume().catch(() => {}) } catch { /* A rejected unlock must not interrupt the gesture. */ }
+  }
   return ctx
 }
 

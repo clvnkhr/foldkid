@@ -1,0 +1,164 @@
+.app--bubbles3d {
+  height: 100dvh;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.app--bubbles3d .nav-bar {
+  position: relative;
+  flex: 0 0 auto;
+  padding: max(0.75rem, env(safe-area-inset-top)) max(0.75rem, env(safe-area-inset-right)) 0.5rem max(0.75rem, env(safe-area-inset-left));
+}
+
+.bubbles3d-page {
+  flex: 1 1 0;
+  height: 0;
+  min-height: 0;
+  justify-content: flex-start;
+  padding: 0.4rem max(0.4rem, env(safe-area-inset-right)) max(0.4rem, env(safe-area-inset-bottom)) max(0.4rem, env(safe-area-inset-left));
+}
+
+.bubbles3d-card {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  min-height: 0;
+}
+
+.bubbles3d-heading {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.4rem;
+  padding: 0.5rem 0.8rem;
+  border-radius: 0.9rem;
+  background: var(--card-bg);
+}
+
+.bubbles3d-heading > div { min-width: 0; }
+.bubbles3d-heading .title { margin-bottom: 0.15rem; font-size: 1.25rem; }
+.bubbles3d-prompt { color: var(--text-secondary); margin: 0; max-width: 42rem; font-size: 0.95rem; }
+.bubbles3d-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+.bubbles3d-actions .btn { margin: 0; min-width: 0; min-height: 44px; padding: 0.5rem 1rem; overflow-wrap: anywhere; }
+
+.bubbles3d-stage {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+  isolation: isolate;
+  overflow: hidden;
+  border: 1px solid rgba(165, 179, 255, 0.25);
+  border-radius: 1.3rem;
+  background:
+    radial-gradient(ellipse at 22% 15%, rgba(112, 126, 225, 0.34), transparent 55%),
+    radial-gradient(ellipse at 85% 80%, rgba(183, 96, 178, 0.19), transparent 50%),
+    linear-gradient(145deg, #192444, #0e162e 70%);
+}
+
+.bubbles3d-scene { position: absolute; inset: 0; touch-action: none; }
+.bubbles3d-canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+
+.bubbles3d-bubble-buttons {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(54px, 1fr));
+  align-content: start;
+  justify-items: center;
+  gap: 0.8rem;
+  height: 100%;
+  padding: 5rem 1.5rem 1.5rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+
+.bubbles3d-bubble-button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: clamp(46px, 7vw, 64px);
+  aspect-ratio: 1;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 1rem;
+  color: #17203b;
+  font-size: 1rem;
+  font-weight: 800;
+  cursor: pointer;
+  touch-action: manipulation;
+  background:
+    radial-gradient(circle at 28% 24%, rgba(255, 255, 255, 0.8), transparent 42%),
+    var(--bubbles3d-color);
+  box-shadow: inset -5px -8px 14px rgba(15, 28, 60, 0.18), 0 5px 12px rgba(0, 0, 0, 0.2);
+  transition: transform 0.15s;
+}
+
+.bubbles3d-shape-icon { font-size: clamp(1.3rem, 4vw, 1.7rem); line-height: 1; }
+.bubbles3d-shape-number { font-size: 0.75rem; line-height: 1.2; }
+
+.bubbles3d-bubble-button:active { transform: scale(0.92); }
+.bubbles3d-bubble-button:focus-visible { outline: 3px solid #fff; outline-offset: 4px; }
+
+.bubbles3d-stage[data-renderer="ready"] .bubbles3d-bubble-buttons {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.bubbles3d-stage[data-renderer="ready"] .bubbles3d-bubble-buttons:focus-within {
+  inset: auto 1rem 1rem;
+  width: auto;
+  height: auto;
+  max-height: calc(100% - 2rem);
+  padding: 0.8rem;
+  overflow-y: auto;
+  clip-path: none;
+  border-radius: 1rem;
+  background: rgba(14, 22, 46, 0.9);
+}
+
+.bubbles3d-unavailable {
+  position: absolute;
+  z-index: 1;
+  inset: 1rem 1rem auto;
+  margin: 0;
+  color: #e8edff;
+  text-align: center;
+  pointer-events: none;
+}
+
+.bubbles3d-empty {
+  position: absolute;
+  inset: 50% 1rem auto;
+  margin: 0;
+  transform: translateY(-50%);
+  color: #e8edff;
+  font-size: clamp(1.25rem, 4vw, 2rem);
+  font-weight: 700;
+  text-align: center;
+  pointer-events: none;
+}
+
+.bubbles3d-score { flex: 0 0 auto; margin: 0.35rem 0 0; color: #e8edff; font-size: 1.05rem; font-weight: 700; text-align: center; }
+
+@media (max-width: 560px) {
+  .bubbles3d-heading { gap: 0.4rem; padding: 0.5rem; }
+  .bubbles3d-actions { width: 100%; }
+  .bubbles3d-actions .btn { flex: 1; padding-inline: 0.6rem; font-size: 1rem; }
+  .bubbles3d-bubble-buttons { gap: 0.6rem; padding-inline: 1rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bubbles3d-bubble-button { transition: none; }
+  .bubbles3d-bubble-button:active { transform: none; }
+}

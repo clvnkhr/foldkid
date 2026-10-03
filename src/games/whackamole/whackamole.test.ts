@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { Story } from 'foldkit'
+import { Scene, Story } from 'foldkit/test'
 
 import {
   ClickedHole,
@@ -8,6 +8,7 @@ import {
   StartGame,
   Tick,
   update,
+  view,
 } from './main'
 
 const resolvePop = [{ name: 'PlayPop' }, SoundPlayed()] as const
@@ -104,6 +105,33 @@ describe('Whackamole', () => {
       }),
       Story.Command.resolveAll(resolvePop),
       Story.Command.expectNone(),
+    )
+  })
+
+  it('scores native button clicks while pointerdown only produces visual feedback', () => {
+    const playing = {
+      ...init,
+      gameState: 'playing' as const,
+      holes: [1, 3, 0, 0, 0, 0, 0, 0, 0],
+    }
+    Scene.scene(
+      { update, view },
+      Scene.with(playing),
+      Scene.Mount.resolve({ name: 'whackTimer' }, SoundPlayed()),
+      Scene.pointerDown(Scene.role('button', { name: 'Hole 1' }), { pointerType: 'touch' }),
+      Scene.expect(Scene.selector('.whack-score')).toHaveText('Score: 0'),
+      Scene.expect(Scene.selector('[data-whack-index="0"]')).toHaveClass('whack-cell--up'),
+      Scene.Command.expectNone(),
+      Scene.click(Scene.role('button', { name: 'Hole 1' })),
+      Scene.expect(Scene.selector('.whack-score')).toHaveText('Score: 1'),
+      Scene.expect(Scene.selector('[data-whack-index="0"]')).not.toHaveClass('whack-cell--up'),
+      Scene.Command.resolveAll(resolvePop),
+      Scene.Command.expectNone(),
+      // Native keyboard activation reaches this same click path without pointerdown.
+      Scene.click(Scene.role('button', { name: 'Hole 2' })),
+      Scene.expect(Scene.selector('.whack-score')).toHaveText('Score: 4'),
+      Scene.Command.resolveAll(resolveChime),
+      Scene.Command.expectNone(),
     )
   })
 

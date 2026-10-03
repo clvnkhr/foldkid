@@ -1,4 +1,4 @@
-import { Effect, Match as M, Option, Queue, Schema as S, Stream } from 'effect'
+import { Effect, Match as M, Queue, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
@@ -282,7 +282,20 @@ const clockMount = {
       yield* Effect.acquireRelease(
         Effect.sync(() => {
           const face = element as HTMLElement
+          const doc = face.ownerDocument
           let dragging: 'hour' | 'minute' | 'second' | null = null
+          let dragPointerId: number | null = null
+          let dragTarget: Element | null = null
+          let captured = false
+          let touchPointer = false
+          let startClientX = 0
+          let startClientY = 0
+          let startedAt = 0
+          let lastTime = 0
+          let paired = false
+          let nextTouchId = Number.MIN_SAFE_INTEGER
+          const nativeTouches = new Map<number, number>()
+          const adoptedPointers = new Map<number, number>()
           let dragHour = 0
           let dragMinute = 0
           let dragSecond = 0
@@ -299,9 +312,13 @@ const clockMount = {
             if (minuteHand) minuteHand.style.transform = `translateX(-50%) rotate(${minuteAngle}deg)`
             if (secondHand) secondHand.style.transform = `translateX(-50%) rotate(${secondAngle}deg)`
           }
-          const updateFromPointer = (event: PointerEvent): void => {
-            if (!dragging) return
+          const updateFromPointer = (event: Pick<PointerEvent, 'pointerId' | 'clientX' | 'clientY' | 'timeStamp'>): void => {
+            if (!dragging || dragPointerId !== event.pointerId) return
+            if (event.timeStamp < lastTime) return
             const rect = face.getBoundingClientRect()
+            if (rect.width <= 0 || rect.height <= 0 || ![rect.left, rect.top, rect.width, rect.height, event.clientX, event.clientY].every(Number.isFinite)) return
+            const previous = { hour: dragHour, minute: dragMinute, second: dragSecond }
+            lastTime = event.timeStamp
             const angle = Math.atan2(event.clientY - (rect.top + rect.height / 2), event.clientX - (rect.left + rect.width / 2)) * 180 / Math.PI + 90
             const normalized = (angle + 360) % 360
             if (dragging === 'second') {
@@ -310,7 +327,6 @@ const clockMount = {
               dragHour = adjusted.hour
               dragMinute = adjusted.minute
               dragSecond = nextSecond
-              Queue.offerUnsafe(queue, SetTime({ hour: dragHour, minute: dragMinute, second: dragSecond }))
             } else if (dragging === 'minute') {
               const time = timeFromMinuteHandAngle(normalized)
               const nextMinute = time.minute
@@ -321,37 +337,122 @@ const clockMount = {
               else if (dragMinute <= 15 && nextMinute >= 45) dragHour = (dragHour + 11) % 12
               dragMinute = nextMinute
               dragSecond = time.second
-              Queue.offerUnsafe(queue, SetTime({ hour: dragHour, minute: dragMinute, second: dragSecond }))
             } else {
               const time = timeFromHourHandAngle(normalized)
               dragHour = time.hour
               dragMinute = time.minute
               dragSecond = time.second
+            }
+            if (dragHour !== previous.hour || dragMinute !== previous.minute || dragSecond !== previous.second) {
               Queue.offerUnsafe(queue, SetTime({ hour: dragHour, minute: dragMinute, second: dragSecond }))
             }
             paintDraggedHands()
           }
-          const down = (event: PointerEvent): void => {
-            const target = event.target as HTMLElement
+          const start = (event: Pick<PointerEvent, 'pointerId' | 'pointerType' | 'button' | 'target' | 'clientX' | 'clientY' | 'timeStamp'>, fromPointer = true): void => {
+            if (dragging || event.button !== 0) return
+            const target = event.target
+            if (!(target instanceof Element) || !face.contains(target)) return
             dragging = target.closest('.clock-hand--second') ? 'second' : target.closest('.clock-hand--minute') ? 'minute' : target.closest('.clock-hand--hour') ? 'hour' : null
             if (!dragging) return
+            dragTarget = target.closest(`.clock-hand--${dragging}`)
+            dragPointerId = event.pointerId
+            touchPointer = event.pointerType === 'touch'
+            paired = fromPointer
+            startClientX = event.clientX
+            startClientY = event.clientY
+            startedAt = event.timeStamp
+            lastTime = event.timeStamp
             dragHour = Number(face.dataset.hour ?? 0)
             dragMinute = Number(face.dataset.minute ?? 0)
             dragSecond = Number(face.dataset.second ?? 0)
             dragStart = { hour: dragHour, minute: dragMinute, second: dragSecond }
             face.classList.add('clock-face--dragging')
-            face.setPointerCapture(event.pointerId)
+            captured = false
+            if (!touchPointer) {
+              try { face.setPointerCapture(event.pointerId); captured = true } catch { /* Document listeners keep the drag active. */ }
+            }
           }
-          const up = (event: PointerEvent): void => {
-            const hadDrag = dragging !== null
-            if (hadDrag && face.hasPointerCapture(event.pointerId)) face.releasePointerCapture(event.pointerId)
-            dragging = null
-            face.classList.remove('clock-face--dragging')
+          const finish = (event: Pick<PointerEvent, 'pointerId' | 'clientX' | 'clientY' | 'timeStamp' | 'type'>): void => {
+            if (!dragging || dragPointerId !== event.pointerId) return
+            if (event.type === 'pointerup') updateFromPointer(event)
             const changed = dragHour !== dragStart.hour || dragMinute !== dragStart.minute || dragSecond !== dragStart.second
-            if (hadDrag && changed && event.type === 'pointerup') Queue.offerUnsafe(queue, SpeakTime())
+            cancelDrag()
+            if (changed && event.type === 'pointerup') Queue.offerUnsafe(queue, SpeakTime())
             if (event.type === 'pointerup') warmAudio()
           }
-          const move = (event: PointerEvent): void => updateFromPointer(event)
+          const cancelDrag = (): void => {
+            const pointerId = dragPointerId
+            dragging = null
+            dragPointerId = null
+            dragTarget = null
+            face.classList.remove('clock-face--dragging')
+            if (pointerId !== null && captured) {
+              try { if (face.hasPointerCapture(pointerId)) face.releasePointerCapture(pointerId) } catch { /* Capture may already be gone. */ }
+            }
+            captured = false
+            nativeTouches.clear()
+            adoptedPointers.clear()
+          }
+          const visibility = (): void => { if (doc.hidden) cancelDrag() }
+          const down = (event: PointerEvent): void => {
+            if (event.button !== 0) return
+            if (dragging && touchPointer && !paired && nativeTouches.size > 0 && dragPointerId !== null && event.pointerType === 'touch'
+              && event.target instanceof Element && event.target.closest(`.clock-hand--${dragging}`) === dragTarget
+              && Math.hypot(startClientX - event.clientX, startClientY - event.clientY) <= 1 && Math.abs(startedAt - event.timeStamp) <= 40) {
+              paired = true
+              adoptedPointers.set(event.pointerId, dragPointerId)
+              return
+            }
+            start(event)
+          }
+          const move = (event: PointerEvent): void => {
+            if (!adoptedPointers.has(event.pointerId) && ![...nativeTouches.values()].includes(event.pointerId)) updateFromPointer(event)
+          }
+          const up = (event: PointerEvent): void => {
+            const owner = adoptedPointers.get(event.pointerId) ?? ([...nativeTouches.values()].includes(event.pointerId) ? event.pointerId : undefined)
+            if (owner !== undefined) {
+              if (event.type === 'pointercancel') finish({ pointerId: owner, clientX: event.clientX, clientY: event.clientY, timeStamp: event.timeStamp, type: event.type })
+              else if (event.type === 'pointerup') adoptedPointers.delete(event.pointerId)
+              return
+            }
+            finish(event)
+          }
+          const eachTouch = (event: TouchEvent, action: (touch: Touch) => boolean): void => {
+            let handled = false
+            for (let index = 0; index < event.changedTouches.length; index++) {
+              const touch = typeof event.changedTouches.item === 'function' ? event.changedTouches.item(index) : event.changedTouches[index]
+              if (touch && action(touch)) handled = true
+            }
+            if (handled) event.preventDefault()
+          }
+          const touchStart = (event: TouchEvent): void => eachTouch(event, touch => {
+            if (nativeTouches.has(touch.identifier)) return false
+            if (dragging && touchPointer && dragPointerId !== null && nativeTouches.size === 0
+              && touch.target instanceof Element && touch.target.closest(`.clock-hand--${dragging}`) === dragTarget
+              && Math.hypot(startClientX - touch.clientX, startClientY - touch.clientY) <= 1 && Math.abs(startedAt - event.timeStamp) <= 40) {
+              nativeTouches.set(touch.identifier, dragPointerId)
+              adoptedPointers.set(dragPointerId, dragPointerId)
+              return true
+            }
+            if (dragging) return false
+            const id = nextTouchId++
+            start({ pointerId: id, pointerType: 'touch', button: 0, target: touch.target, clientX: touch.clientX, clientY: touch.clientY, timeStamp: event.timeStamp }, false)
+            if (dragPointerId !== id) return false
+            nativeTouches.set(touch.identifier, id)
+            return true
+          })
+          const touchMove = (event: TouchEvent): void => eachTouch(event, touch => {
+            const id = nativeTouches.get(touch.identifier)
+            if (id === undefined) return false
+            updateFromPointer({ pointerId: id, clientX: touch.clientX, clientY: touch.clientY, timeStamp: event.timeStamp })
+            return true
+          })
+          const touchEnd = (event: TouchEvent): void => eachTouch(event, touch => {
+            const id = nativeTouches.get(touch.identifier)
+            if (id === undefined) return false
+            finish({ pointerId: id, clientX: touch.clientX, clientY: touch.clientY, timeStamp: event.timeStamp, type: event.type === 'touchend' ? 'pointerup' : 'pointercancel' })
+            return true
+          })
           const check = (): void => {
             const now = new Date()
             const key = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}-${now.getHours()}-${now.getMinutes()}`
@@ -374,28 +475,45 @@ const clockMount = {
             frameState.id = requestAnimationFrame(sweep)
           }
           face.addEventListener('pointerdown', down)
-          face.addEventListener('pointermove', move)
-          face.addEventListener('pointerup', up)
-          face.addEventListener('pointercancel', up)
+          doc.addEventListener('pointermove', move, { capture: true })
+          doc.addEventListener('pointerup', up, { capture: true })
+          doc.addEventListener('pointercancel', up, { capture: true })
+          face.addEventListener('lostpointercapture', up)
+          face.addEventListener('touchstart', touchStart, { passive: false })
+          doc.addEventListener('touchmove', touchMove, { capture: true, passive: false })
+          doc.addEventListener('touchend', touchEnd, { capture: true, passive: false })
+          doc.addEventListener('touchcancel', touchEnd, { capture: true, passive: false })
+          doc.addEventListener('visibilitychange', visibility)
+          doc.defaultView?.addEventListener('blur', cancelDrag)
           const timer = window.setInterval(check, 1_000)
           check()
           frameState.id = requestAnimationFrame(sweep)
-          return { face, down, move, up, timer, frameState }
+          return { face, doc, down, move, up, touchStart, touchMove, touchEnd, cancelDrag, visibility, timer, frameState }
         }),
-        ({ face, down, move, up, timer, frameState }) => Effect.sync(() => {
+        ({ face, doc, down, move, up, touchStart, touchMove, touchEnd, cancelDrag, visibility, timer, frameState }) => Effect.sync(() => {
           frameState.running = false
           cancelAnimationFrame(frameState.id)
           window.clearInterval(timer)
           face.removeEventListener('pointerdown', down)
-          face.removeEventListener('pointermove', move)
-          face.removeEventListener('pointerup', up)
-          face.removeEventListener('pointercancel', up)
+          doc.removeEventListener('pointermove', move, { capture: true })
+          doc.removeEventListener('pointerup', up, { capture: true })
+          doc.removeEventListener('pointercancel', up, { capture: true })
+          face.removeEventListener('lostpointercapture', up)
+          face.removeEventListener('touchstart', touchStart)
+          doc.removeEventListener('touchmove', touchMove, { capture: true })
+          doc.removeEventListener('touchend', touchEnd, { capture: true })
+          doc.removeEventListener('touchcancel', touchEnd, { capture: true })
+          doc.removeEventListener('visibilitychange', visibility)
+          doc.defaultView?.removeEventListener('blur', cancelDrag)
+          cancelDrag()
         }),
       )
       return yield* Effect.never
     }),
   ),
 }
+
+export const mountTalkingClock = clockMount.f
 
 export const view = (model: Model) => {
   const h = html<Message>()
@@ -447,18 +565,12 @@ export const view = (model: Model) => {
             h.button([
               h.Class('clock-face-speak'),
               h.Attribute('aria-label', 'Speak the time'),
-              h.OnPointerUp(() => {
-                warmAudio()
-                return Option.some(SpeakTime())
-              }),
+              h.OnClick(SpeakTime()),
             ], ['🔊']),
             h.button([
               h.Class('clock-crown'),
               h.Attribute('aria-label', 'Wind to current time'),
-              h.OnPointerUp(() => {
-                warmAudio()
-                return Option.some(WindToNow(now))
-              }),
+              h.OnClick(WindToNow(now)),
             ], ['↻']),
           ]),
         ]),

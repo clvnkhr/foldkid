@@ -4,6 +4,35 @@ import { describe, expect, it, vi } from 'vitest'
 import { arithmeticExpressionForSpeech } from '../arithmeticSpeech'
 import { blockFillColor, componentColor, componentOutlineColor, componentsFor, DEFAULT_BREAK_SPEED, findClosestSnap, findOverlapSnap, init, joinEquation, labelPlacementFor, mountMagneticBlocks, RemoveBlock, removeBondsFor, SetBreakSpeed, snapTogether, SpawnBlocks, splitComponentAtBestBond, splitEquation, update } from './magneticBlocks'
 
+const pointerContact = (target: EventTarget, type: string, id: number, x: number, y: number, timeStamp: number, pointerType = 'touch', button = 0): void => {
+  const event = new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: id, pointerType, button, clientX: x, clientY: y })
+  Object.defineProperty(event, 'timeStamp', { value: timeStamp })
+  target.dispatchEvent(event)
+}
+const touchContact = (target: EventTarget, type: string, contacts: readonly { id: number; x: number; y: number; target: Element }[], timeStamp: number): void => {
+  const event = new Event(type, { bubbles: true, cancelable: true })
+  const touches = contacts.map(contact => ({ identifier: contact.id, clientX: contact.x, clientY: contact.y, target: contact.target }))
+  Object.defineProperties(event, { changedTouches: { value: { length: touches.length, item: (index: number) => touches[index] ?? null } }, timeStamp: { value: timeStamp } })
+  target.dispatchEvent(event)
+}
+const mountedBoard = async () => {
+  const board = document.createElement('div')
+  board.dataset.magneticMuted = 'true'
+  board.getBoundingClientRect = () => new DOMRect(0, 0, 620, 420)
+  board.setPointerCapture = vi.fn()
+  board.hasPointerCapture = () => true
+  board.releasePointerCapture = vi.fn()
+  document.body.append(board)
+  const random = vi.spyOn(Math, 'random').mockReturnValue(0.5)
+  for (const [x, y] of [[100, 100], [250, 100], [500, 100], [100, 250], [300, 250], [500, 250], [100, 360], [300, 360]]) {
+    random.mockReturnValueOnce((x! - 37.5) / 545)
+    random.mockReturnValueOnce((y! - 37.5) / 345)
+  }
+  const fiber = Effect.runFork(Stream.runDrain(mountMagneticBlocks(board)))
+  await new Promise(resolve => setTimeout(resolve, 0))
+  return { board, blocks: [...board.querySelectorAll<HTMLElement>('.magnetic-block')], cleanup: async () => { await Effect.runPromise(Fiber.interrupt(fiber)); board.remove(); random.mockRestore() } }
+}
+
 describe('Magnetic Blocks', () => {
   const blocks = [
     { id: 1, x: 60, y: 60 },
@@ -82,6 +111,23 @@ describe('Magnetic Blocks', () => {
     ], [1], 50, 30, { width: 300, height: 250 })
 
     expect(snap).toBeUndefined()
+  })
+
+  it('keeps another held shape as an obstacle without moving or joining it', () => {
+    const board = [
+      { id: 1, x: 100, y: 100 },
+      { id: 2, x: 172, y: 100 },
+      { id: 3, x: 145, y: 140 },
+    ]
+    const snapped = snapTogether(board, [], [1], 50, 30, { width: 300, height: 250 }, 1, new Set([3]))
+    expect(snapped.bonds).toEqual([])
+    expect(snapped.joins).toEqual([])
+    expect(board).toEqual([
+      { id: 1, x: 100, y: 100 }, { id: 2, x: 172, y: 100 }, { id: 3, x: 145, y: 140 },
+    ])
+
+    const held = [{ id: 1, x: 100, y: 100 }, { id: 2, x: 150, y: 100 }]
+    expect(snapTogether(held, [], [1], 50, 30, { width: 300, height: 250 }, 1, new Set([2])).joins).toEqual([])
   })
 
   it('always separates and joins overlapping blocks even outside the normal snap distance', () => {
@@ -323,6 +369,147 @@ describe('Magnetic Blocks', () => {
 
     await Effect.runPromise(Fiber.interrupt(fiber))
     board.remove()
+  })
+
+  it('moves separate shapes with separate fingers and keeps a held shape owned until release', async () => {
+    const board = document.createElement('div')
+    board.setAttribute('data-magnetic-muted', 'true')
+    board.getBoundingClientRect = () => new DOMRect(0, 0, 620, 420)
+    board.setPointerCapture = () => { throw new Error('unsupported capture') }
+    board.hasPointerCapture = () => true
+    board.releasePointerCapture = vi.fn()
+    document.body.append(board)
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0.5)
+    const positions: ReadonlyArray<readonly [number, number]> = [
+      [100, 100], [250, 100], [500, 100],
+      [100, 250], [300, 250], [500, 250],
+      [100, 360], [300, 360],
+    ]
+    for (const [x, y] of positions) {
+      random.mockReturnValueOnce((x - 37.5) / 545)
+      random.mockReturnValueOnce((y - 37.5) / 345)
+    }
+    const pointer = (target: EventTarget, type: string, id: number, x: number, y: number): void => {
+      target.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: id, pointerType: 'touch', clientX: x, clientY: y }))
+    }
+    const fiber = Effect.runFork(Stream.runDrain(mountMagneticBlocks(board)))
+    try {
+      await new Promise(resolve => setTimeout(resolve, 0))
+      const blocks = [...board.querySelectorAll<HTMLElement>('.magnetic-block')]
+      const first = blocks[0]!
+      const second = blocks[1]!
+      const third = blocks[2]!
+      const untouchedTransform = third.style.transform
+      pointer(first, 'pointerdown', 1, 100, 100)
+      pointer(first, 'pointerdown', 3, 100, 100)
+      pointer(second, 'pointerdown', 2, 250, 100)
+      pointer(document, 'pointermove', 1, 100, 150)
+      pointer(document, 'pointermove', 2, 250, 150)
+      expect(first.style.transform).toBe('translate3d(62.5px, 112.5px, 0)')
+      expect(second.style.transform).toBe('translate3d(212.5px, 112.5px, 0)')
+      expect(third.style.transform).toBe(untouchedTransform)
+
+      pointer(document, 'pointerup', 3, 100, 100)
+      pointer(document, 'pointermove', 3, 500, 100)
+      expect(first.classList.contains('magnetic-block--dragging')).toBe(true)
+      expect(first.style.transform).toBe('translate3d(62.5px, 112.5px, 0)')
+      pointer(document, 'pointermove', 2, 175, 150)
+      pointer(document, 'pointerup', 2, 175, 150)
+      expect(second.classList.contains('magnetic-block--dragging')).toBe(false)
+      expect(first.classList.contains('magnetic-block--dragging')).toBe(true)
+      expect(first.querySelector('.magnetic-block-count')?.textContent).toBe('1')
+      expect(second.querySelector('.magnetic-block-count')?.textContent).toBe('1')
+      pointer(document, 'pointermove', 1, 100, 180)
+      expect(first.style.transform).toBe('translate3d(62.5px, 142.5px, 0)')
+      pointer(document, 'pointercancel', 1, 100, 180)
+      expect(first.classList.contains('magnetic-block--dragging')).toBe(false)
+      expect(first.style.transform).toBe('translate3d(62.5px, 142.5px, 0)')
+      expect(first.querySelector('.magnetic-block-count')?.textContent).toBe('1')
+      expect(second.querySelector('.magnetic-block-count')?.textContent).toBe('1')
+
+      const newest = blocks.at(-1)!
+      pointer(newest, 'pointerdown', 5, 300, 360)
+      board.setAttribute('data-magnetic-remove-id', '1')
+      await new Promise(resolve => setTimeout(resolve, 0))
+      expect(newest.isConnected).toBe(false)
+      expect(board.releasePointerCapture).not.toHaveBeenCalled()
+      pointer(document, 'pointermove', 5, 300, 300)
+
+      board.setPointerCapture = vi.fn()
+      third.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 4, pointerType: 'pen', clientX: 500, clientY: 100 }))
+      await Effect.runPromise(Fiber.interrupt(fiber))
+      expect(board.releasePointerCapture).toHaveBeenCalledWith(4)
+      expect(board.querySelectorAll('.magnetic-block--dragging')).toHaveLength(0)
+      expect(board.querySelectorAll('.magnetic-block')).toHaveLength(0)
+      pointer(document, 'pointermove', 4, 500, 150)
+      expect(third.style.transform).toBe(untouchedTransform)
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(fiber))
+      random.mockRestore()
+      board.remove()
+    }
+  })
+
+  it.each([true, false])('moves native contacts independently and pairs duplicate pointers (native first: %s)', async nativeFirst => {
+    const { board, blocks, cleanup } = await mountedBoard()
+    const first = blocks[0]!
+    const second = blocks[1]!
+    const contacts = [{ id: 11, x: 100, y: 100, target: first }, { id: 12, x: 250, y: 100, target: second }]
+    try {
+      pointerContact(first, 'pointerdown', 9, 100, 100, 90, 'pen', 2)
+      expect(first.classList.contains('magnetic-block--dragging')).toBe(false)
+      if (nativeFirst) touchContact(board, 'touchstart', contacts, 100)
+      pointerContact(first, 'pointerdown', 1, 100, 100, 101)
+      pointerContact(second, 'pointerdown', 2, 250, 100, 101)
+      if (!nativeFirst) touchContact(board, 'touchstart', contacts, 120)
+      pointerContact(document, 'pointermove', 1, 500, 250, 122)
+      pointerContact(document, 'pointerup', 1, 500, 250, 123)
+      pointerContact(board, 'lostpointercapture', 1, 500, 250, 124)
+      touchContact(document, 'touchmove', [{ ...contacts[0]!, x: 120, y: 150 }, { ...contacts[1]!, x: 270, y: 150 }], 125)
+      expect(first.style.transform).toBe('translate3d(82.5px, 112.5px, 0)')
+      expect(second.style.transform).toBe('translate3d(232.5px, 112.5px, 0)')
+      touchContact(document, 'touchend', [{ ...contacts[0]!, x: 120, y: 150 }], 126)
+      expect(first.classList.contains('magnetic-block--dragging')).toBe(false)
+      expect(second.classList.contains('magnetic-block--dragging')).toBe(true)
+      pointerContact(document, 'pointercancel', 2, 270, 150, 127)
+      touchContact(document, 'touchend', [{ ...contacts[1]!, x: 500, y: 250 }], 128)
+      expect(second.classList.contains('magnetic-block--dragging')).toBe(false)
+      expect(second.style.transform).toBe('translate3d(232.5px, 112.5px, 0)')
+      expect(board.setPointerCapture).not.toHaveBeenCalled()
+
+      // A native-only finger can coexist with a later pointer-only finger.
+      touchContact(board, 'touchstart', [{ id: 13, x: 120, y: 150, target: first }], 200)
+      pointerContact(second, 'pointerdown', 2, 270, 150, 300)
+      pointerContact(document, 'pointermove', 2, 370, 150, 320)
+      touchContact(document, 'touchcancel', [{ id: 13, x: 120, y: 150, target: first }], 330)
+      expect(second.classList.contains('magnetic-block--dragging')).toBe(true)
+      pointerContact(document, 'pointerup', 2, 400, 150, 340)
+      expect(second.style.transform).toBe('translate3d(362.5px, 112.5px, 0)')
+    } finally { await cleanup() }
+  })
+
+  it.each(['pointercancel', 'lostpointercapture', 'blur', 'hidden'])('ends interrupted block holds without snapping on %s', async interruption => {
+    const { board, blocks, cleanup } = await mountedBoard()
+    const first = blocks[0]!
+    const second = blocks[1]!
+    try {
+      pointerContact(first, 'pointerdown', 1, 100, 100, 100, 'pen')
+      pointerContact(document, 'pointermove', 1, 180, 100, 120, 'pen')
+      if (interruption === 'blur') window.dispatchEvent(new Event('blur'))
+      else if (interruption === 'hidden') {
+        vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
+        document.dispatchEvent(new Event('visibilitychange'))
+      } else pointerContact(interruption === 'lostpointercapture' ? board : document, interruption, 1, 180, 100, 140, 'pen')
+      expect(first.classList.contains('magnetic-block--dragging')).toBe(false)
+      expect(first.style.transform).toBe('translate3d(142.5px, 62.5px, 0)')
+      expect(first.querySelector('.magnetic-block-count')?.textContent).toBe('1')
+      expect(second.querySelector('.magnetic-block-count')?.textContent).toBe('1')
+      expect(board.releasePointerCapture).toHaveBeenCalledWith(1)
+      pointerContact(document, 'pointerup', 1, 180, 100, 150, 'pen')
+      pointerContact(first, 'pointerdown', 1, 180, 100, 200)
+      pointerContact(document, 'pointerup', 1, 60, 60, 220)
+      expect(first.style.transform).toBe('translate3d(22.5px, 22.5px, 0)')
+    } finally { await cleanup(); vi.restoreAllMocks() }
   })
 
   it('speaks one cascade equation and announces a later split immediately', async () => {

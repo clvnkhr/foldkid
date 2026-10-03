@@ -1,4 +1,4 @@
-import { MutableRef } from 'effect'
+import { Effect, MutableRef, Queue, Stream } from 'effect'
 import type { DrumKind, FrequencyTable, Instrument, Pitch } from './musicboxDomain'
 import { Pitch as PitchValue } from './musicboxDomain'
 import type { MusicBoxAudioRuntime } from './musicboxAudioRuntime'
@@ -74,6 +74,213 @@ const applyOctaveOffset = (pitch: Pitch, offset: number, frequencies: FrequencyT
   return m ? frequencies.pitch(`${m[1]}${parseInt(m[2] ?? '0') + offset}`) : undefined
 }
 
+interface PianoPointerRuntimeDeps<Message> {
+  readonly document: Document
+  readonly noteOn: (pitch: string) => Message
+  readonly noteOff: (pitch: string) => Message
+  readonly stopNote: (pitch: string) => void
+}
+
+export const createPianoPointerRuntime = <Message>(deps: PianoPointerRuntimeDeps<Message>) => {
+  const heldPitches = new Map<string, number>()
+  return (element: Element): Stream.Stream<Message> => Stream.callback<Message>(queue =>
+    Effect.gen(function* () {
+      const keyboard = element as HTMLElement
+      yield* Effect.acquireRelease(
+        Effect.sync(() => {
+          const pointers = new Map<number, string | undefined>()
+          const touches = new Map<number, string | undefined>()
+          const touchPointerIds = new Set<number>()
+          const pointerPositions = new Map<number, { x: number; y: number; started: number }>()
+          const nativeTouchPositions = new Map<number, { x: number; y: number; started: number; pointerId?: number }>()
+          const nativePointerIds = new Map<number, number>()
+          const findPitch = (x: number, y: number): string | undefined => {
+            const key = deps.document.elementsFromPoint(x, y)
+              .map(candidate => candidate.closest('[data-pitch]'))
+              .find(candidate => candidate !== null && keyboard.contains(candidate))
+            return key?.getAttribute('data-pitch') ?? undefined
+          }
+          const changePitch = (contacts: Map<number, string | undefined>, id: number, pitch: string | undefined): void => {
+            const previous = contacts.get(id)
+            if (previous === pitch) return
+            contacts.set(id, pitch)
+            if (previous) {
+              const remaining = (heldPitches.get(previous) ?? 1) - 1
+              if (remaining > 0) heldPitches.set(previous, remaining)
+              else {
+                heldPitches.delete(previous)
+                Queue.offerUnsafe(queue, deps.noteOff(previous))
+              }
+            }
+            if (pitch) {
+              const count = heldPitches.get(pitch) ?? 0
+              heldPitches.set(pitch, count + 1)
+              if (count === 0) Queue.offerUnsafe(queue, deps.noteOn(pitch))
+            }
+          }
+          const releasePointer = (id: number): void => {
+            try { if (keyboard.hasPointerCapture(id)) keyboard.releasePointerCapture(id) } catch { /* Capture may already be gone. */ }
+          }
+          const clearContacts = (): void => {
+            const ids = [...pointers.keys()]
+            for (const id of ids) changePitch(pointers, id, undefined)
+            for (const id of touches.keys()) changePitch(touches, id, undefined)
+            pointers.clear()
+            touches.clear()
+            pointerPositions.clear()
+            nativeTouchPositions.clear()
+            nativePointerIds.clear()
+            touchPointerIds.clear()
+            for (const id of ids) releasePointer(id)
+          }
+          const visibilityChanged = (): void => { if (deps.document.hidden) clearContacts() }
+          const eachTouch = (event: TouchEvent, action: (touch: Touch) => void): void => {
+            for (let index = 0; index < event.changedTouches.length; index++) {
+              const touch = event.changedTouches.item?.(index) ?? event.changedTouches[index]
+              if (touch) action(touch)
+            }
+          }
+          const down = (event: PointerEvent): void => {
+            if (event.button !== 0 || pointers.has(event.pointerId) || nativePointerIds.has(event.pointerId)) return
+            if (event.pointerType === 'touch') {
+              const native = [...nativeTouchPositions].find(([, touch]) => touch.pointerId === undefined && Math.abs(event.timeStamp - touch.started) <= 40 && Math.hypot(event.clientX - touch.x, event.clientY - touch.y) <= 1)
+              if (native) {
+                native[1].pointerId = event.pointerId
+                nativePointerIds.set(event.pointerId, native[0])
+                event.preventDefault()
+                return
+              }
+            }
+            const pitch = findPitch(event.clientX, event.clientY)
+            if (!pitch) return
+            event.preventDefault()
+            pointers.set(event.pointerId, undefined)
+            pointerPositions.set(event.pointerId, { x: event.clientX, y: event.clientY, started: event.timeStamp })
+            if (event.pointerType === 'touch') touchPointerIds.add(event.pointerId)
+            changePitch(pointers, event.pointerId, pitch)
+            try { keyboard.setPointerCapture(event.pointerId) } catch { /* Document listeners track releases without capture. */ }
+          }
+          const move = (event: PointerEvent): void => {
+            if (!pointers.has(event.pointerId)) return
+            event.preventDefault()
+            const position = pointerPositions.get(event.pointerId)!
+            pointerPositions.set(event.pointerId, { ...position, x: event.clientX, y: event.clientY })
+            changePitch(pointers, event.pointerId, findPitch(event.clientX, event.clientY))
+          }
+          const up = (event: PointerEvent): void => {
+            const nativeId = nativePointerIds.get(event.pointerId)
+            if (nativeId !== undefined) {
+              // Capture is deliberately released when native touch adopts a
+              // pointer. That lost-capture event must not stop the note.
+              if (event.type === 'lostpointercapture') return
+              nativePointerIds.delete(event.pointerId)
+              if (event.type === 'pointercancel') {
+                changePitch(touches, nativeId, undefined)
+                touches.delete(nativeId)
+                nativeTouchPositions.delete(nativeId)
+              }
+              return
+            }
+            if (!pointers.has(event.pointerId)) return
+            changePitch(pointers, event.pointerId, undefined)
+            pointers.delete(event.pointerId)
+            pointerPositions.delete(event.pointerId)
+            touchPointerIds.delete(event.pointerId)
+            releasePointer(event.pointerId)
+          }
+          const touchStart = (event: TouchEvent): void => {
+            eachTouch(event, touch => {
+              const pitch = findPitch(touch.clientX, touch.clientY)
+              if (!pitch || touches.has(touch.identifier)) return
+              event.preventDefault()
+              nativeTouchPositions.set(touch.identifier, { x: touch.clientX, y: touch.clientY, started: event.timeStamp })
+              // Browsers may deliver pointerdown before touchstart. Transfer
+              // that held note without restarting it or counting it twice.
+              const pointerId = [...touchPointerIds].find(id => {
+                const point = pointerPositions.get(id)
+                return point && pointers.get(id) === pitch && Math.abs(event.timeStamp - point.started) <= 40 && Math.hypot(point.x - touch.clientX, point.y - touch.clientY) <= 1
+              })
+              if (pointerId !== undefined) {
+                pointers.delete(pointerId)
+                pointerPositions.delete(pointerId)
+                touchPointerIds.delete(pointerId)
+                touches.set(touch.identifier, pitch)
+                nativeTouchPositions.get(touch.identifier)!.pointerId = pointerId
+                nativePointerIds.set(pointerId, touch.identifier)
+                releasePointer(pointerId)
+              } else {
+                touches.set(touch.identifier, undefined)
+                changePitch(touches, touch.identifier, pitch)
+              }
+            })
+          }
+          const touchMove = (event: TouchEvent): void => {
+            eachTouch(event, touch => {
+              if (!touches.has(touch.identifier)) return
+              event.preventDefault()
+              const position = nativeTouchPositions.get(touch.identifier)
+              if (position) nativeTouchPositions.set(touch.identifier, { ...position, x: touch.clientX, y: touch.clientY })
+              changePitch(touches, touch.identifier, findPitch(touch.clientX, touch.clientY))
+            })
+          }
+          const touchEnd = (event: TouchEvent): void => {
+            eachTouch(event, touch => {
+              if (!touches.has(touch.identifier)) return
+              changePitch(touches, touch.identifier, undefined)
+              touches.delete(touch.identifier)
+              const pointerId = nativeTouchPositions.get(touch.identifier)?.pointerId
+              if (pointerId !== undefined) nativePointerIds.delete(pointerId)
+              nativeTouchPositions.delete(touch.identifier)
+            })
+          }
+          keyboard.addEventListener('pointerdown', down, { passive: false })
+          deps.document.addEventListener('pointermove', move, { capture: true, passive: false })
+          deps.document.addEventListener('pointerup', up, { capture: true })
+          deps.document.addEventListener('pointercancel', up, { capture: true })
+          keyboard.addEventListener('lostpointercapture', up)
+          keyboard.addEventListener('touchstart', touchStart, { passive: false })
+          deps.document.addEventListener('touchmove', touchMove, { capture: true, passive: false })
+          deps.document.addEventListener('touchend', touchEnd, { capture: true })
+          deps.document.addEventListener('touchcancel', touchEnd, { capture: true })
+          deps.document.addEventListener('visibilitychange', visibilityChanged)
+          deps.document.defaultView?.addEventListener('blur', clearContacts)
+          return { pointers, touches, pointerPositions, nativeTouchPositions, nativePointerIds, touchPointerIds, down, move, up, touchStart, touchMove, touchEnd, releasePointer, visibilityChanged, clearContacts }
+        }),
+        ({ pointers, touches, pointerPositions, nativeTouchPositions, nativePointerIds, touchPointerIds, down, move, up, touchStart, touchMove, touchEnd, releasePointer, visibilityChanged, clearContacts }) => Effect.sync(() => {
+          keyboard.removeEventListener('pointerdown', down)
+          deps.document.removeEventListener('pointermove', move, { capture: true })
+          deps.document.removeEventListener('pointerup', up, { capture: true })
+          deps.document.removeEventListener('pointercancel', up, { capture: true })
+          keyboard.removeEventListener('lostpointercapture', up)
+          keyboard.removeEventListener('touchstart', touchStart)
+          deps.document.removeEventListener('touchmove', touchMove, { capture: true })
+          deps.document.removeEventListener('touchend', touchEnd, { capture: true })
+          deps.document.removeEventListener('touchcancel', touchEnd, { capture: true })
+          deps.document.removeEventListener('visibilitychange', visibilityChanged)
+          deps.document.defaultView?.removeEventListener('blur', clearContacts)
+          for (const pitch of [...pointers.values(), ...touches.values()]) {
+            if (!pitch) continue
+            const remaining = (heldPitches.get(pitch) ?? 1) - 1
+            if (remaining > 0) heldPitches.set(pitch, remaining)
+            else {
+              heldPitches.delete(pitch)
+              try { deps.stopNote(pitch) } catch { /* Continue releasing the remaining contacts and captures. */ }
+            }
+          }
+          for (const id of pointers.keys()) releasePointer(id)
+          pointers.clear()
+          touches.clear()
+          pointerPositions.clear()
+          nativeTouchPositions.clear()
+          nativePointerIds.clear()
+          touchPointerIds.clear()
+        }),
+      )
+      return yield* Effect.never
+    }),
+  )
+}
+
 export const createMusicBoxKeyboardRuntime = (deps: MusicBoxKeyboardRuntimeDeps): MusicBoxKeyboardRuntime => {
   const keyboardBound = MutableRef.make(false)
   const shortcutKeysBound = MutableRef.make(false)
@@ -122,11 +329,13 @@ export const createMusicBoxKeyboardRuntime = (deps: MusicBoxKeyboardRuntimeDeps)
       try { new Audio(SILENT_WAV).play().catch(() => { }) } catch { /* ignore */ }
       deps.audio.primeFromGesture()
       deps.document.removeEventListener('pointerup', firstTouch, { capture: true })
+      deps.document.removeEventListener('touchend', firstTouch, { capture: true })
       deps.document.removeEventListener('keydown', firstTouch)
       firstTouchHandler = undefined
     }
     firstTouchHandler = firstTouch
     deps.document.addEventListener('pointerup', firstTouch, { capture: true })
+    deps.document.addEventListener('touchend', firstTouch, { capture: true })
     deps.document.addEventListener('keydown', firstTouch)
   }
 
@@ -177,6 +386,7 @@ export const createMusicBoxKeyboardRuntime = (deps: MusicBoxKeyboardRuntimeDeps)
     deps.document.removeEventListener('keydown', handleShortcutKeyDown)
     if (firstTouchHandler) {
       deps.document.removeEventListener('pointerup', firstTouchHandler, { capture: true })
+      deps.document.removeEventListener('touchend', firstTouchHandler, { capture: true })
       deps.document.removeEventListener('keydown', firstTouchHandler)
       firstTouchHandler = undefined
     }

@@ -63,12 +63,19 @@ export interface SnapResult {
 
 interface DragState {
   readonly pointerId: number
+  readonly captured: boolean
+  readonly touchPointer: boolean
+  readonly fromPointer: boolean
+  paired: boolean
   readonly grabbedId: number
   ids: number[]
   offsets: Map<number, { x: number; y: number }>
   lastX: number
   lastY: number
   lastTime: number
+  readonly startClientX: number
+  readonly startClientY: number
+  readonly startedAt: number
   brokeApart: boolean
 }
 
@@ -256,18 +263,19 @@ export const findOverlapSnap = (
   cell: number,
   bounds?: BoardBounds,
   heldId: number = movingIds[0] ?? -1,
+  heldIds: ReadonlySet<number> = new Set(),
 ): SnapResult | undefined => {
   const moving = new Set(movingIds)
   const movingBlocks = blocks.filter(block => moving.has(block.id))
   const held = blocks.find(block => block.id === heldId)
-  const stationaryBlocks = blocks.filter(block => !moving.has(block.id))
+  const stationaryBlocks = blocks.filter(block => !moving.has(block.id) && !heldIds.has(block.id))
   if (!held || stationaryBlocks.reduce((area, block) => area + intersectionArea(held, block, cell), 0) <= cell * cell / 2) {
     return undefined
   }
   let closest: (SnapResult & { readonly distance: number }) | undefined
 
   for (const ids of componentsFor(blocks, bonds)) {
-    if (ids.some(id => moving.has(id))) continue
+    if (ids.some(id => moving.has(id) || heldIds.has(id))) continue
     const stationary = new Set(ids)
     const componentBlocks = blocks.filter(block => stationary.has(block.id))
     if (componentBlocks.length === 0) continue
@@ -308,6 +316,7 @@ export const findClosestSnap = (
   cell: number,
   snapDistance: number,
   bounds?: BoardBounds,
+  heldIds: ReadonlySet<number> = new Set(),
 ): SnapResult | undefined => {
   const moving = new Set(movingIds)
   let closest: (SnapResult & { readonly distance: number }) | undefined
@@ -315,7 +324,7 @@ export const findClosestSnap = (
   for (const movingBlock of blocks) {
     if (!moving.has(movingBlock.id)) continue
     for (const stationaryBlock of blocks) {
-      if (moving.has(stationaryBlock.id)) continue
+      if (moving.has(stationaryBlock.id) || heldIds.has(stationaryBlock.id)) continue
       const targets = [
         { x: stationaryBlock.x - cell, y: stationaryBlock.y },
         { x: stationaryBlock.x + cell, y: stationaryBlock.y },
@@ -363,12 +372,13 @@ const findLocalJoinPlan = (
   cell: number,
   snapDistance: number,
   bounds: BoardBounds,
+  heldIds: ReadonlySet<number>,
 ): LocalJoinPlan | undefined => {
   if (snapDistance < 0) return undefined
   const moving = new Set(movingIds)
   const movingBlocks = blocks.filter(block => moving.has(block.id))
   const groups = componentsFor(blocks, bonds).flatMap(ids => {
-    if (ids.some(id => moving.has(id))) return []
+    if (ids.some(id => moving.has(id) || heldIds.has(id))) return []
     const component = new Set(ids)
     const stationaryBlocks = blocks.filter(block => component.has(block.id))
     const translations = new Map<string, LocalJoinCandidate>()
@@ -455,6 +465,7 @@ export const snapTogether = (
   snapDistance: number,
   bounds: BoardBounds,
   heldId: number = movingIds[0] ?? -1,
+  heldIds: ReadonlySet<number> = new Set(),
 ): { bonds: MagneticBond[]; ids: number[]; joins: MagneticJoin[]; summands: number[] } => {
   const originalComponents = componentsFor(blocks, bonds)
   let nextBonds = [...bonds]
@@ -462,7 +473,7 @@ export const snapTogether = (
   const joins: MagneticJoin[] = []
 
   const applyLocalPlan = (): boolean => {
-    const localPlan = findLocalJoinPlan(blocks, nextBonds, joinedIds, cell, snapDistance, bounds)
+    const localPlan = findLocalJoinPlan(blocks, nextBonds, joinedIds, cell, snapDistance, bounds, heldIds)
     if (!localPlan) return false
     let total = joinedIds.length
     for (const candidate of localPlan.candidates) {
@@ -485,8 +496,8 @@ export const snapTogether = (
   // bound guarantees that a malformed board can never create a snap loop.
   for (let step = 0; step < blocks.length; step++) {
     if (applyLocalPlan()) continue
-    const snap = findOverlapSnap(blocks, nextBonds, joinedIds, cell, bounds, heldId)
-      ?? findClosestSnap(blocks, joinedIds, cell, snapDistance, bounds)
+    const snap = findOverlapSnap(blocks, nextBonds, joinedIds, cell, bounds, heldId, heldIds)
+      ?? findClosestSnap(blocks, joinedIds, cell, snapDistance, bounds, heldIds)
     if (!snap) break
     const key = bondKey(snap.bond.a, snap.bond.b)
     if (nextBonds.some(bond => bondKey(bond.a, bond.b) === key)) break
@@ -693,7 +704,7 @@ const playMagnetClick = (kind: 'join' | 'release', joins: number = 1): void => {
 const boardCellSize = (bounds: BoardBounds): number =>
   clamp(Math.min(bounds.width / 8.2, bounds.height / 5.6), 42, 76)
 
-const pagePoint = (event: PointerEvent, board: HTMLElement): { x: number; y: number } => {
+const pagePoint = (event: Pick<PointerEvent, 'clientX' | 'clientY'>, board: HTMLElement): { x: number; y: number } => {
   const rect = board.getBoundingClientRect()
   return { x: event.clientX - rect.left, y: event.clientY - rect.top }
 }
@@ -739,7 +750,23 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
           let blocks: MountedBlock[] = []
           let bonds: MagneticBond[] = []
           let nextId = 0
-          let drag: DragState | undefined
+          let nextTouchId = Number.MIN_SAFE_INTEGER
+          const doc = board.ownerDocument
+          const drags = new Map<number, DragState>()
+          const nativeTouches = new Map<number, number>()
+          const adoptedPointers = new Map<number, number>()
+          const snapTimers = new Set<number>()
+          const cancelDrag = (pointerId: number): void => {
+            const drag = drags.get(pointerId)
+            if (!drag) return
+            drags.delete(pointerId)
+            for (const [id, dragId] of adoptedPointers) if (dragId === pointerId) adoptedPointers.delete(id)
+            for (const [touchId, id] of nativeTouches) if (id === pointerId) nativeTouches.delete(touchId)
+            for (const id of drag.ids) blocks.find(block => block.id === id)?.el.classList.remove('magnetic-block--dragging')
+            if (drag.captured) {
+              try { if (board.hasPointerCapture(pointerId)) board.releasePointerCapture(pointerId) } catch { /* Capture may already be gone. */ }
+            }
+          }
           let cell = boardCellSize(board.getBoundingClientRect())
           const readBreakSpeed = (): number =>
             normalizeBreakSpeed(Number(board.getAttribute('data-magnetic-break-speed') ?? DEFAULT_BREAK_SPEED))
@@ -827,7 +854,11 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
               block.el.classList.remove('magnetic-block--snap')
               void block.el.offsetWidth
               block.el.classList.add('magnetic-block--snap')
-              window.setTimeout(() => block.el.classList.remove('magnetic-block--snap'), 420)
+              const timer = window.setTimeout(() => {
+                snapTimers.delete(timer)
+                block.el.classList.remove('magnetic-block--snap')
+              }, 420)
+              snapTimers.add(timer)
             }
           }
 
@@ -869,6 +900,7 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
           const removeNewestBlock = (): void => {
             const block = blocks.at(-1)
             if (!block) return
+            for (const drag of drags.values()) if (drag.ids.includes(block.id)) cancelDrag(drag.pointerId)
             bonds = removeBondsFor(bonds, block.id)
             block.el.remove()
             blocks = blocks.filter(candidate => candidate.id !== block.id)
@@ -884,9 +916,8 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
               return block ? [[id, { x: block.x - x, y: block.y - y }] as const] : []
             }))
 
-          const moveDraggedBlocks = (point: { x: number; y: number }): void => {
-            if (!drag) return
-            const grabbed = blocks.find(block => block.id === drag!.grabbedId)
+          const moveDraggedBlocks = (drag: DragState, point: { x: number; y: number }): void => {
+            const grabbed = blocks.find(block => block.id === drag.grabbedId)
             const grabbedOffset = drag.offsets.get(drag.grabbedId)
             if (!grabbed || !grabbedOffset) return
             const desiredX = point.x + grabbedOffset.x
@@ -894,7 +925,7 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
             const rawDx = desiredX - grabbed.x
             const rawDy = desiredY - grabbed.y
             const area = bounds()
-            const draggedBlocks = blocks.filter(block => drag!.ids.includes(block.id))
+            const draggedBlocks = blocks.filter(block => drag.ids.includes(block.id))
             const minDx = Math.max(...draggedBlocks.map(block => cell / 2 - block.x))
             const maxDx = Math.min(...draggedBlocks.map(block => area.width - cell / 2 - block.x))
             const minDy = Math.max(...draggedBlocks.map(block => cell / 2 - block.y))
@@ -908,30 +939,45 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
             render()
           }
 
-          const onPointerDown = (event: PointerEvent): void => {
-            const target = (event.target as Element).closest('[data-magnetic-id]') as HTMLElement | null
-            if (!target) return
+          const startDrag = (event: Pick<PointerEvent, 'pointerId' | 'pointerType' | 'button' | 'target' | 'clientX' | 'clientY' | 'timeStamp'>, fromPointer = true): boolean => {
+            if (drags.has(event.pointerId) || event.button !== 0) return false
+            if (!(event.target instanceof Element)) return false
+            const target = event.target.closest('[data-magnetic-id]') as HTMLElement | null
+            if (!target || !board.contains(target)) return false
             const id = Number(target.getAttribute('data-magnetic-id'))
-            if (!Number.isInteger(id)) return
+            if (!Number.isInteger(id) || !blocks.some(block => block.id === id)) return false
             const point = pagePoint(event, board)
             const ids = componentFor(id)
-            drag = {
+            if ([...drags.values()].some(drag => drag.ids.some(draggedId => ids.includes(draggedId)))) return false
+            let captured = false
+            if (event.pointerType !== 'touch') {
+              try { board.setPointerCapture(event.pointerId); captured = true } catch { /* Document listeners keep the drag active. */ }
+            }
+            drags.set(event.pointerId, {
               pointerId: event.pointerId,
+              captured,
+              touchPointer: event.pointerType === 'touch',
+              fromPointer,
+              paired: fromPointer,
               grabbedId: id,
               ids,
               offsets: offsetsFor(ids, point.x, point.y),
               lastX: point.x,
               lastY: point.y,
               lastTime: event.timeStamp,
+              startClientX: event.clientX,
+              startClientY: event.clientY,
+              startedAt: event.timeStamp,
               brokeApart: false,
-            }
+            })
             for (const draggedId of ids) blocks.find(block => block.id === draggedId)?.el.classList.add('magnetic-block--dragging')
-            board.setPointerCapture(event.pointerId)
-            event.preventDefault()
+            return true
           }
 
-          const onPointerMove = (event: PointerEvent): void => {
-            if (!drag || drag.pointerId !== event.pointerId) return
+          const moveDrag = (event: Pick<PointerEvent, 'pointerId' | 'clientX' | 'clientY' | 'timeStamp'>): boolean => {
+            const drag = drags.get(event.pointerId)
+            if (!drag) return false
+            if (event.timeStamp < drag.lastTime) return true
             const point = pagePoint(event, board)
             const elapsed = event.timeStamp - drag.lastTime
             const speed = elapsed > 12 ? Math.hypot(point.x - drag.lastX, point.y - drag.lastY) * 1000 / elapsed : 0
@@ -944,7 +990,7 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
                 drag.ids = split.draggedIds
                 drag.offsets = offsetsFor(drag.ids, point.x, point.y)
                 drag.brokeApart = true
-                blocks.find(block => block.id === drag!.grabbedId)?.el.classList.add('magnetic-block--dragging')
+                for (const id of drag.ids) blocks.find(block => block.id === id)?.el.classList.add('magnetic-block--dragging')
                 colorBlocks()
                 if (!muted) {
                   playMagnetClick('release')
@@ -953,22 +999,29 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
                 }
               }
             }
-            moveDraggedBlocks(point)
+            moveDraggedBlocks(drag, point)
             drag.lastX = point.x
             drag.lastY = point.y
             drag.lastTime = event.timeStamp
+            return true
           }
 
-          const finishDrag = (event: PointerEvent): void => {
-            if (!drag || drag.pointerId !== event.pointerId) return
-            const snapped = snapTogether(blocks, bonds, drag.ids, cell, cell * SNAP_DISTANCE_FACTOR, bounds(), drag.grabbedId)
+          const endDrag = (event: Pick<PointerEvent, 'pointerId' | 'clientX' | 'clientY' | 'timeStamp' | 'type'>): boolean => {
+            const drag = drags.get(event.pointerId)
+            if (!drag) return false
+            if (event.type !== 'pointerup') {
+              cancelDrag(event.pointerId)
+              return true
+            }
+            if (event.timeStamp >= drag.lastTime) moveDraggedBlocks(drag, pagePoint(event, board))
+            cancelDrag(event.pointerId)
+            const heldIds = new Set([...drags.values()].flatMap(other => other.ids))
+            // Held shapes remain collision obstacles, but cannot be snap targets.
+            const snapped = snapTogether(blocks, bonds, drag.ids, cell, cell * SNAP_DISTANCE_FACTOR, bounds(), drag.grabbedId, heldIds)
             bonds = snapped.bonds
             const joins = snapped.joins.length
             const equation = joins > 0 ? joinEquation(snapped.summands) : undefined
             if (joins > 0) showSnap(snapped.ids)
-            for (const id of drag.ids) blocks.find(block => block.id === id)?.el.classList.remove('magnetic-block--dragging')
-            if (board.hasPointerCapture(event.pointerId)) board.releasePointerCapture(event.pointerId)
-            drag = undefined
             render()
             if (!muted && event.type === 'pointerup') {
               warmAudio()
@@ -979,9 +1032,86 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
                 speakNow(arithmeticExpressionForSpeech(equation, language), options)
               }
             }
+            return true
+          }
+
+          const sameStart = (drag: DragState, touch: Pick<Touch, 'clientX' | 'clientY'>, time: number): boolean =>
+            Math.hypot(drag.startClientX - touch.clientX, drag.startClientY - touch.clientY) <= 1 && Math.abs(drag.startedAt - time) <= 40
+          const onPointerDown = (event: PointerEvent): void => {
+            if (event.button !== 0) return
+            if (event.pointerType === 'touch' && event.target instanceof Element) {
+              const blockId = Number(event.target.closest('[data-magnetic-id]')?.getAttribute('data-magnetic-id'))
+              const native = [...drags.values()].find(drag => !drag.fromPointer && !drag.paired && drag.grabbedId === blockId && sameStart(drag, event, event.timeStamp))
+              if (native) {
+                native.paired = true
+                adoptedPointers.set(event.pointerId, native.pointerId)
+                event.preventDefault()
+                return
+              }
+            }
+            if (startDrag(event)) event.preventDefault()
+          }
+          const onPointerMove = (event: PointerEvent): void => {
+            if (!adoptedPointers.has(event.pointerId) && ![...nativeTouches.values()].includes(event.pointerId) && moveDrag(event)) event.preventDefault()
+          }
+          const finishDrag = (event: PointerEvent): void => {
+            const owner = adoptedPointers.get(event.pointerId) ?? ([...nativeTouches.values()].includes(event.pointerId) ? event.pointerId : undefined)
+            if (owner !== undefined) {
+              if (event.type === 'pointercancel') endDrag({ pointerId: owner, clientX: event.clientX, clientY: event.clientY, timeStamp: event.timeStamp, type: event.type })
+              else if (event.type === 'pointerup') adoptedPointers.delete(event.pointerId)
+              event.preventDefault()
+              return
+            }
+            if (endDrag(event)) event.preventDefault()
+          }
+          const eachTouch = (event: TouchEvent, action: (touch: Touch) => boolean): void => {
+            let handled = false
+            for (let index = 0; index < event.changedTouches.length; index++) {
+              const touch = typeof event.changedTouches.item === 'function' ? event.changedTouches.item(index) : event.changedTouches[index]
+              if (touch && action(touch)) handled = true
+            }
+            if (handled) event.preventDefault()
+          }
+          const touchStart = (event: TouchEvent): void => eachTouch(event, touch => {
+            if (nativeTouches.has(touch.identifier) || !(touch.target instanceof Element)) return false
+            const target = touch.target.closest('[data-magnetic-id]')
+            if (!target || !board.contains(target)) return false
+            const blockId = Number(target.getAttribute('data-magnetic-id'))
+            const pointer = [...drags.values()].find(drag => drag.touchPointer && drag.fromPointer && ![...nativeTouches.values()].includes(drag.pointerId)
+              && drag.grabbedId === blockId && sameStart(drag, touch, event.timeStamp))
+            if (pointer) {
+              nativeTouches.set(touch.identifier, pointer.pointerId)
+              adoptedPointers.set(pointer.pointerId, pointer.pointerId)
+              return true
+            }
+            const id = nextTouchId++
+            if (!startDrag({ pointerId: id, pointerType: 'touch', button: 0, target: touch.target, clientX: touch.clientX, clientY: touch.clientY, timeStamp: event.timeStamp }, false)) return false
+            nativeTouches.set(touch.identifier, id)
+            return true
+          })
+          const touchMove = (event: TouchEvent): void => eachTouch(event, touch => {
+            const id = nativeTouches.get(touch.identifier)
+            return id !== undefined && moveDrag({ pointerId: id, clientX: touch.clientX, clientY: touch.clientY, timeStamp: event.timeStamp })
+          })
+          const touchEnd = (event: TouchEvent): void => eachTouch(event, touch => {
+            const id = nativeTouches.get(touch.identifier)
+            return id !== undefined && endDrag({ pointerId: id, clientX: touch.clientX, clientY: touch.clientY, timeStamp: event.timeStamp, type: event.type === 'touchend' ? 'pointerup' : 'pointercancel' })
+          })
+
+          const cancelDrags = (): void => {
+            for (const pointerId of drags.keys()) cancelDrag(pointerId)
+          }
+          const onVisibility = (): void => { if (doc.hidden) cancelDrags() }
+
+          const cleanup = (): void => {
+            cancelDrags()
+            for (const timer of snapTimers) window.clearTimeout(timer)
+            snapTimers.clear()
+            for (const block of blocks) block.el.remove()
           }
 
           const onResize = (): void => {
+            cancelDrags()
             const previousCell = cell
             cell = boardCellSize(bounds())
             const scale = cell / previousCell
@@ -1017,20 +1147,35 @@ export const mountMagneticBlocks = (element: Element): Stream.Stream<never> =>
           resizeObserver.observe(board)
           spawnObserver.observe(board, { attributes: true, attributeFilter: ['data-magnetic-spawn-id', 'data-magnetic-remove-id', 'data-magnetic-break-speed', 'data-magnetic-muted'] })
           board.addEventListener('pointerdown', onPointerDown)
-          board.addEventListener('pointermove', onPointerMove)
-          board.addEventListener('pointerup', finishDrag)
-          board.addEventListener('pointercancel', finishDrag)
+          doc.addEventListener('pointermove', onPointerMove, { capture: true })
+          doc.addEventListener('pointerup', finishDrag, { capture: true })
+          doc.addEventListener('pointercancel', finishDrag, { capture: true })
+          board.addEventListener('lostpointercapture', finishDrag)
+          board.addEventListener('touchstart', touchStart, { passive: false })
+          doc.addEventListener('touchmove', touchMove, { capture: true, passive: false })
+          doc.addEventListener('touchend', touchEnd, { capture: true, passive: false })
+          doc.addEventListener('touchcancel', touchEnd, { capture: true, passive: false })
+          doc.addEventListener('visibilitychange', onVisibility)
+          doc.defaultView?.addEventListener('blur', cancelDrags)
           spawn(INITIAL_BLOCKS)
 
-          return { resizeObserver, spawnObserver, onPointerDown, onPointerMove, finishDrag }
+          return { doc, resizeObserver, spawnObserver, onPointerDown, onPointerMove, finishDrag, touchStart, touchMove, touchEnd, onVisibility, cancelDrags, cleanup }
         }),
-        ({ resizeObserver, spawnObserver, onPointerDown, onPointerMove, finishDrag }) => Effect.sync(() => {
+        ({ doc, resizeObserver, spawnObserver, onPointerDown, onPointerMove, finishDrag, touchStart, touchMove, touchEnd, onVisibility, cancelDrags, cleanup }) => Effect.sync(() => {
           resizeObserver.disconnect()
           spawnObserver.disconnect()
           board.removeEventListener('pointerdown', onPointerDown)
-          board.removeEventListener('pointermove', onPointerMove)
-          board.removeEventListener('pointerup', finishDrag)
-          board.removeEventListener('pointercancel', finishDrag)
+          doc.removeEventListener('pointermove', onPointerMove, { capture: true })
+          doc.removeEventListener('pointerup', finishDrag, { capture: true })
+          doc.removeEventListener('pointercancel', finishDrag, { capture: true })
+          board.removeEventListener('lostpointercapture', finishDrag)
+          board.removeEventListener('touchstart', touchStart)
+          doc.removeEventListener('touchmove', touchMove, { capture: true })
+          doc.removeEventListener('touchend', touchEnd, { capture: true })
+          doc.removeEventListener('touchcancel', touchEnd, { capture: true })
+          doc.removeEventListener('visibilitychange', onVisibility)
+          doc.defaultView?.removeEventListener('blur', cancelDrags)
+          cleanup()
         }),
       )
       return yield* Effect.never

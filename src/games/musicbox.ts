@@ -1,4 +1,4 @@
-import { Effect, Match as M, MutableRef, Schema as S, Stream } from 'effect'
+import { Effect, Match as M, MutableRef, Schema as S } from 'effect'
 import { Command } from 'foldkit'
 import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
@@ -9,6 +9,7 @@ import {
 } from './musicboxAudioRuntime'
 import {
   createMusicBoxKeyboardRuntime,
+  createPianoPointerRuntime,
 } from './musicboxKeyboardRuntime'
 import {
   createMusicBoxWakeMonitor,
@@ -989,74 +990,15 @@ const renderDrumPad = (h: ReturnType<typeof html<Message>>, drumVolume: number) 
 
 // ── Piano keyboard view helper ──────────────────────────────────────────
 
-const pointerStream = (element: Element): Stream.Stream<Message> => {
-  const activePointerPitch = new Map<number, string>()
-  const target = element as unknown as Stream.EventListener<PointerEvent>
-
-  const findPitch = (clientX: number, clientY: number): string | undefined => {
-    const els = document.elementsFromPoint(clientX, clientY)
-    for (const el of els) {
-      const elWithPitch = el.closest('[data-pitch]')
-      if (elWithPitch) return elWithPitch.getAttribute('data-pitch')!
-    }
-    return undefined
-  }
-
-  const onDown = Stream.fromEventListener(target, 'pointerdown', { passive: false }).pipe(
-    Stream.flatMap((e) => {
-      e.preventDefault()
-      const pitch = findPitch(e.clientX, e.clientY)
-      if (pitch) {
-        activePointerPitch.set(e.pointerId, pitch)
-        return Stream.make(NoteOn({ pitch }))
-      }
-      return Stream.empty
-    }),
-  )
-
-  const onMove = Stream.fromEventListener(target, 'pointermove', { passive: false }).pipe(
-    Stream.filter((e) => (e.buttons & 1) !== 0),
-    Stream.flatMap((e) => {
-      const pitch = findPitch(e.clientX, e.clientY)
-      const prev = activePointerPitch.get(e.pointerId)
-      if (!pitch && prev) {
-        activePointerPitch.delete(e.pointerId)
-        return Stream.make(NoteOff({ pitch: prev }))
-      }
-      if (pitch && pitch !== prev) {
-        activePointerPitch.set(e.pointerId, pitch)
-        return prev
-          ? Stream.make(NoteOff({ pitch: prev }), NoteOn({ pitch }))
-          : Stream.make(NoteOn({ pitch }))
-      }
-      return Stream.empty
-    }),
-  )
-
-  const onUp = Stream.fromEventListener(target, 'pointerup').pipe(
-    Stream.flatMap((e) => {
-      const pitch = activePointerPitch.get(e.pointerId)
-      if (pitch) {
-        activePointerPitch.delete(e.pointerId)
-        return Stream.make(NoteOff({ pitch }))
-      }
-      return Stream.empty
-    }),
-  )
-
-  const onCancel = Stream.fromEventListener(target, 'pointercancel').pipe(
-    Stream.flatMap((e) => {
-      const pitch = activePointerPitch.get(e.pointerId)
-      if (pitch) {
-        activePointerPitch.delete(e.pointerId)
-        return Stream.make(NoteOff({ pitch }))
-      }
-      return Stream.empty
-    }),
-  )
-
-  return Stream.mergeAll({ concurrency: 'unbounded' })([onDown, onMove, onUp, onCancel])
-}
+const pointerStream = createPianoPointerRuntime<Message>({
+  document,
+  noteOn: pitch => NoteOn({ pitch }),
+  noteOff: pitch => NoteOff({ pitch }),
+  stopNote: pitch => {
+    const typedPitch = MUSICBOX_FREQUENCIES.pitch(pitch)
+    if (typedPitch) audioRuntime.stopManualNote(typedPitch)
+  },
+})
 
 const renderPiano = (
   h: ReturnType<typeof html<Message>>,

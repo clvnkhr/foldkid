@@ -1,10 +1,10 @@
-import { Effect, Match as M, Option, Schema as S } from 'effect'
+import { Effect, Match as M, Schema as S } from 'effect'
 import { Command } from 'foldkit'
 import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
 
 import { t, type StringKey } from '../i18n'
-import { getContext, warmAudio } from '../audio'
+import { getContext } from '../audio'
 import { speak, type SpeechOptions } from '../speech'
 
 export type LetterWord = Readonly<{
@@ -728,15 +728,7 @@ export const view = (model: Model, language: string = 'en') => {
                   h.Attribute('aria-label', letter === '?'
                     ? t('talkingKeyboardAskQuestion', language)
                     : nextWord ? promptFor(letter, nextWord) : letter),
-                  h.OnPointerUp(() => {
-                    warmAudio()
-                    return Option.some(letter === '?' ? AskQuestion() : PressedLetter({ letter }))
-                  }),
-                  h.OnKeyUpPreventDefault((key) =>
-                    key === 'Enter' || key === ' '
-                      ? (warmAudio(), Option.some(letter === '?' ? AskQuestion() : PressedLetter({ letter })))
-                      : Option.none(),
-                  ),
+                  h.OnClick(letter === '?' ? AskQuestion() : PressedLetter({ letter })),
                 ],
                 [letter],
               )

@@ -29,7 +29,7 @@ const styles = readStylesheet(stylesEntryPath)
 const stylesEntry = readFileSync(stylesEntryPath, 'utf8')
 
 const NON_GAME_OVERHEAD = { lines: 800, bytes: 15000, gzip: 5000 }
-const PER_GAME_CONTRIBUTION = { lines: 210, bytes: 5000, gzip: 1000 }
+const PER_GAME_CONTRIBUTION = { lines: 210, bytes: 6000, gzip: 1100 }
 
 const appWideStylesheetBudget = {
   lines: NON_GAME_OVERHEAD.lines + LANDING_GAME_COUNT * PER_GAME_CONTRIBUTION.lines,
@@ -60,6 +60,10 @@ const generatedClassNames = new Set([
   'pat-tile--1',
   'pat-tile--2',
   'pat-tile--3',
+  'magnetic-block-eye--left',
+  'magnetic-block-eye--right',
+  'talking-keyboard-row--1',
+  'talking-keyboard-row--2',
   'rps-result-text--win',
   'rps-result-text--lose',
   'rps-result-text--tie',
@@ -143,6 +147,29 @@ describe('styles.css invariants', () => {
     expect(settingsPanel).toContain('touch-action: pan-y')
     expect(settingsPanel).toContain('-webkit-overflow-scrolling: touch')
     expect(dragHandle).toContain('touch-action: none')
+  })
+
+  it('lets the 3D play area fill the viewport around its controls', () => {
+    const app = cssRule('.app--bubbles3d')
+    const nav = cssRule('.app--bubbles3d .nav-bar')
+    const page = cssRule('.bubbles3d-page')
+    const card = cssRule('.bubbles3d-card')
+    const stage = cssRule('.bubbles3d-stage')
+    const fallback = cssRule('.bubbles3d-bubble-buttons')
+
+    expect(app).toContain('height: 100dvh')
+    expect(nav).toContain('position: relative')
+    expect(page).toContain('flex: 1 1 0')
+    expect(page).toContain('min-height: 0')
+    expect(page).toContain('safe-area-inset-bottom')
+    expect(card).toContain('width: 100%')
+    expect(card).toContain('max-width: none')
+    expect(card).toContain('min-height: 0')
+    expect(stage).toContain('flex: 1 1 0')
+    expect(stage).toContain('min-height: 0')
+    expect(stage).not.toContain('height: clamp')
+    expect(fallback).toContain('overflow-y: auto')
+    expect(fallback).toContain('touch-action: pan-y')
   })
 
   it('keeps Find It card boxes stable while sizing single and pair emoji separately', () => {

@@ -136,7 +136,6 @@ export const view = (model: Model, language: string = 'en') => {
                   )),
                   h.Disabled(model.feedback !== 'none'),
                   h.Key(letter),
-                  h.OnTouchEnd(ClickedLetter({ letter })),
                   h.OnClick(ClickedLetter({ letter })),
                 ],
                 [letter],

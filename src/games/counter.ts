@@ -1,8 +1,8 @@
-import { Effect, Match as M, Option as O, Schema as S, Stream } from 'effect'
+import { Effect, Match as M, Queue, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
-import { click, swoosh } from '../audio'
+import { click, swoosh, warmAudio } from '../audio'
 import { speak, type SpeechOptions } from '../speech'
 import { t } from '../i18n'
 import { toCardinal } from 'n2words/en-US'
@@ -48,6 +48,8 @@ export const numberToWord = (n: number, language: string = 'en'): string => {
 export const DisplayMode = S.Union([S.Literal('number'), S.Literal('word'), S.Literal('both')])
 const PressedButton = S.Union([S.Literal('inc'), S.Literal('dec')])
 type PressedButton = typeof PressedButton.Type
+const Press = S.Struct({ pointerId: S.Number, timeStamp: S.Number, button: PressedButton })
+type Press = typeof Press.Type
 
 export const Model = S.Struct({
   count: S.Number,
@@ -55,23 +57,25 @@ export const Model = S.Struct({
   holding: S.Boolean,
   pointerDownTime: S.Number,
   pressedButton: S.Union([PressedButton, S.Null]),
+  presses: S.Array(Press),
   displayMode: DisplayMode,
   tiltGravity: S.Boolean,
 })
 export type Model = typeof Model.Type
 
-export const PointerDown = m('CounterPointerDown', { timeStamp: S.Number, button: PressedButton })
-export const PressedIncrement = m('CounterPressedIncrement', { duration: S.Number, button: S.optionalKey(PressedButton) })
-export const PressedDecrement = m('CounterPressedDecrement', { duration: S.Number, button: S.optionalKey(PressedButton) })
+export const PointerDown = m('CounterPointerDown', { timeStamp: S.Number, button: PressedButton, pointerId: S.optionalKey(S.Number) })
+export const PressedIncrement = m('CounterPressedIncrement', { duration: S.Number, button: S.optionalKey(PressedButton), pointerId: S.optionalKey(S.Number) })
+export const PressedDecrement = m('CounterPressedDecrement', { duration: S.Number, button: S.optionalKey(PressedButton), pointerId: S.optionalKey(S.Number) })
+export const PressCancelled = m('CounterPressCancelled', { pointerId: S.Number })
 export const ClickedReset = m('CounterClickedReset')
 export const SetDisplayMode = m('CounterSetDisplayMode', { value: DisplayMode })
 export const SetTiltGravity = m('CounterSetTiltGravity', { value: S.Boolean })
 export const SoundPlayed = m('CounterSoundPlayed')
 
-export const Message = S.Union([PointerDown, PressedIncrement, PressedDecrement, ClickedReset, SetDisplayMode, SetTiltGravity, SoundPlayed])
+export const Message = S.Union([PointerDown, PressedIncrement, PressedDecrement, PressCancelled, ClickedReset, SetDisplayMode, SetTiltGravity, SoundPlayed])
 export type Message = typeof Message.Type
 
-export const init: Model = { count: 0, fontSize: 3, holding: false, pointerDownTime: 0, pressedButton: null, displayMode: 'number', tiltGravity: false }
+export const init: Model = { count: 0, fontSize: 3, holding: false, pointerDownTime: 0, pressedButton: null, presses: [], displayMode: 'number', tiltGravity: false }
 
 const calcFontSize = (duration: number): number => {
   const safeDuration = Number.isFinite(duration) ? Math.max(0, duration) : 0
@@ -79,8 +83,17 @@ const calcFontSize = (duration: number): number => {
   return Math.min(20, Math.max(3, Math.round(3 + (s / 2) * 17)))
 }
 
-const shouldCompletePress = (model: Model, button: PressedButton | undefined): boolean =>
-  button === undefined || model.pressedButton === button
+const withPresses = (model: Model, presses: readonly Press[]): Model => {
+  const last = presses.at(-1)
+  return { ...model, presses, holding: presses.length > 0, pressedButton: last?.button ?? null, pointerDownTime: last?.timeStamp ?? model.pointerDownTime }
+}
+
+const shouldCompletePress = (model: Model, button: PressedButton | undefined, pointerId: number | undefined, expected: PressedButton, duration: number): boolean => {
+  if (!Number.isFinite(duration) || duration < 0) return false
+  if (button !== undefined && button !== expected) return false
+  if (pointerId === undefined && button === undefined) return true
+  return model.presses.some(press => press.pointerId === (pointerId ?? 0) && press.button === expected)
+}
 
 export const parseBallCount = (value: string | null): number => {
   if (!value) return 0
@@ -108,24 +121,26 @@ export const update = (
       readonly [Model, ReadonlyArray<Command.Command<Message>>]
     >(),
     M.tagsExhaustive({
-      CounterPointerDown: (msg) => [
-        { ...model, holding: true, pointerDownTime: msg.timeStamp, pressedButton: msg.button },
-        [],
-      ],
+      CounterPointerDown: (msg) => {
+        const pointerId = msg.pointerId ?? 0
+        if (!Number.isSafeInteger(pointerId) || !Number.isFinite(msg.timeStamp) || model.presses.some(press => press.pointerId === pointerId)) return [model, []]
+        return [withPresses(model, [...model.presses, { pointerId, timeStamp: msg.timeStamp, button: msg.button }]), []]
+      },
       CounterPressedIncrement: (msg) => [
-        shouldCompletePress(model, msg.button)
-          ? { ...model, count: model.count + 1, fontSize: calcFontSize(msg.duration), holding: false, pressedButton: null }
+        shouldCompletePress(model, msg.button, msg.pointerId, 'inc', msg.duration)
+          ? { ...withPresses(model, model.presses.filter(press => press.pointerId !== (msg.pointerId ?? 0))), count: model.count + 1, fontSize: calcFontSize(msg.duration) }
           : model,
-        shouldCompletePress(model, msg.button) && !muted ? [click(SoundPlayed()), speak(numberToWord(model.count + 1, language), SoundPlayed(), { ...speech, lang: language })] : [],
+        shouldCompletePress(model, msg.button, msg.pointerId, 'inc', msg.duration) && !muted ? [click(SoundPlayed()), speak(numberToWord(model.count + 1, language), SoundPlayed(), { ...speech, lang: language })] : [],
       ],
       CounterPressedDecrement: (msg) => [
-        shouldCompletePress(model, msg.button)
-          ? { ...model, count: model.count - 1, fontSize: calcFontSize(msg.duration), holding: false, pressedButton: null }
+        shouldCompletePress(model, msg.button, msg.pointerId, 'dec', msg.duration)
+          ? { ...withPresses(model, model.presses.filter(press => press.pointerId !== (msg.pointerId ?? 0))), count: model.count - 1, fontSize: calcFontSize(msg.duration) }
           : model,
-        shouldCompletePress(model, msg.button) && !muted ? [click(SoundPlayed()), speak(numberToWord(model.count - 1, language), SoundPlayed(), { ...speech, lang: language })] : [],
+        shouldCompletePress(model, msg.button, msg.pointerId, 'dec', msg.duration) && !muted ? [click(SoundPlayed()), speak(numberToWord(model.count - 1, language), SoundPlayed(), { ...speech, lang: language })] : [],
       ],
+      CounterPressCancelled: (msg) => [withPresses(model, model.presses.filter(press => press.pointerId !== msg.pointerId)), []],
       CounterClickedReset: () => [
-        { ...model, count: 0 },
+        { ...withPresses(model, []), count: 0 },
         muted ? [] : [swoosh(SoundPlayed()), speak(numberToWord(0, language), SoundPlayed(), { ...speech, lang: language })],
       ],
       CounterSetDisplayMode: (msg) => [
@@ -179,6 +194,10 @@ interface BallState {
 interface BallDragState {
   ball: BallState
   captureElement: HTMLElement | null
+  clientX: number
+  clientY: number
+  startTimeStamp: number
+  nativePointerId?: number
   offsetX: number
   offsetY: number
   lastX: number
@@ -671,6 +690,9 @@ export const mountCounterBalls = (element: Element): Stream.Stream<never> =>
             state.drags.set(point.id, {
               ball,
               captureElement,
+              clientX: point.clientX,
+              clientY: point.clientY,
+              startTimeStamp: point.timeStamp,
               offsetX: local.x - ball.x,
               offsetY: local.y - ball.y,
               lastX: ball.x,
@@ -693,6 +715,8 @@ export const mountCounterBalls = (element: Element): Stream.Stream<never> =>
             const drag = state.drags.get(point.id)
             if (!drag) return false
             const local = localPoint(point)
+            drag.clientX = point.clientX
+            drag.clientY = point.clientY
             drag.ball.x = local.x - drag.offsetX
             drag.ball.y = local.y - drag.offsetY
             constrainToBounds(drag.ball, state.w, state.h)
@@ -736,26 +760,35 @@ export const mountCounterBalls = (element: Element): Stream.Stream<never> =>
               drag.ball.vy = 0
             }
             cancelBallDrag(state, drag.ball)
+            for (const [alias, nativeId] of nativePointers) if (nativeId === point.id) nativePointers.delete(alias)
             return true
           }
-          // iOS has historically delivered captured pointer events to the wrong
-          // element. Use its native touch stream for fingers and reserve pointer
-          // capture for mouse/pen input, capturing on the ball that was pressed.
-          const useTouchEvents = typeof TouchEvent !== 'undefined'
+          // Adopt native touches when they arrive. Merely exposing TouchEvent
+          // does not mean a touchscreen sends that stream.
+          const touchPointers = new Set<number>()
+          const nativePointers = new Map<number, number>()
           const onPointerDown = (event: PointerEvent): void => {
-            if (event.pointerType === 'touch' && useTouchEvents) return
-            if (event.pointerType === 'mouse' && event.button !== 0) return
-            const target = (event.target as Element | null)?.closest('.ball') as HTMLElement | null
+            if (event.button !== 0) return
+            const target = event.target instanceof Element ? event.target.closest<HTMLElement>('.ball') : null
             if (!target) return
+            if (event.pointerType === 'touch') {
+              const aliased = nativePointers.get(event.pointerId)
+              if (aliased !== undefined && state.drags.has(aliased)) return
+              nativePointers.delete(event.pointerId)
+              const native = [...state.drags].find(([id, drag]) => id < 0 && drag.nativePointerId === undefined && drag.ball.el === target && Math.hypot(drag.clientX - event.clientX, drag.clientY - event.clientY) <= 1 && Math.abs(drag.startTimeStamp - event.timeStamp) <= 40)
+              if (native) { native[1].nativePointerId = event.pointerId; nativePointers.set(event.pointerId, native[0]); return }
+            }
             if (startDrag(target, {
               id: event.pointerId,
               clientX: event.clientX,
               clientY: event.clientY,
               timeStamp: event.timeStamp,
-            }, target)) event.preventDefault()
+            }, event.pointerType === 'touch' ? null : target)) {
+              if (event.pointerType === 'touch') touchPointers.add(event.pointerId)
+              event.preventDefault()
+            }
           }
           const onPointerMove = (event: PointerEvent): void => {
-            if (event.pointerType === 'touch' && useTouchEvents) return
             if (moveHeldBall({
               id: event.pointerId,
               clientX: event.clientX,
@@ -764,13 +797,21 @@ export const mountCounterBalls = (element: Element): Stream.Stream<never> =>
             })) event.preventDefault()
           }
           const onPointerFinish = (event: PointerEvent): void => {
-            if (event.pointerType === 'touch' && useTouchEvents) return
-            if (finishDrag({
+            const nativeId = nativePointers.get(event.pointerId)
+            if (nativeId !== undefined) {
+              if (event.type === 'lostpointercapture') return
+              nativePointers.delete(event.pointerId)
+              if (event.type === 'pointercancel') finishDrag({ id: nativeId, clientX: event.clientX, clientY: event.clientY, timeStamp: event.timeStamp }, true)
+              return
+            }
+            const handled = finishDrag({
               id: event.pointerId,
               clientX: event.clientX,
               clientY: event.clientY,
               timeStamp: event.timeStamp,
-            }, event.type === 'pointercancel')) event.preventDefault()
+            }, event.type !== 'pointerup')
+            touchPointers.delete(event.pointerId)
+            if (handled) event.preventDefault()
           }
           const touchId = (identifier: number): number => -identifier - 1
           const eachChangedTouch = (event: TouchEvent, fn: (touch: Touch) => boolean): boolean => {
@@ -788,7 +829,25 @@ export const mountCounterBalls = (element: Element): Stream.Stream<never> =>
             timeStamp: event.timeStamp,
           })
           const onTouchStart = (event: TouchEvent): void => {
-            if (eachChangedTouch(event, touch => startDrag(touch.target, touchPoint(touch, event), null))) {
+            if (eachChangedTouch(event, touch => {
+              const ballElement = touch.target instanceof Element ? touch.target.closest('.ball') : null
+              const pointerId = [...touchPointers].find(id => {
+                const drag = state.drags.get(id)
+                return drag?.ball.el === ballElement && Math.hypot(drag.clientX - touch.clientX, drag.clientY - touch.clientY) <= 1 && Math.abs(drag.startTimeStamp - event.timeStamp) <= 40
+              })
+              if (pointerId !== undefined) {
+                const drag = state.drags.get(pointerId)!
+                const id = touchId(touch.identifier)
+                state.drags.delete(pointerId)
+                touchPointers.delete(pointerId)
+                state.drags.set(id, drag)
+                drag.ball.pointerId = id
+                drag.nativePointerId = pointerId
+                nativePointers.set(pointerId, id)
+                return true
+              }
+              return startDrag(touch.target, touchPoint(touch, event), null)
+            })) {
               event.preventDefault()
             }
           }
@@ -801,6 +860,16 @@ export const mountCounterBalls = (element: Element): Stream.Stream<never> =>
           const onTouchCancel = (event: TouchEvent): void => {
             if (eachChangedTouch(event, touch => finishDrag(touchPoint(touch, event), true))) event.preventDefault()
           }
+          const cancelDrags = (): void => {
+            for (const drag of [...state.drags.values()]) {
+              drag.ball.vx = 0
+              drag.ball.vy = 0
+              cancelBallDrag(state, drag.ball)
+            }
+            touchPointers.clear()
+            nativePointers.clear()
+          }
+          const onVisibility = (): void => { if (parent.ownerDocument.hidden) cancelDrags() }
           const onOrientation = (event: DeviceOrientationEvent): void => {
             if (!state.tiltGravity) return
             const gravity = orientationGravity(event.beta, event.gamma, currentScreenAngle())
@@ -811,13 +880,16 @@ export const mountCounterBalls = (element: Element): Stream.Stream<never> =>
             state.gravityY = Math.abs(nextY) < ORIENTATION_DEAD_ZONE ? 0 : nextY
           }
           parent.addEventListener('pointerdown', onPointerDown)
-          parent.addEventListener('pointermove', onPointerMove)
-          parent.addEventListener('pointerup', onPointerFinish)
-          parent.addEventListener('pointercancel', onPointerFinish)
+          parent.addEventListener('lostpointercapture', onPointerFinish)
+          parent.ownerDocument.addEventListener('pointermove', onPointerMove, { capture: true, passive: false })
+          parent.ownerDocument.addEventListener('pointerup', onPointerFinish, true)
+          parent.ownerDocument.addEventListener('pointercancel', onPointerFinish, true)
           parent.addEventListener('touchstart', onTouchStart, { passive: false })
-          parent.addEventListener('touchmove', onTouchMove, { passive: false })
-          parent.addEventListener('touchend', onTouchEnd, { passive: false })
-          parent.addEventListener('touchcancel', onTouchCancel, { passive: false })
+          parent.ownerDocument.addEventListener('touchmove', onTouchMove, { capture: true, passive: false })
+          parent.ownerDocument.addEventListener('touchend', onTouchEnd, { capture: true, passive: false })
+          parent.ownerDocument.addEventListener('touchcancel', onTouchCancel, { capture: true, passive: false })
+          parent.ownerDocument.addEventListener('visibilitychange', onVisibility)
+          window.addEventListener('blur', cancelDrags)
           window.addEventListener('deviceorientation', onOrientation)
           const loop = (now: number) => {
             if (!state.running) return
@@ -827,25 +899,28 @@ export const mountCounterBalls = (element: Element): Stream.Stream<never> =>
           state.id = requestAnimationFrame(loop)
           return {
             parent, state, ro, mo, onPointerDown, onPointerMove, onPointerFinish,
-            onTouchStart, onTouchMove, onTouchEnd, onTouchCancel, onOrientation,
+            onTouchStart, onTouchMove, onTouchEnd, onTouchCancel, onOrientation, cancelDrags, onVisibility,
           }
         }),
         ({
           parent, state, ro, mo, onPointerDown, onPointerMove, onPointerFinish,
-          onTouchStart, onTouchMove, onTouchEnd, onTouchCancel, onOrientation,
+          onTouchStart, onTouchMove, onTouchEnd, onTouchCancel, onOrientation, cancelDrags, onVisibility,
         }) => Effect.sync(() => {
           state.running = false
           cancelAnimationFrame(state.id)
           ro.disconnect()
           mo.disconnect()
           parent.removeEventListener('pointerdown', onPointerDown)
-          parent.removeEventListener('pointermove', onPointerMove)
-          parent.removeEventListener('pointerup', onPointerFinish)
-          parent.removeEventListener('pointercancel', onPointerFinish)
+          parent.removeEventListener('lostpointercapture', onPointerFinish)
+          parent.ownerDocument.removeEventListener('pointermove', onPointerMove, true)
+          parent.ownerDocument.removeEventListener('pointerup', onPointerFinish, true)
+          parent.ownerDocument.removeEventListener('pointercancel', onPointerFinish, true)
           parent.removeEventListener('touchstart', onTouchStart)
-          parent.removeEventListener('touchmove', onTouchMove)
-          parent.removeEventListener('touchend', onTouchEnd)
-          parent.removeEventListener('touchcancel', onTouchCancel)
+          parent.ownerDocument.removeEventListener('touchmove', onTouchMove, true)
+          parent.ownerDocument.removeEventListener('touchend', onTouchEnd, true)
+          parent.ownerDocument.removeEventListener('touchcancel', onTouchCancel, true)
+          parent.ownerDocument.removeEventListener('visibilitychange', onVisibility)
+          window.removeEventListener('blur', cancelDrags)
           window.removeEventListener('deviceorientation', onOrientation)
           state.rendered.forEach(ball => {
             cancelBallDrag(state, ball)
@@ -859,6 +934,135 @@ export const mountCounterBalls = (element: Element): Stream.Stream<never> =>
     }),
   )
 
+export const mountCounterPresses = (element: Element): Stream.Stream<Message> =>
+  Stream.callback<Message>(queue => Effect.gen(function* () {
+    yield* Effect.acquireRelease(
+      Effect.sync(() => {
+        const root = element as HTMLElement
+        const presses = new Map<number, { button: PressedButton; element: HTMLElement; timeStamp: number; captured: boolean; pointerId: number; touchPointer: boolean; touchInput: boolean; clientX: number; clientY: number; nativePointerId?: number }>()
+        const nativePointers = new Map<number, number>()
+        const suppressClicks = new Map<HTMLElement, { time: number; touch: boolean }>()
+        const start = (pointerId: number, target: EventTarget | null, timeStamp: number, capture: boolean, touchPointer = false, clientX = 0, clientY = 0): boolean => {
+          if (!(target instanceof Element) || presses.has(pointerId)) return false
+          const buttonElement = target.closest<HTMLElement>('[data-counter-button]')
+          const button = buttonElement?.dataset.counterButton
+          if (!buttonElement || !root.contains(buttonElement) || (button !== 'inc' && button !== 'dec')) return false
+          let captured = false
+          if (capture) {
+            try { buttonElement.setPointerCapture(pointerId); captured = true } catch { /* Document listeners keep uncaptured presses alive. */ }
+          }
+          presses.set(pointerId, { button, element: buttonElement, timeStamp, captured, pointerId, touchPointer, touchInput: !capture, clientX, clientY })
+          Queue.offerUnsafe(queue, PointerDown({ pointerId, timeStamp, button }))
+          return true
+        }
+        const finish = (pointerId: number, timeStamp: number, cancelled: boolean): boolean => {
+          const press = presses.get(pointerId)
+          if (!press) return false
+          presses.delete(pointerId)
+          for (const [alias, nativeId] of nativePointers) if (nativeId === pointerId) nativePointers.delete(alias)
+          suppressClicks.set(press.element, { time: Date.now(), touch: press.touchInput })
+          if (press.captured) {
+            try { if (press.element.hasPointerCapture(press.pointerId)) press.element.releasePointerCapture(press.pointerId) } catch { /* WebKit may already have released capture. */ }
+          }
+          if (cancelled) Queue.offerUnsafe(queue, PressCancelled({ pointerId: press.pointerId }))
+          else {
+            warmAudio()
+            const payload = { pointerId: press.pointerId, duration: Math.max(0, timeStamp - press.timeStamp), button: press.button }
+            Queue.offerUnsafe(queue, press.button === 'inc' ? PressedIncrement(payload) : PressedDecrement(payload))
+          }
+          return true
+        }
+        const onPointerDown = (event: PointerEvent): void => {
+          if (event.button !== 0) return
+          if (event.pointerType === 'touch') {
+            if (nativePointers.has(event.pointerId)) return
+            const button = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-counter-button]') : null
+            const native = [...presses].find(([id, press]) => id < 0 && press.nativePointerId === undefined && press.element === button && Math.hypot(press.clientX - event.clientX, press.clientY - event.clientY) <= 1 && Math.abs(press.timeStamp - event.timeStamp) <= 40)
+            if (native) { native[1].nativePointerId = event.pointerId; nativePointers.set(event.pointerId, native[0]); return }
+          }
+          if ((event.pointerType === 'mouse' || event.pointerType === 'pen') && event.target instanceof Element) {
+            const button = event.target.closest<HTMLElement>('[data-counter-button]')
+            if (button) suppressClicks.delete(button)
+          }
+          start(event.pointerId, event.target, event.timeStamp, event.pointerType !== 'touch', event.pointerType === 'touch', event.clientX, event.clientY)
+        }
+        const onPointerFinish = (event: PointerEvent): void => {
+          const nativeId = nativePointers.get(event.pointerId)
+          if (nativeId !== undefined) {
+            if (event.type === 'lostpointercapture') return
+            nativePointers.delete(event.pointerId)
+            if (event.type !== 'pointerup') finish(nativeId, event.timeStamp, true)
+            return
+          }
+          if (finish(event.pointerId, event.timeStamp, event.type !== 'pointerup') && event.pointerType === 'touch') event.preventDefault()
+        }
+        const eachTouch = (event: TouchEvent, fn: (touch: Touch) => boolean): boolean => {
+          let handled = false
+          for (let index = 0; index < event.changedTouches.length; index++) {
+            const touch = event.changedTouches.item(index)
+            if (touch && fn(touch)) handled = true
+          }
+          return handled
+        }
+        const onTouchStart = (event: TouchEvent): void => {
+          eachTouch(event, touch => {
+            const id = -touch.identifier - 1
+            if (presses.has(id)) return false
+            const button = touch.target instanceof Element ? touch.target.closest<HTMLElement>('[data-counter-button]') : null
+            const pointer = [...presses].find(([, press]) => press.touchPointer && press.element === button && Math.hypot(press.clientX - touch.clientX, press.clientY - touch.clientY) <= 1 && Math.abs(press.timeStamp - event.timeStamp) <= 40)
+            if (pointer) {
+              presses.delete(pointer[0])
+              presses.set(id, { ...pointer[1], touchPointer: false, nativePointerId: pointer[0] })
+              nativePointers.set(pointer[0], id)
+              return true
+            }
+            return start(id, touch.target, event.timeStamp, false, false, touch.clientX, touch.clientY)
+          })
+        }
+        const onTouchFinish = (event: TouchEvent): void => {
+          if (eachTouch(event, touch => finish(-touch.identifier - 1, event.timeStamp, event.type === 'touchcancel'))) event.preventDefault()
+        }
+        const onClick = (event: MouseEvent): void => {
+          const button = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-counter-button]') : null
+          const capabilities = (event as MouseEvent & { sourceCapabilities?: { firesTouchEvents: boolean } }).sourceCapabilities
+          const release = button && suppressClicks.get(button)
+          const pendingTouch = button && [...presses.values()].some(press => press.element === button && press.touchInput)
+          if (event.detail > 0 && ((pendingTouch && capabilities?.firesTouchEvents !== false) || (release && (!release.touch || capabilities?.firesTouchEvents !== false) && Date.now() - release.time < 800))) {
+            event.preventDefault()
+            event.stopImmediatePropagation()
+          } else if (button) warmAudio()
+        }
+        const cancelAll = (): void => { for (const pointerId of [...presses.keys()]) finish(pointerId, 0, true) }
+        const onVisibility = (): void => { if (root.ownerDocument.hidden) cancelAll() }
+        root.addEventListener('pointerdown', onPointerDown)
+        root.addEventListener('lostpointercapture', onPointerFinish)
+        root.ownerDocument.addEventListener('pointerup', onPointerFinish, { capture: true, passive: false })
+        root.ownerDocument.addEventListener('pointercancel', onPointerFinish, true)
+        root.addEventListener('touchstart', onTouchStart, { passive: true })
+        root.ownerDocument.addEventListener('touchend', onTouchFinish, { capture: true, passive: false })
+        root.ownerDocument.addEventListener('touchcancel', onTouchFinish, { capture: true, passive: false })
+        root.addEventListener('click', onClick, { capture: true })
+        window.addEventListener('blur', cancelAll)
+        root.ownerDocument.addEventListener('visibilitychange', onVisibility)
+        return { onPointerDown, onPointerFinish, onTouchStart, onTouchFinish, onClick, cancelAll, onVisibility }
+      }),
+      ({ onPointerDown, onPointerFinish, onTouchStart, onTouchFinish, onClick, cancelAll, onVisibility }) => Effect.sync(() => {
+        element.removeEventListener('pointerdown', onPointerDown as EventListener)
+        element.removeEventListener('lostpointercapture', onPointerFinish as EventListener)
+        element.ownerDocument.removeEventListener('pointerup', onPointerFinish, true)
+        element.ownerDocument.removeEventListener('pointercancel', onPointerFinish, true)
+        element.removeEventListener('touchstart', onTouchStart as EventListener)
+        element.ownerDocument.removeEventListener('touchend', onTouchFinish, true)
+        element.ownerDocument.removeEventListener('touchcancel', onTouchFinish, true)
+        element.removeEventListener('click', onClick as EventListener, { capture: true })
+        window.removeEventListener('blur', cancelAll)
+        element.ownerDocument.removeEventListener('visibilitychange', onVisibility)
+        cancelAll()
+      }),
+    )
+    return yield* Effect.never
+  }))
+
 export const view = (model: Model, language: string = 'en') => {
   const h = html<Message>()
 
@@ -868,20 +1072,12 @@ export const view = (model: Model, language: string = 'en') => {
     return model.count.toString()
   }
 
-  const btnAttrs = (msg: (d: number, btn: 'inc' | 'dec') => Message, btn: 'inc' | 'dec') => [
-    h.Class(`btn btn-primary counter-size-btn${model.pressedButton === btn ? ' counter-size-btn--charging' : ''}`),
-    h.Attribute('aria-pressed', String(model.pressedButton === btn)),
-    h.OnPointerDown((_pt, _btn, _sx, _sy, ts) => {
-      return O.some(PointerDown({ timeStamp: ts, button: btn }))
-    }),
-    h.OnPointerUp((_sx, _sy, _pt, ts) => {
-      return O.some(msg(ts - model.pointerDownTime, btn))
-    }),
-    h.OnPointerLeave(() => {
-      if (model.pressedButton !== btn) return O.none()
-      const d = performance.now() - model.pointerDownTime
-      return O.some(msg(d, btn))
-    }),
+  const btnAttrs = (msg: Message, btn: PressedButton) => [
+    h.Class(`btn btn-primary counter-size-btn${model.presses.some(press => press.button === btn) ? ' counter-size-btn--charging' : ''}`),
+    h.Attribute('aria-pressed', String(model.presses.some(press => press.button === btn))),
+    h.Attribute('data-counter-button', btn),
+    h.Attribute('data-multitouch-owned', 'true'),
+    h.OnClick(msg),
   ] as const
 
   return h.div(
@@ -889,9 +1085,9 @@ export const view = (model: Model, language: string = 'en') => {
     [
       h.div([h.Class('card counter-card')], [
         h.h1([h.Class('title')], [t('counterTitle', language)]),
-        h.div([h.Class('buttons counter-actions')], [
+        h.div([h.Class('buttons counter-actions'), h.OnMount({ name: 'counterPresses', f: mountCounterPresses })], [
           h.button(
-            btnAttrs((d, btn) => PressedDecrement({ duration: d, button: btn }), 'dec'),
+            btnAttrs(PressedDecrement({ duration: 0 }), 'dec'),
             ['-1'],
           ),
           h.button(
@@ -899,7 +1095,7 @@ export const view = (model: Model, language: string = 'en') => {
             [t('reset', language)],
           ),
           h.button(
-            btnAttrs((d, btn) => PressedIncrement({ duration: d, button: btn }), 'inc'),
+            btnAttrs(PressedIncrement({ duration: 0 }), 'inc'),
             ['+1'],
           ),
         ]),

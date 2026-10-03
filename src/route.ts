@@ -5,6 +5,7 @@ export const PageLanding = ts('PageLanding')
 export const PageCounter = ts('PageCounter')
 export const PageFindIt = ts('PageFindIt')
 export const PageBubbles = ts('PageBubbles')
+export const PageBubbles3d = ts('PageBubbles3d')
 export const PageDraw = ts('PageDraw')
 export const PageMusicBox = ts('PageMusicBox')
 export const PageMemory = ts('PageMemory')
@@ -41,5 +42,6 @@ export const Page = S.Union([
   PageTalkingClock,
   PageGrowingNumbers,
   PageShapeWorkshop,
+  PageBubbles3d,
 ])
 export type Page = typeof Page.Type

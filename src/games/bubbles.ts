@@ -1,9 +1,10 @@
-import { Effect, Match as M, MutableRef, Option as O, Queue, Schema as S, Stream } from 'effect'
+import { Effect, Match as M, Queue, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
-import { pop, chime } from '../audio'
+import { pop, chime, warmAudio } from '../audio'
 import { speak } from '../speech'
+import { bubbleSweepStream } from './bubblesSweepRuntime'
 import { t, tf, type StringKey } from '../i18n'
 
 const Bubble = S.Struct({ id: S.Number, color: S.String, popped: S.Boolean, size: S.Number, shape: S.String })
@@ -52,7 +53,6 @@ const SHAPE_NAME_KEYS: Record<string, StringKey> = {
 const getColorName = (color: string): StringKey => COLOR_NAME_KEYS[color] ?? 'colorRainbow'
 const getShapeName = (shape: string): StringKey => SHAPE_NAME_KEYS[shape] ?? 'shapeCircle'
 
-const isPointerDown = MutableRef.make(false)
 const MIN_BUBBLE_BASE = 40
 const CLEAR_POP_INTERVAL_MS = 120
 
@@ -397,6 +397,148 @@ export const update = (
     }),
   )
 
+export const mountColorSelector = (element: Element): Stream.Stream<Message> =>
+  Stream.callback<Message>(queue => Effect.gen(function* () {
+    yield* Effect.acquireRelease(
+      Effect.sync(() => {
+        const root = element as HTMLElement
+        const presses = new Map<number, { startTime: number; timeStamp: number; color: string; button: HTMLElement; captured: boolean; pointerId: number; touchPointer: boolean; touchInput: boolean; clientX: number; clientY: number; nativePointerId?: number }>()
+        const nativePointers = new Map<number, number>()
+        const suppressClicks = new Map<HTMLElement, { time: number; touch: boolean }>()
+        const frame = { id: 0 }
+        const paintCharge = (): void => {
+          for (const button of root.querySelectorAll<HTMLElement>('.color-btn')) {
+            const active = [...presses.values()].filter(press => press.button === button)
+            button.classList.toggle('color-btn--charging', active.length > 0)
+            if (active.length === 0) button.style.removeProperty('--charge-pct')
+            else button.style.setProperty('--charge-pct', `${Math.min((performance.now() - Math.min(...active.map(press => press.startTime))) / 3000, 1) * 100}%`)
+          }
+        }
+        const animate = (): void => {
+          paintCharge()
+          frame.id = presses.size > 0 ? requestAnimationFrame(animate) : 0
+        }
+        const start = (pointerId: number, target: EventTarget | null, timeStamp: number, capture: boolean, touchPointer = false, clientX = 0, clientY = 0): void => {
+          if (!(target instanceof Element) || presses.has(pointerId)) return
+          const button = target.closest<HTMLElement>('.color-btn')
+          const color = button?.dataset.color
+          if (!button || !root.contains(button) || !color) return
+          let captured = false
+          if (capture) {
+            try { root.setPointerCapture(pointerId); captured = true } catch { /* The release listeners also work without capture. */ }
+          }
+          presses.set(pointerId, { startTime: performance.now(), timeStamp, color, button, captured, pointerId, touchPointer, touchInput: !capture, clientX, clientY })
+          paintCharge()
+          if (frame.id === 0) frame.id = requestAnimationFrame(animate)
+        }
+        const finish = (pointerId: number, cancelled: boolean): boolean => {
+          const press = presses.get(pointerId)
+          if (!press) return false
+          presses.delete(pointerId)
+          for (const [alias, nativeId] of nativePointers) if (nativeId === pointerId) nativePointers.delete(alias)
+          suppressClicks.set(press.button, { time: Date.now(), touch: press.touchInput })
+          if (press.captured) {
+            try { if (root.hasPointerCapture(press.pointerId)) root.releasePointerCapture(press.pointerId) } catch { /* Capture can already be gone after cancellation. */ }
+          }
+          paintCharge()
+          if (presses.size === 0) { cancelAnimationFrame(frame.id); frame.id = 0 }
+          if (!cancelled) {
+            warmAudio()
+            Queue.offerUnsafe(queue, ClickedColor({ color: press.color, duration: Math.max(0, performance.now() - press.startTime) }))
+          }
+          return true
+        }
+        const onPointerDown = (event: PointerEvent): void => {
+          if (event.button !== 0) return
+          if (event.pointerType === 'touch') {
+            if (nativePointers.has(event.pointerId)) return
+            const button = event.target instanceof Element ? event.target.closest<HTMLElement>('.color-btn') : null
+            const native = [...presses].find(([id, press]) => id < 0 && press.nativePointerId === undefined && press.button === button && Math.hypot(press.clientX - event.clientX, press.clientY - event.clientY) <= 1 && Math.abs(press.timeStamp - event.timeStamp) <= 40)
+            if (native) { native[1].nativePointerId = event.pointerId; nativePointers.set(event.pointerId, native[0]); return }
+          }
+          if ((event.pointerType === 'mouse' || event.pointerType === 'pen') && event.target instanceof Element) {
+            const button = event.target.closest<HTMLElement>('.color-btn')
+            if (button) suppressClicks.delete(button)
+          }
+          start(event.pointerId, event.target, event.timeStamp, event.pointerType !== 'touch', event.pointerType === 'touch', event.clientX, event.clientY)
+        }
+        const onPointerFinish = (event: PointerEvent): void => {
+          const nativeId = nativePointers.get(event.pointerId)
+          if (nativeId !== undefined) {
+            if (event.type === 'lostpointercapture') return
+            nativePointers.delete(event.pointerId)
+            if (event.type !== 'pointerup') finish(nativeId, true)
+            return
+          }
+          if (finish(event.pointerId, event.type !== 'pointerup') && event.pointerType === 'touch') event.preventDefault()
+        }
+        const onTouchStart = (event: TouchEvent): void => {
+          for (let index = 0; index < event.changedTouches.length; index++) {
+            const touch = event.changedTouches.item(index)
+            if (!touch) continue
+            const id = -touch.identifier - 1
+            if (presses.has(id)) continue
+            const button = touch.target instanceof Element ? touch.target.closest<HTMLElement>('.color-btn') : null
+            const pointer = [...presses].find(([, press]) => press.touchPointer && press.button === button && Math.hypot(press.clientX - touch.clientX, press.clientY - touch.clientY) <= 1 && Math.abs(press.timeStamp - event.timeStamp) <= 40)
+            if (pointer) {
+              presses.delete(pointer[0])
+              presses.set(id, { ...pointer[1], touchPointer: false, nativePointerId: pointer[0] })
+              nativePointers.set(pointer[0], id)
+            } else start(id, touch.target, event.timeStamp, false, false, touch.clientX, touch.clientY)
+          }
+        }
+        const onTouchFinish = (event: TouchEvent): void => {
+          let handled = false
+          for (let index = 0; index < event.changedTouches.length; index++) {
+            const touch = event.changedTouches.item(index)
+            if (touch && finish(-touch.identifier - 1, event.type === 'touchcancel')) handled = true
+          }
+          if (handled) event.preventDefault()
+        }
+        const onClick = (event: MouseEvent): void => {
+          const button = event.target instanceof Element ? event.target.closest<HTMLElement>('.color-btn') : null
+          const capabilities = (event as MouseEvent & { sourceCapabilities?: { firesTouchEvents: boolean } }).sourceCapabilities
+          const release = button && suppressClicks.get(button)
+          const pendingTouch = button && [...presses.values()].some(press => press.button === button && press.touchInput)
+          if (event.detail > 0 && ((pendingTouch && capabilities?.firesTouchEvents !== false) || (release && (!release.touch || capabilities?.firesTouchEvents !== false) && Date.now() - release.time < 800))) {
+            event.preventDefault()
+            event.stopImmediatePropagation()
+          } else if (button) warmAudio()
+        }
+        const cancelAll = (): void => { for (const pointerId of [...presses.keys()]) finish(pointerId, true) }
+        const onVisibility = (): void => { if (root.ownerDocument.hidden) cancelAll() }
+        root.addEventListener('pointerdown', onPointerDown)
+        root.addEventListener('lostpointercapture', onPointerFinish)
+        root.ownerDocument.addEventListener('pointerup', onPointerFinish, { capture: true, passive: false })
+        root.ownerDocument.addEventListener('pointercancel', onPointerFinish, true)
+        root.addEventListener('touchstart', onTouchStart, { passive: true })
+        root.ownerDocument.addEventListener('touchend', onTouchFinish, { capture: true, passive: false })
+        root.ownerDocument.addEventListener('touchcancel', onTouchFinish, { capture: true, passive: false })
+        root.addEventListener('click', onClick, { capture: true })
+        window.addEventListener('blur', cancelAll)
+        root.ownerDocument.addEventListener('visibilitychange', onVisibility)
+        return { onPointerDown, onPointerFinish, onTouchStart, onTouchFinish, onClick, cancelAll, onVisibility }
+      }),
+      ({ onPointerDown, onPointerFinish, onTouchStart, onTouchFinish, onClick, cancelAll, onVisibility }) => Effect.sync(() => {
+        element.removeEventListener('pointerdown', onPointerDown as EventListener)
+        element.removeEventListener('lostpointercapture', onPointerFinish as EventListener)
+        element.ownerDocument.removeEventListener('pointerup', onPointerFinish, true)
+        element.ownerDocument.removeEventListener('pointercancel', onPointerFinish, true)
+        element.removeEventListener('touchstart', onTouchStart as EventListener)
+        element.ownerDocument.removeEventListener('touchend', onTouchFinish, true)
+        element.ownerDocument.removeEventListener('touchcancel', onTouchFinish, true)
+        element.removeEventListener('click', onClick as EventListener, { capture: true })
+        window.removeEventListener('blur', cancelAll)
+        element.ownerDocument.removeEventListener('visibilitychange', onVisibility)
+        cancelAll()
+      }),
+    )
+    return yield* Effect.never
+  }))
+
+export const mountBubbleSweep = (element: Element): Stream.Stream<Message> =>
+  bubbleSweepStream(element, id => ClickedPop({ id }))
+
 export const view = (model: Model, language: string = 'en') => {
   const h = html<Message>()
   const visibleShapes = SHAPE_PAGES[model.shapePage] ?? SHAPE_PAGES[0]
@@ -414,8 +556,7 @@ export const view = (model: Model, language: string = 'en') => {
                 h.button(
                   [
                     h.Class(s === model.selectedShape ? 'shape-btn shape-btn--active' : 'shape-btn'),
-                    h.OnPointerUp(() => O.some(SetSelectedShape({ value: s }))),
-                    h.OnKeyUpPreventDefault((key) => key === 'Enter' || key === ' ' ? O.some(SetSelectedShape({ value: s })) : O.none()),
+                    h.OnClick(SetSelectedShape({ value: s })),
                     h.Attribute('aria-pressed', String(s === model.selectedShape)),
                     h.Attribute('type', 'button'),
                     h.Key(s),
@@ -426,8 +567,7 @@ export const view = (model: Model, language: string = 'en') => {
               h.button(
                 [
                   h.Class('shape-btn shape-btn--next'),
-                  h.OnPointerUp(() => O.some(NextShapePage())),
-                  h.OnKeyUpPreventDefault((key) => key === 'Enter' || key === ' ' ? O.some(NextShapePage()) : O.none()),
+                  h.OnClick(NextShapePage()),
                   h.Attribute('type', 'button'),
                   h.Key('next-shape-page'),
                 ],
@@ -436,69 +576,7 @@ export const view = (model: Model, language: string = 'en') => {
             ]),
           ])
           : null,
-        h.div([h.Class('color-selector'), h.Key('color-selector'), h.OnMount({
-          name: 'colorSelector',
-          f: (element) => Stream.callback<Message>(queue =>
-            Effect.gen(function* () {
-              yield* Effect.acquireRelease(
-                Effect.sync(() => {
-                  const el = element as HTMLElement
-                  const colorMap = new Map<number, { startTime: number; color: string; btn: HTMLElement; frameId: number }>()
-
-                  const onDown = (e: PointerEvent): void => {
-                    if (!(e.target instanceof HTMLElement)) return
-                    const target = e.target
-                    const colorBtn = target.closest('.color-btn')
-                    if (!colorBtn) return
-                    const btn = colorBtn as HTMLElement
-                    const color = btn.getAttribute('data-color') ?? ''
-                    if (!color) return
-                    el.setPointerCapture(e.pointerId)
-                    const startTime = performance.now()
-                    btn.classList.add('color-btn--charging')
-                    btn.style.setProperty('--charge-pct', '0%')
-                    const updateCharge = (): void => {
-                      const elapsed = performance.now() - startTime
-                      const pct = Math.min(elapsed / 3000, 1) * 100
-                      btn.style.setProperty('--charge-pct', `${pct}%`)
-                      if (pct < 100) {
-                        const id = colorMap.get(e.pointerId)
-                        if (id) id.frameId = requestAnimationFrame(updateCharge)
-                      }
-                    }
-                    const frameId = requestAnimationFrame(updateCharge)
-                    colorMap.set(e.pointerId, { startTime, color, btn, frameId })
-                  }
-
-                  const onUp = (e: PointerEvent): void => {
-                    const entry = colorMap.get(e.pointerId)
-                    if (!entry) return
-                    colorMap.delete(e.pointerId)
-                    cancelAnimationFrame(entry.frameId)
-                    entry.btn.classList.remove('color-btn--charging')
-                    entry.btn.style.removeProperty('--charge-pct')
-                    el.releasePointerCapture(e.pointerId)
-                    Queue.offerUnsafe(queue, ClickedColor({ color: entry.color, duration: performance.now() - entry.startTime }))
-                  }
-
-                  el.addEventListener('pointerdown', onDown)
-                  el.addEventListener('pointerup', onUp)
-                  el.addEventListener('pointerleave', onUp)
-                  el.addEventListener('pointercancel', onUp)
-
-                  return { el, onDown, onUp }
-                }),
-                ({ el, onDown, onUp }) => Effect.sync(() => {
-                  el.removeEventListener('pointerdown', onDown)
-                  el.removeEventListener('pointerup', onUp)
-                  el.removeEventListener('pointerleave', onUp)
-                  el.removeEventListener('pointercancel', onUp)
-                }),
-              )
-              return yield* Effect.never
-            }),
-          ),
-        })], [
+        h.div([h.Class('color-selector'), h.Key('color-selector'), h.OnMount({ name: 'colorSelector', f: mountColorSelector })], [
           h.div([h.Class('color-selector-row')], [
             ...COLORS.slice(0, 5).map((c) =>
               h.button(
@@ -506,6 +584,9 @@ export const view = (model: Model, language: string = 'en') => {
                   h.Class(c === model.selectedColor ? 'color-btn color-btn--active' : 'color-btn'),
                   h.Style({ backgroundColor: c }),
                   h.Attribute('data-color', c),
+                  h.Attribute('data-multitouch-owned', 'true'),
+                  h.Attribute('aria-label', t(getColorName(c), language)),
+                  h.OnClick(ClickedColor({ color: c, duration: 0 })),
                   h.Key(c),
                 ],
                 [],
@@ -519,6 +600,9 @@ export const view = (model: Model, language: string = 'en') => {
                   h.Class(c === model.selectedColor ? 'color-btn color-btn--active' : 'color-btn'),
                   h.Style({ backgroundColor: c }),
                   h.Attribute('data-color', c),
+                  h.Attribute('data-multitouch-owned', 'true'),
+                  h.Attribute('aria-label', t(getColorName(c), language)),
+                  h.OnClick(ClickedColor({ color: c, duration: 0 })),
                   h.Key(c),
                 ],
                 [],
@@ -528,6 +612,9 @@ export const view = (model: Model, language: string = 'en') => {
               [
                 h.Class(model.selectedColor === 'rainbow' ? 'color-btn color-btn--active color-btn--rainbow' : 'color-btn color-btn--rainbow'),
                 h.Attribute('data-color', 'rainbow'),
+                h.Attribute('data-multitouch-owned', 'true'),
+                h.Attribute('aria-label', t('colorRainbow', language)),
+                h.OnClick(ClickedColor({ color: 'rainbow', duration: 0 })),
               ],
               ['🌈'],
             ),
@@ -555,7 +642,7 @@ export const view = (model: Model, language: string = 'en') => {
           h.Key('bubbles-container'),
           h.OnMount({
             name: 'bubblesAnim',
-            f: (element) => Stream.callback<never>(_queue =>
+            f: (element) => Stream.merge(mountBubbleSweep(element), Stream.callback<never>(_queue =>
               Effect.gen(function* () {
                 yield* Effect.acquireRelease(
                   Effect.sync(() => {
@@ -565,12 +652,6 @@ export const view = (model: Model, language: string = 'en') => {
                     running: true,
                       id: 0,
                     }
-
-                    const onPointerDown = (): void => { MutableRef.set(isPointerDown, true) }
-                    const onPointerUp = (): void => { MutableRef.set(isPointerDown, false) }
-                    document.addEventListener('pointerdown', onPointerDown)
-                    document.addEventListener('pointerup', onPointerUp)
-                    document.addEventListener('pointerleave', onPointerUp)
 
                     const observer = new MutationObserver((mutations) => {
                       for (const mutation of mutations) {
@@ -604,27 +685,22 @@ export const view = (model: Model, language: string = 'en') => {
                       state.id = requestAnimationFrame(loop)
                     }
                     state.id = requestAnimationFrame(loop)
-                    return { state, observer, onPointerDown, onPointerUp }
+                    return { state, observer }
                   }),
-                  ({ state, observer, onPointerDown, onPointerUp }) => Effect.sync(() => {
+                  ({ state, observer }) => Effect.sync(() => {
                     state.running = false
                     cancelAnimationFrame(state.id)
                     observer.disconnect()
-                    document.removeEventListener('pointerdown', onPointerDown)
-                    document.removeEventListener('pointerup', onPointerUp)
-                    document.removeEventListener('pointerleave', onPointerUp)
                   }),
                 )
                 return yield* Effect.never
               }),
-            ),
+            )),
           }),
         ], [
           ...model.bubbles.filter((b) => !b.popped).map((b) =>
             h.div(
               [
-                  h.OnPointerDown(() => O.some(ClickedPop({ id: b.id }))),
-                  h.OnPointerMove(() => MutableRef.get(isPointerDown) ? O.some(ClickedPop({ id: b.id })) : O.none()),
                   h.Class(b.shape !== 'circle' ? `bubble bubble--${b.shape}` : 'bubble'),
                   h.Style({
                     ...(b.color.startsWith('linear-gradient') ? { background: b.color } : { backgroundColor: b.color }),
