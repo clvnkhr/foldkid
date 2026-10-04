@@ -201,6 +201,46 @@ describe('styles.css invariants', () => {
     expect(focus).toContain('outline: 3px solid var(--text-primary)')
   })
 
+  it('keeps handwriting tracing scoped to the board with reachable native controls', () => {
+    const board = cssRule('.handwriting-board')
+    const choices = cssRule('.handwriting-choices')
+    const choice = cssRule('.handwriting-choice')
+    const controls = cssRule('.handwriting-mode, .handwriting-case')
+    const page = cssRule('.handwriting-page')
+
+    expect(board).toContain('touch-action: none')
+    expect(board).toContain('height: clamp(260px, 40dvh, 440px)')
+    expect(board).toContain('width: 100%')
+    expect(controls).toContain('touch-action: manipulation')
+    expect(controls).toContain('min-height: 44px')
+    expect(choice).toContain('min-height: 44px')
+    expect(choices).toContain('overflow-x: auto')
+    expect(choices).toContain('touch-action: pan-x pan-y')
+    expect(choices).toContain('-webkit-overflow-scrolling: touch')
+    expect(page).toContain('4.75rem')
+    expect(page).toContain('safe-area-inset-bottom')
+    expect(styles).toContain('.handwriting-board:focus-visible')
+    expect(styles).toContain('.handwriting-actions button:focus-visible')
+  })
+
+  it('keeps handwriting themes, translated controls, and reduced-motion completion readable', () => {
+    const card = cssRule('.handwriting-card')
+    const ink = cssRule('.handwriting-ink')
+    const completed = cssRule('.handwriting-board[data-complete="true"]')
+    const toolbar = cssRule('.handwriting-toolbar')
+
+    expect(card).toContain('background: var(--card-bg)')
+    expect(card).toContain('color: var(--text-primary)')
+    expect(toolbar).toContain('flex-wrap: wrap')
+    expect(cssRule('.handwriting-mode, .handwriting-case')).toContain('overflow-wrap: anywhere')
+    expect(cssRule('.handwriting-feedback')).toContain('overflow-wrap: anywhere')
+    expect(ink).toContain('stroke-linecap: round')
+    expect(ink).not.toMatch(/(?:^|;)\s*stroke\s*:/)
+    expect(completed).toContain('border-color: var(--number-color)')
+    expect(styles).toMatch(/@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{\s*\.handwriting-mode[^}]*transition:\s*none/)
+    expect(cssRule('.handwriting-keyboard-hint')).toContain('clip-path: inset(50%)')
+  })
+
   it('keeps Find It card boxes stable while sizing single and pair emoji separately', () => {
     const emojiCell = cssRule('.emoji-cell')
     const pairsCell = cssRule('.emoji-cell--pairs')

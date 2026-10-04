@@ -2,6 +2,8 @@ import { Option, Schema as S } from 'effect'
 import { afterEach, describe, expect, it } from 'vitest'
 import * as Bubbles from './games/bubbles'
 import * as Bubbles3d from './games/bubbles3d'
+import * as Handwriting from './games/handwriting'
+import { HANDWRITING_LETTERS, HANDWRITING_WORDS } from './games/handwritingPaths'
 import { BUBBLE3D_SHAPES } from './games/bubbles3dShapes'
 import * as Counter from './games/counter'
 import * as FindIt from './games/findit'
@@ -100,6 +102,18 @@ describe('codebase invariants', () => {
     }
   })
 
+  it('handwriting catalogues and model schemas agree', () => {
+    const initial = Handwriting.init()
+    expect(HANDWRITING_LETTERS).toHaveLength(26)
+    expect(new Set(HANDWRITING_WORDS.map(word => word.text)).size).toBe(HANDWRITING_WORDS.length)
+    expect(HANDWRITING_WORDS.every(word => /^[a-z]{3}$/.test(word.text))).toBe(true)
+    expect(initial.progress).toEqual(Handwriting.currentGuide(initial).strokes.map(() => 0))
+    for (const invalid of [{ ...initial, mode: 'sentences' }, { ...initial, progress: ['1'] }, { ...initial, contacts: [{ id: 1, stroke: 0, point: { x: '2', y: 3 } }] }]) {
+      expect(Option.isNone(S.decodeUnknownOption(Handwriting.Model)(invalid))).toBe(true)
+      expect(Option.isNone(S.decodeUnknownOption(Main.Model)({ ...Main.init()[0], handwriting: invalid }))).toBe(true)
+    }
+  })
+
   it('every 3D shape has a localized name and valid schema identity', () => {
     expect(Object.keys(Bubbles3d.BUBBLE3D_SHAPE_KEYS).sort()).toEqual(BUBBLE3D_SHAPES.map(shape => shape.id).sort())
     for (const shape of BUBBLE3D_SHAPES) {
@@ -127,6 +141,7 @@ describe('codebase invariants', () => {
       ['FindIt', FindIt.Model, FindIt.init()],
       ['Bubbles', Bubbles.Model, Bubbles.init()],
       ['3D Bubbles', Bubbles3d.Model, Bubbles3d.init()],
+      ['Handwriting', Handwriting.Model, Handwriting.init()],
       ['Memory', Memory.Model, Memory.init()],
       ['MusicBox', MusicBox.Model, MusicBox.init()],
       ['GrowingNumbers', GrowingNumbers.Model, GrowingNumbers.init],
@@ -146,6 +161,13 @@ describe('codebase invariants', () => {
   it('rejects invalid nested messages at Effect schema boundaries', () => {
     const messageCases = [
       ['3D Bubbles pop', Main.Message, { _tag: 'Bubbles3dClickedPop', id: '0', revision: 0 }],
+      ['Handwriting mode', Main.Message, { _tag: 'HandwritingSetMode', mode: 'sentences' }],
+      ['Handwriting case', Main.Message, { _tag: 'HandwritingSetCase', letterCase: 'joined' }],
+      ['Handwriting target', Main.Message, { _tag: 'HandwritingSelectedTarget', index: '0' }],
+      ['Handwriting start', Main.Message, { _tag: 'HandwritingPenStarted', id: 0, x: '10', y: 25, revision: 0 }],
+      ['Handwriting point', Main.Message, { _tag: 'HandwritingPenMoved', id: 0, points: [{ x: 10, y: '25' }], revision: 0 }],
+      ['Handwriting release', Main.Message, { _tag: 'HandwritingPenEnded', id: 0, revision: '0' }],
+      ['Handwriting keyboard', Main.Message, { _tag: 'HandwritingKeyboardPressed', key: 42, revision: 0 }],
       ['3D Bubbles clear ID', Main.Message, { _tag: 'Bubbles3dClearBubble', id: '0', revision: 0, token: 1 }],
       ['3D Bubbles clear revision', Main.Message, { _tag: 'Bubbles3dClearBubble', id: 0, revision: '0', token: 1 }],
       ['3D Bubbles clear token', Main.Message, { _tag: 'Bubbles3dClearBubble', id: 0, revision: 0, token: '1' }],

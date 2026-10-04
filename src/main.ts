@@ -2,10 +2,11 @@ import { Effect, Match as M, Option, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { Document, html } from 'foldkit/html'
 
-import { ApplyImport, CancelResetSettings, ClickedAudioTest, ClickedBsl, ClickedBubbles, ClickedBubbles3d, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedGrowingNumbers, ClickedLanding, ClickedDraw, ClickedMagneticBlocks, ClickedMemory, ClickedMusicBox, ClickedPhonemeGarden, ClickedRps, ClickedShapeWorkshop, ClickedSpeakerCalculator, ClickedSettings, ClickedTalkingClock, ClickedTalkingKeyboard, ClickedWhackamole, ClickedPattern, ConfirmResetSettings, CopyExportData, DismissMessage, ExportSettings, ImportSettings, ImportedSettings, LandingDragEnded, LandingDragStarted, LandingDroppedOn, LandingSettingsDragEnded, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, ResetSettings, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsDragEnded, SettingsDragMoved, SettingsDragStarted, SettingsImportFailed, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
+import { ApplyImport, CancelResetSettings, ClickedAudioTest, ClickedBsl, ClickedBubbles, ClickedBubbles3d, ClickedHandwriting, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedGrowingNumbers, ClickedLanding, ClickedDraw, ClickedMagneticBlocks, ClickedMemory, ClickedMusicBox, ClickedPhonemeGarden, ClickedRps, ClickedShapeWorkshop, ClickedSpeakerCalculator, ClickedSettings, ClickedTalkingClock, ClickedTalkingKeyboard, ClickedWhackamole, ClickedPattern, ConfirmResetSettings, CopyExportData, DismissMessage, ExportSettings, ImportSettings, ImportedSettings, LandingDragEnded, LandingDragStarted, LandingDroppedOn, LandingSettingsDragEnded, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, ResetSettings, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsDragEnded, SettingsDragMoved, SettingsDragStarted, SettingsImportFailed, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
 
-import { Page, PageAudioTest, PageBsl, PageBubbles, PageBubbles3d, PageCounter, PageFindIt, PageGrowingNumbers, PageLanding, PageDraw, PageMagneticBlocks, PageMemory, PageMusicBox, PagePhonemeGarden, PageRps, PageShapeWorkshop, PageSpeakerCalculator, PageTalkingClock, PageTalkingKeyboard, PageWhackamole, PagePattern } from './route'
+import { Page, PageAudioTest, PageBsl, PageBubbles, PageBubbles3d, PageHandwriting, PageCounter, PageFindIt, PageGrowingNumbers, PageLanding, PageDraw, PageMagneticBlocks, PageMemory, PageMusicBox, PagePhonemeGarden, PageRps, PageShapeWorkshop, PageSpeakerCalculator, PageTalkingClock, PageTalkingKeyboard, PageWhackamole, PagePattern } from './route'
 
+import * as Handwriting from './games/handwriting'
 import * as FindIt from './games/findit'
 import * as MusicBox from './games/musicbox'
 import * as Counter from './games/counter'
@@ -225,6 +226,7 @@ export const Model = S.Struct({
   findIt: FindIt.Model,
   bubbles: Bubbles.Model,
   bubbles3d: Bubbles3d.Model,
+  handwriting: Handwriting.Model,
   draw: Draw.Model,
   memory: Memory.Model,
   phonemeGarden: PhonemeGarden.Model,
@@ -278,6 +280,20 @@ export const Message = S.Union([
   Bubbles3d.RendererReady,
   Bubbles3d.RendererFailed,
   Bubbles3d.SoundPlayed,
+  ClickedHandwriting,
+  Handwriting.SetMode,
+  Handwriting.SetCase,
+  Handwriting.SelectedTarget,
+  Handwriting.NextTarget,
+  Handwriting.PreviousTarget,
+  Handwriting.Restarted,
+  Handwriting.PenStarted,
+  Handwriting.PenMoved,
+  Handwriting.PenEnded,
+  Handwriting.PenCancelled,
+  Handwriting.KeyboardPressed,
+  Handwriting.KeyboardLifted,
+  Handwriting.SoundPlayed,
   ClickedDraw,
   ClickedMusicBox,
   ClickedMemory,
@@ -504,6 +520,7 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
         shapeMode: saved.bubblesShapeMode ?? false,
       },
       bubbles3d: Bubbles3d.init(),
+      handwriting: Handwriting.init(),
       draw: Draw.normalizeTargetForPool({
         ...Draw.init(),
         topN: Draw.normalizeTopN(saved.drawTopN),
@@ -580,6 +597,15 @@ const updateBubbles3d = (
 ): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
   const [next, cmds] = Bubbles3d.update(model.bubbles3d, message, model.muted, model.language, { rate: model.speechRate, pitch: model.speechPitch })
   return [{ ...model, bubbles3d: next }, cmds]
+}
+
+const updateHandwriting = (
+  model: Model,
+  message: Handwriting.Message,
+): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
+  if (model.page._tag !== 'PageHandwriting' && (message._tag.startsWith('HandwritingPen') || message._tag.startsWith('HandwritingKeyboard'))) return [model, []]
+  const [next, commands] = Handwriting.update(model.handwriting, message, model.muted)
+  return [{ ...model, handwriting: next }, commands]
 }
 
 const updateBubbles = (
@@ -853,6 +879,20 @@ const _update = (
       ClickedFindIt: () => [{ ...model, page: PageFindIt() }, []],
       ClickedBubbles: () => [{ ...model, page: PageBubbles() }, []],
       ClickedBubbles3d: () => [{ ...model, page: PageBubbles3d() }, []],
+      ClickedHandwriting: () => [{ ...model, page: PageHandwriting() }, []],
+      HandwritingSetMode: (msg) => updateHandwriting(model, msg),
+      HandwritingSetCase: (msg) => updateHandwriting(model, msg),
+      HandwritingSelectedTarget: (msg) => updateHandwriting(model, msg),
+      HandwritingNextTarget: (msg) => updateHandwriting(model, msg),
+      HandwritingPreviousTarget: (msg) => updateHandwriting(model, msg),
+      HandwritingRestarted: (msg) => updateHandwriting(model, msg),
+      HandwritingPenStarted: (msg) => updateHandwriting(model, msg),
+      HandwritingPenMoved: (msg) => updateHandwriting(model, msg),
+      HandwritingPenEnded: (msg) => updateHandwriting(model, msg),
+      HandwritingPenCancelled: (msg) => updateHandwriting(model, msg),
+      HandwritingKeyboardPressed: (msg) => updateHandwriting(model, msg),
+      HandwritingKeyboardLifted: (msg) => updateHandwriting(model, msg),
+      HandwritingSoundPlayed: (msg) => updateHandwriting(model, msg),
       Bubbles3dClickedPop: (msg) => updateBubbles3d(model, msg),
       Bubbles3dCreatedBubble: (msg) => updateBubbles3d(model, msg),
       Bubbles3dSelectedShape: (msg) => updateBubbles3d(model, msg),
@@ -1138,10 +1178,13 @@ export const update = (
   const pausedClear = model.page._tag === 'PageBubbles3d' && next.page._tag !== 'PageBubbles3d' && next.bubbles3d.clearing
     ? { ...next, bubbles3d: { ...next.bubbles3d, clearToken: next.bubbles3d.clearToken + 1 } }
     : next
+  const interruptedWriting = model.page._tag === 'PageHandwriting' && pausedClear.page._tag !== 'PageHandwriting'
+    ? { ...pausedClear, handwriting: Handwriting.interrupt(pausedClear.handwriting) }
+    : pausedClear
   const result = [
-    model.page._tag === 'PageCounter' && pausedClear.page._tag !== 'PageCounter'
-      ? { ...pausedClear, counter: { ...pausedClear.counter, presses: [], holding: false, pressedButton: null, pointerDownTime: 0 } }
-      : pausedClear,
+    model.page._tag === 'PageCounter' && interruptedWriting.page._tag !== 'PageCounter'
+      ? { ...interruptedWriting, counter: { ...interruptedWriting.counter, presses: [], holding: false, pressedButton: null, pointerDownTime: 0 } }
+      : interruptedWriting,
     commands,
   ] as const
   if (shouldPersistSettings(message)) {
@@ -1161,6 +1204,7 @@ const pageTitle = (model: Model): string =>
       PageFindIt: () => t('pageTitleFindIt', model.language),
       PageBubbles: () => t('pageTitleBubbles', model.language),
       PageBubbles3d: () => t('pageTitleBubbles3d', model.language),
+      PageHandwriting: () => t('pageTitleHandwriting', model.language),
       PageDraw: () => t('pageTitleDraw', model.language),
       PageMusicBox: () => t('pageTitleMusicBox', model.language),
       PageMemory: () => t('pageTitleMemoryCards', model.language),
@@ -1761,6 +1805,7 @@ export const view = (model: Model): Document => {
               PageFindIt: () => FindIt.view(model.findIt, model.language),
               PageBubbles: () => Bubbles.view(model.bubbles, model.language),
               PageBubbles3d: () => Bubbles3d.view(model.bubbles3d, model.language),
+              PageHandwriting: () => Handwriting.view(model.handwriting, model.language),
               PageDraw: () => Draw.view(model.draw),
               PageMusicBox: () => MusicBox.view(model.musicBox, model.language),
               PageMemory: () => Memory.view(model.memory, model.language),

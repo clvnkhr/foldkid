@@ -33,6 +33,7 @@ describe('Landing', () => {
       Scene.expect(Scene.text('Growing Numbers')).toExist(),
       Scene.expect(Scene.text('Shape Workshop')).toExist(),
       Scene.expect(Scene.text('3D Bubbles')).toExist(),
+      Scene.expect(Scene.text('Handwriting')).toExist(),
       acknowledgePointerReorder,
       Scene.Command.expectNone(),
     )

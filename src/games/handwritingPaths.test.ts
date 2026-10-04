@@ -1,0 +1,196 @@
+import { describe, expect, it } from 'vitest'
+
+import {
+  advanceHandwritingStroke, HANDWRITING_LETTERS, HANDWRITING_TOLERANCE, HANDWRITING_WORDS,
+  handwritingGuide, handwritingPath, type HandwritingPoint, type HandwritingStroke,
+} from './handwritingPaths'
+
+const distance = (from: HandwritingPoint, to: HandwritingPoint): number => Math.hypot(from.x - to.x, from.y - to.y)
+const completeTrace = (points: HandwritingStroke): number => {
+  let progress = advanceHandwritingStroke(points, 0, points[0]!, points[0]!)
+  for (let index = 1; index < points.length; index++) {
+    const advanced = advanceHandwritingStroke(points, progress, points[index - 1]!, points[index]!)
+    expect(advanced).toBeGreaterThanOrEqual(progress)
+    expect(advanced).toBeLessThanOrEqual(points.length)
+    progress = advanced
+  }
+  return progress
+}
+
+describe('handwriting stroke guides', () => {
+  it('offers all English letters and at least twenty unique illustrated three-letter words', () => {
+    expect(HANDWRITING_LETTERS.join('')).toBe('abcdefghijklmnopqrstuvwxyz')
+    expect(new Set(HANDWRITING_LETTERS).size).toBe(26)
+    expect(HANDWRITING_WORDS.length).toBeGreaterThanOrEqual(20)
+    expect(new Set(HANDWRITING_WORDS.map(word => word.text)).size).toBe(HANDWRITING_WORDS.length)
+    for (const word of HANDWRITING_WORDS) {
+      expect(word.text).toMatch(/^[a-z]{3}$/)
+      expect(word.emoji.trim()).not.toBe('')
+    }
+  })
+
+  for (const letterCase of ['upper', 'lower'] as const) {
+    it.each(HANDWRITING_LETTERS.map((letter, index) => ({ letter, index })))(`makes a finite, evenly sampled and traceable ${letterCase} $letter`, ({ letter, index }) => {
+      const guide = handwritingGuide('letters', letterCase, index)
+      expect(guide.text).toBe(letterCase === 'upper' ? letter.toUpperCase() : letter)
+      expect(guide.emoji).toBe('')
+      expect([guide.width, guide.height]).toEqual([100, 160])
+      expect(guide.strokes.length).toBeGreaterThan(0)
+      for (const points of guide.strokes) {
+        expect(points.length).toBeGreaterThan(1)
+        const steps: number[] = []
+        for (const [sample, point] of points.entries()) {
+          expect(Number.isFinite(point.x) && Number.isFinite(point.y)).toBe(true)
+          expect(point.x).toBeGreaterThanOrEqual(15 - 0.000001)
+          expect(point.x).toBeLessThanOrEqual(85 + 0.000001)
+          expect(point.y).toBeGreaterThanOrEqual(20)
+          expect(point.y).toBeLessThanOrEqual(140)
+          if (sample > 0) steps.push(distance(points[sample - 1]!, point))
+        }
+        expect(steps.every(step => step > 0 && step <= 5.51)).toBe(true)
+        if (steps.length > 3) {
+          const ordered = steps.slice(0, -1).sort((a, b) => a - b)
+          expect(ordered[Math.floor(ordered.length / 2)]).toBeGreaterThan(5.3)
+        }
+        expect(handwritingPath(points)).toMatch(/^M[\d.]+ [\d.]+ L/)
+        expect(completeTrace(points)).toBe(points.length)
+      }
+    })
+
+    it.each(HANDWRITING_WORDS.map((word, index) => ({ ...word, index })))(`assembles the ${letterCase} word $text with its exact letter guides`, ({ text, emoji, index }) => {
+      const guide = handwritingGuide('words', letterCase, index)
+      expect(guide.text).toBe(letterCase === 'upper' ? text.toUpperCase() : text)
+      expect(guide.emoji).toBe(emoji)
+      expect([guide.width, guide.height]).toEqual([320, 160])
+      const expected = [...text].flatMap((letter, position) =>
+        handwritingGuide('letters', letterCase, HANDWRITING_LETTERS.indexOf(letter)).strokes.map(points =>
+          points.map(({ x, y }) => ({ x: x + 110 * position, y })),
+        ),
+      )
+      expect(guide.strokes).toEqual(expected)
+      for (const points of guide.strokes) expect(completeTrace(points)).toBe(points.length)
+    })
+  }
+
+  it('uses a distinct guide for every letter and case', () => {
+    const identities = ['upper', 'lower'].flatMap(letterCase => HANDWRITING_LETTERS.map((_, index) =>
+      handwritingGuide('letters', letterCase as 'upper' | 'lower', index).strokes.map(handwritingPath).join('|'),
+    ))
+    expect(new Set(identities).size).toBe(52)
+  })
+
+  it('preserves counters, separate bars and the small dots on lowercase i and j', () => {
+    const letter = (text: string, letterCase: 'upper' | 'lower') => handwritingGuide('letters', letterCase, HANDWRITING_LETTERS.indexOf(text)).strokes
+    expect(letter('a', 'upper')).toHaveLength(2)
+    expect(letter('h', 'upper')).toHaveLength(3)
+    expect(letter('x', 'upper')).toHaveLength(2)
+    for (const letterCase of ['upper', 'lower'] as const) {
+      const counter = letter('o', letterCase)[0]!
+      expect(distance(counter[0]!, counter.at(-1)!)).toBeLessThan(0.02)
+      expect(new Set(counter.map(point => point.x.toFixed(1))).size).toBeGreaterThan(10)
+      expect(new Set(counter.map(point => point.y.toFixed(1))).size).toBeGreaterThan(10)
+    }
+    for (const text of ['i', 'j']) {
+      const [stem, dot] = letter(text, 'lower')
+      expect(dot).toHaveLength(2)
+      expect(Math.max(...dot!.map(point => point.y))).toBeLessThan(Math.min(...stem!.map(point => point.y)))
+    }
+  })
+
+  it.each([-1, 26, 1000, 0.5, Number.NaN, Number.POSITIVE_INFINITY])('safely uses the first letter for invalid index %s', index => {
+    expect(handwritingGuide('letters', 'upper', index)).toBe(handwritingGuide('letters', 'upper', 0))
+  })
+
+  it.each([-1, HANDWRITING_WORDS.length, 0.5, Number.NaN])('safely uses the first word for invalid index %s', index => {
+    expect(handwritingGuide('words', 'lower', index)).toBe(handwritingGuide('words', 'lower', 0))
+  })
+
+  it('returns stable immutable guides without rebuilding their stroke samples', () => {
+    const guide = handwritingGuide('letters', 'lower', 0)
+    const expected = structuredClone(guide)
+    expect(handwritingGuide('letters', 'lower', 0)).toBe(guide)
+    expect(handwritingGuide('words', 'upper', 0)).toBe(handwritingGuide('words', 'upper', 0))
+    expect(Object.isFrozen(guide)).toBe(true)
+    expect(Object.isFrozen(guide.strokes)).toBe(true)
+    expect(Object.isFrozen(guide.strokes[0])).toBe(true)
+    const mutablePoint = guide.strokes[0]![0]! as { x: number }
+    expect(() => { mutablePoint.x = 999 }).toThrow(TypeError)
+    expect(handwritingGuide('letters', 'lower', 0)).toEqual(expected)
+  })
+
+  it('creates compact SVG polylines and safely rejects non-finite coordinates', () => {
+    expect(handwritingPath([{ x: 1.234, y: 2.345 }, { x: 10, y: 20 }])).toBe('M1.23 2.35 L10 20')
+    expect(handwritingPath([])).toBe('')
+    expect(handwritingPath([{ x: Number.NaN, y: 20 }])).toBe('')
+    expect(handwritingPath([{ x: 10, y: Number.POSITIVE_INFINITY }])).toBe('')
+  })
+})
+
+describe('handwriting tracing', () => {
+  const straight = handwritingGuide('letters', 'upper', HANDWRITING_LETTERS.indexOf('h')).strokes[0]!
+  const curve = handwritingGuide('letters', 'upper', HANDWRITING_LETTERS.indexOf('c')).strokes[0]!
+
+  it('accepts a fast continuous straight stroke without requiring one event per dot', () => {
+    expect(advanceHandwritingStroke(straight, 0, straight[0]!, straight.at(-1)!)).toBe(straight.length)
+  })
+
+  it('resumes from the current sample and advances monotonically', () => {
+    const first = advanceHandwritingStroke(straight, 0, straight[0]!, straight[5]!)
+    expect(first).toBeGreaterThan(5)
+    expect(first).toBeLessThan(straight.length)
+    expect(advanceHandwritingStroke(straight, first, straight[first - 1]!, straight.at(-1)!)).toBe(straight.length)
+    expect(advanceHandwritingStroke(straight, straight.length, straight.at(-1)!, straight[0]!)).toBe(straight.length)
+  })
+
+  it('accepts a nearby trace but rejects the same movement outside the stroke tolerance', () => {
+    const shifted = (point: HandwritingPoint, offset: number) => ({ x: point.x + offset, y: point.y })
+    expect(advanceHandwritingStroke(straight, 0, shifted(straight[0]!, HANDWRITING_TOLERANCE - 1), shifted(straight.at(-1)!, HANDWRITING_TOLERANCE - 1))).toBe(straight.length)
+    expect(advanceHandwritingStroke(straight, 0, shifted(straight[0]!, HANDWRITING_TOLERANCE + 1), shifted(straight.at(-1)!, HANDWRITING_TOLERANCE + 1))).toBe(0)
+  })
+
+  it('rejects a chord through a curved guide and follows the actual curve instead', () => {
+    expect(advanceHandwritingStroke(curve, 0, curve[0]!, curve.at(-1)!)).toBe(0)
+    expect(completeTrace(curve)).toBe(curve.length)
+    const loop = handwritingGuide('letters', 'lower', HANDWRITING_LETTERS.indexOf('o')).strokes[0]!
+    expect(advanceHandwritingStroke(loop, 0, loop[0]!, loop.at(-1)!)).toBeLessThan(loop.length / 4)
+    expect(completeTrace(loop)).toBe(loop.length)
+  })
+
+  it('does not complete an oval by joining four points into an inscribed diamond', () => {
+    const points = handwritingGuide('letters', 'lower', HANDWRITING_LETTERS.indexOf('o')).strokes[0]!
+    let progress = advanceHandwritingStroke(points, 0, points[0]!, points[0]!)
+    let from = points[0]!
+    for (let quarter = 1; quarter <= 4; quarter++) {
+      const to = points[Math.round((points.length - 1) * quarter / 4)]!
+      progress = advanceHandwritingStroke(points, progress, from, to)
+      from = to
+    }
+    expect(progress).toBeLessThan(points.length / 4)
+    expect(completeTrace(points)).toBe(points.length)
+  })
+
+  it('rejects diagonal corner cutting and wild jumps to another letter or past the guide', () => {
+    const corner = handwritingGuide('letters', 'upper', HANDWRITING_LETTERS.indexOf('l')).strokes[0]!
+    expect(advanceHandwritingStroke(corner, 0, corner[0]!, corner.at(-1)!)).toBe(0)
+    expect(advanceHandwritingStroke(straight, 0, straight[0]!, { x: straight.at(-1)!.x + 110, y: straight.at(-1)!.y })).toBe(0)
+    expect(advanceHandwritingStroke(straight, 0, straight[0]!, { x: straight.at(-1)!.x, y: 1000 })).toBe(0)
+    expect(advanceHandwritingStroke(straight, 0, { x: -100, y: -100 }, straight.at(-1)!)).toBe(0)
+    expect(advanceHandwritingStroke(straight, 0, { x: straight.at(-1)!.x + 110, y: straight.at(-1)!.y }, straight[0]!)).toBe(0)
+  })
+
+  it('leaves valid progress unchanged for non-finite coordinates and malformed guide points', () => {
+    for (const invalid of [{ x: Number.NaN, y: 20 }, { x: 20, y: Number.POSITIVE_INFINITY }]) {
+      expect(advanceHandwritingStroke(straight, 3, invalid, straight.at(-1)!)).toBe(3)
+      expect(advanceHandwritingStroke(straight, 3, straight[2]!, invalid)).toBe(3)
+    }
+    expect(advanceHandwritingStroke([{ x: Number.NaN, y: 20 }], 0, { x: 20, y: 20 }, { x: 20, y: 20 })).toBe(0)
+    expect(advanceHandwritingStroke([], 0, { x: 20, y: 20 }, { x: 20, y: 20 })).toBe(0)
+  })
+
+  it('keeps malformed progress within the valid sample range without advancing', () => {
+    for (const progress of [-1, 0.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(advanceHandwritingStroke(straight, progress, straight[0]!, straight.at(-1)!)).toBe(0)
+    }
+    expect(advanceHandwritingStroke(straight, straight.length + 1, straight[0]!, straight.at(-1)!)).toBe(straight.length)
+  })
+})

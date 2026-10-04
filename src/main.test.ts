@@ -7,6 +7,9 @@ import * as Counter from './games/counter'
 import * as FindIt from './games/findit'
 import * as Bubbles from './games/bubbles'
 import * as Bubbles3d from './games/bubbles3d'
+import * as Handwriting from './games/handwriting'
+import { ClickedHandwriting } from './message'
+import { t, translations } from './i18n'
 import * as Draw from './games/draw'
 import * as Memory from './games/memory'
 import * as MusicBox from './games/musicbox'
@@ -133,7 +136,8 @@ describe('landing catalogue migration', () => {
     expect(loaded.landingHiddenGames).toEqual(migratedHidden)
     expect(loaded.landingHiddenGames[previousCount]).toBe(false)
     expect(LANDING_GAMES[2]?.title).toBe('bubblesTitle')
-    expect(LANDING_GAMES[previousCount]?.title).toBe('bubbles3dTitle')
+    expect(LANDING_GAMES[previousCount - 1]?.title).toBe('bubbles3dTitle')
+    expect(LANDING_GAMES[previousCount]?.title).toBe('handwritingTitle')
     expect(commands).toHaveLength(0)
   })
 
@@ -257,6 +261,20 @@ describe('settings persistence', () => {
     { label: 'Bubbles3dRendererReady', msg: Bubbles3d.RendererReady({ revision: 0 }) },
     { label: 'Bubbles3dRendererFailed', msg: Bubbles3d.RendererFailed({ revision: 0 }) },
     { label: 'Bubbles3dSoundPlayed', msg: Bubbles3d.SoundPlayed() },
+    { label: 'ClickedHandwriting', msg: ClickedHandwriting() },
+    { label: 'HandwritingSetMode', msg: Handwriting.SetMode({ mode: 'words' }) },
+    { label: 'HandwritingSetCase', msg: Handwriting.SetCase({ letterCase: 'lower' }) },
+    { label: 'HandwritingSelectedTarget', msg: Handwriting.SelectedTarget({ index: 1 }) },
+    { label: 'HandwritingNextTarget', msg: Handwriting.NextTarget() },
+    { label: 'HandwritingPreviousTarget', msg: Handwriting.PreviousTarget() },
+    { label: 'HandwritingRestarted', msg: Handwriting.Restarted() },
+    { label: 'HandwritingPenStarted', msg: Handwriting.PenStarted({ id: 0, x: 20, y: 120, revision: 0 }) },
+    { label: 'HandwritingPenMoved', msg: Handwriting.PenMoved({ id: 0, points: [{ x: 25, y: 105 }], revision: 0 }) },
+    { label: 'HandwritingPenEnded', msg: Handwriting.PenEnded({ id: 0, revision: 0 }) },
+    { label: 'HandwritingPenCancelled', msg: Handwriting.PenCancelled({ id: 0, revision: 0 }) },
+    { label: 'HandwritingKeyboardPressed', msg: Handwriting.KeyboardPressed({ key: 'ArrowUp', revision: 0 }) },
+    { label: 'HandwritingKeyboardLifted', msg: Handwriting.KeyboardLifted({ revision: 0 }) },
+    { label: 'HandwritingSoundPlayed', msg: Handwriting.SoundPlayed() },
     { label: 'ClickedMemory', msg: ClickedMemory() },
     { label: 'ClickedGrowingNumbers', msg: ClickedGrowingNumbers() },
     { label: 'ClickedShapeWorkshop', msg: ClickedShapeWorkshop() },
@@ -328,6 +346,71 @@ describe('settings persistence', () => {
 })
 
 describe('Main', () => {
+  it('opens Handwriting, localizes its title, and keeps its learning modes transient', () => {
+    for (const language of Object.keys(translations) as Array<keyof typeof translations>) {
+      const [opened] = Main.update({ ...createModel(), language }, ClickedHandwriting())
+      expect(opened.page._tag).toBe('PageHandwriting')
+      expect(opened.handwriting).toEqual(Handwriting.init())
+      expect(Main.view(opened).title).toBe(t('pageTitleHandwriting', language))
+    }
+    const [opened] = Main.update(createModel(), ClickedHandwriting())
+    const [words] = Main.update(opened, Handwriting.SetMode({ mode: 'words' }))
+    const [selected] = Main.update(words, Handwriting.SelectedTarget({ index: 1 }))
+    const [exported, commands] = Main.update(selected, ExportSettings())
+    expect(Handwriting.currentGuide(selected.handwriting).text).toBe('dog')
+    expect(JSON.parse(exported.exportData).settings).not.toHaveProperty('handwriting')
+    expect(commands).toEqual([])
+  })
+
+  it.each([false, true])('forwards root mute to handwriting completion without hiding the colored result: %s', muted => {
+    const guide = Handwriting.currentGuide(Handwriting.init())
+    Story.story(
+      Main.update,
+      Story.with({ ...createModel(), muted }),
+      Story.message(ClickedHandwriting()),
+      ...guide.strokes.flatMap((stroke, id) => [
+        Story.message(Handwriting.PenStarted({ id, ...stroke[0]!, revision: 0 })),
+        Story.message(Handwriting.PenMoved({ id, points: stroke.slice(1), revision: 0 })),
+        Story.message(Handwriting.PenEnded({ id, revision: 0 })),
+        id === guide.strokes.length - 1 && !muted
+          ? Story.Command.resolveAll([{ name: 'HandwritingPlayChime' }, Handwriting.SoundPlayed()]) : Story.Command.expectNone(),
+      ]),
+      Story.model(model => {
+        expect(Handwriting.isComplete(model.handwriting)).toBe(true)
+        expect(model.handwriting.progress).toEqual(guide.strokes.map(stroke => stroke.length))
+        expect(model.handwriting.celebrated).toBe(true)
+      }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('keeps partially traced writing on navigation and rejects events queued by the old board', () => {
+    const initial = Handwriting.init()
+    const stroke = Handwriting.currentGuide(initial).strokes[0]!
+    let progress: ReadonlyArray<number> = []
+    Story.story(
+      Main.update,
+      Story.with({ ...createModel(), muted: true }),
+      Story.message(ClickedHandwriting()),
+      Story.message(Handwriting.PenStarted({ id: 0, ...stroke[0]!, revision: 0 })),
+      Story.message(Handwriting.PenMoved({ id: 0, points: stroke.slice(1, 8), revision: 0 })),
+      Story.model(model => { progress = model.handwriting.progress; expect(progress[0]).toBeGreaterThan(0) }),
+      Story.message(ClickedLanding()),
+      Story.message(Handwriting.PenMoved({ id: 0, points: stroke.slice(8), revision: 0 })),
+      Story.message(Handwriting.PenStarted({ id: 1, ...stroke[8]!, revision: 1 })),
+      Story.message(Handwriting.KeyboardPressed({ key: 'ArrowUp', revision: 1 })),
+      Story.message(ClickedHandwriting()),
+      Story.message(Handwriting.PenMoved({ id: 0, points: stroke.slice(8), revision: 0 })),
+      Story.message(Handwriting.PenEnded({ id: 0, revision: 0 })),
+      Story.message(Handwriting.KeyboardPressed({ key: 'ArrowUp', revision: 0 })),
+      Story.model(model => {
+        expect(model.handwriting.progress).toBe(progress)
+        expect(model.handwriting).toMatchObject({ revision: 1, contacts: [], pen: null })
+      }),
+      Story.Command.expectNone(),
+    )
+  })
+
   it('init returns correct initial state', () => {
     const [model] = Main.init()
     expect(model.page._tag).toBe('PageLanding')

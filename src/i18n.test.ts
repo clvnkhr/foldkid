@@ -169,4 +169,51 @@ describe('i18n completeness', () => {
     expect(i18n.t('bubbles3dClearing')).toBe('Popping bubbles…')
     expect(i18n.t('bubbles3dClearing', 'xx')).toBe('Popping bubbles…')
   })
+
+  it('localizes handwriting controls while retaining English letter case samples', () => {
+    const keys = [
+      'handwritingTitle', 'pageTitleHandwriting', 'handwritingLetters', 'handwritingWords',
+      'handwritingUppercaseLabel', 'handwritingLowercaseLabel', 'handwritingAgain', 'handwritingNext',
+      'handwritingPrevious', 'handwritingTrace', 'handwritingComplete', 'handwritingKeyboardHint', 'handwritingPenLabel',
+    ] as const
+    for (const lang of langKeys) {
+      for (const key of keys) expect(i18n.t(key, lang).length, `${lang}.${key}`).toBeGreaterThan(0)
+      expect(i18n.t('handwritingUppercase', lang), lang).toBe('ABC')
+      expect(i18n.t('handwritingLowercase', lang), lang).toBe('abc')
+      expect(i18n.t('handwritingUppercaseLabel', lang), lang).not.toBe(i18n.t('handwritingLowercaseLabel', lang))
+      expect(i18n.t('handwritingComplete', lang), lang).toContain('✨')
+    }
+    expect(i18n.t('handwritingTitle')).toBe('Handwriting')
+    expect(i18n.t('handwritingWords')).toBe('3-letter words')
+    expect(i18n.t('handwritingTitle', 'xx')).toBe('Handwriting')
+    expect(i18n.t('handwritingNext', 'fa')).toBe('بعدی ⬅')
+    expect(i18n.t('handwritingPrevious', 'fa')).toBe('➡ قبلی')
+    expect(i18n.t('handwritingWords', 'de')).toBe('Wörter mit 3 Buchstaben')
+  })
+
+  it('formats handwriting board labels and progress with each locale’s grammar and supplied numerals', () => {
+    const boardLabels = {
+      en: 'Trace cat', zh: '描写cat', fr: 'Trace cat', de: 'Schreibe cat nach',
+      fa: 'cat را روی نقطه‌ها بنویس', ms: 'Surih cat', 'zh-HK': '跟住啲點寫cat', ja: 'catをなぞろう',
+    } as const
+    const progressLabels = {
+      en: (done: string, total: string) => `${done} of ${total} strokes`,
+      zh: (done: string, total: string) => `共${total}笔，已完成${done}笔`,
+      fr: (done: string, total: string) => `${done} traits sur ${total}`,
+      de: (done: string, total: string) => `${done} von ${total} Strichen`,
+      fa: (done: string, total: string) => `${done} از ${total} خط`,
+      ms: (done: string, total: string) => `${done} daripada ${total} strok`,
+      'zh-HK': (done: string, total: string) => `共${total}筆，完成咗${done}筆`,
+      ja: (done: string, total: string) => `${total}画中${done}画`,
+    } as const
+    for (const lang of langKeys) {
+      const format = new Intl.NumberFormat(lang)
+      const done = format.format(1234)
+      const total = format.format(5678)
+      expect(i18n.tf('handwritingBoard', lang, 'cat'), lang).toBe(boardLabels[lang])
+      expect(i18n.tf('handwritingProgress', lang, done, total), lang).toBe(progressLabels[lang](done, total))
+    }
+    expect(i18n.tf('handwritingBoard', 'xx', 'A')).toBe('Trace A')
+    expect(i18n.tf('handwritingProgress', 'xx', '1', '3')).toBe('1 of 3 strokes')
+  })
 })
