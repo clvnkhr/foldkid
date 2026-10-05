@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as Audio from '../audio'
 import { t, tf } from '../i18n'
 import * as Handwriting from './handwriting'
-import { HANDWRITING_LETTERS, HANDWRITING_TOLERANCE, HANDWRITING_WORDS } from './handwritingPaths'
+import { HANDWRITING_LETTERS, HANDWRITING_WORDS } from './handwritingPaths'
 
 const update = (model: Handwriting.Model, message: Handwriting.Message) => Handwriting.update(model, message, false)
 const mutedUpdate = (model: Handwriting.Model, message: Handwriting.Message) => Handwriting.update(model, message, true)
@@ -40,7 +40,7 @@ describe('Handwriting model and tracing', () => {
   it('starts with a fresh uppercase A guide and explicit contact and keyboard state', () => {
     expect(Handwriting.init()).toEqual({
       mode: 'letters', letterCase: 'upper', letterIndex: 0, wordIndex: 0, revision: 0,
-      progress: [0, 0], contacts: [], pen: null, celebrated: false,
+      progress: [0, 0, 0], contacts: [], pen: null, celebrated: false,
     })
     expect(Handwriting.currentGuide(Handwriting.init()).text).toBe('A')
     expect(Handwriting.completedStrokes(Handwriting.init())).toBe(0)
@@ -84,7 +84,7 @@ describe('Handwriting model and tracing', () => {
   })
 
   it('advances monotonically along the dots and rejects unrelated or shortcut movement', () => {
-    const model = Handwriting.init()
+    const model = target(11)
     const stroke = Handwriting.currentGuide(model).strokes[0]!
     let previous = 0
     let partial = model
@@ -107,33 +107,28 @@ describe('Handwriting model and tracing', () => {
         Story.message(Handwriting.PenMoved({ id: 2, points: [point], revision: 0 })),
         Story.model((next: Handwriting.Model) => { expect(next.progress[0]).toBeGreaterThanOrEqual(previous); previous = next.progress[0]! }),
       ]),
-      Story.model(next => { expect(next.progress[0]).toBe(stroke.length); expect(next.progress[1]).toBe(0) }),
+      Story.model(next => expect(next.progress[0]).toBe(stroke.length)),
       Story.Command.expectNone(),
     )
   })
 
-  it('resumes a fast uppercase A trace at the same apex after lifting and celebrates only after the crossbar release', () => {
+  it('writes uppercase A down from its apex in separate legs and celebrates only after the crossbar release', () => {
     const model = Handwriting.init()
-    const [legs, crossbar] = Handwriting.currentGuide(model).strokes
-    const apex = { x: 50, y: 25 }
+    const [left, right, crossbar] = Handwriting.currentGuide(model).strokes
     Story.story(
       update,
       Story.with(model),
-      Story.message(Handwriting.PenStarted({ id: 1, ...legs![0]!, revision: 0 })),
-      Story.message(Handwriting.PenMoved({ id: 1, points: [apex], revision: 0 })),
-      Story.model(next => {
-        expect(next.progress[0]).toBeGreaterThan(1)
-        expect(next.progress[0]).toBeLessThan(legs!.length)
-        const nextDot = legs![next.progress[0]!]!
-        expect(Math.hypot(nextDot.x - apex.x, nextDot.y - apex.y)).toBeGreaterThan(HANDWRITING_TOLERANCE)
-      }),
+      Story.message(Handwriting.PenStarted({ id: 1, ...left![0]!, revision: 0 })),
+      Story.model(next => expect(next.contacts.map(contact => [contact.id, contact.stroke])).toEqual([[1, 0]])),
+      Story.message(Handwriting.PenMoved({ id: 1, points: [left!.at(-1)!], revision: 0 })),
       Story.message(Handwriting.PenEnded({ id: 1, revision: 0 })),
+      Story.model(next => expect(next.progress).toEqual([left!.length, 0, 0])),
       Story.Command.expectNone(),
-      Story.message(Handwriting.PenStarted({ id: 2, ...apex, revision: 0 })),
-      Story.model(next => expect(next.contacts.map(contact => [contact.id, contact.stroke])).toEqual([[2, 0]])),
-      Story.message(Handwriting.PenMoved({ id: 2, points: [legs!.at(-1)!], revision: 0 })),
+      Story.message(Handwriting.PenStarted({ id: 2, ...right![0]!, revision: 0 })),
+      Story.model(next => expect(next.contacts.map(contact => [contact.id, contact.stroke])).toEqual([[2, 1]])),
+      Story.message(Handwriting.PenMoved({ id: 2, points: [right!.at(-1)!], revision: 0 })),
       Story.message(Handwriting.PenEnded({ id: 2, revision: 0 })),
-      Story.model(next => { expect(next.progress[0]).toBe(legs!.length); expect(next.progress[1]).toBe(0); expect(next.celebrated).toBe(false) }),
+      Story.model(next => { expect(next.progress).toEqual([left!.length, right!.length, 0]); expect(next.celebrated).toBe(false) }),
       Story.Command.expectNone(),
       Story.message(Handwriting.PenStarted({ id: 3, ...crossbar![0]!, revision: 0 })),
       Story.message(Handwriting.PenMoved({ id: 3, points: [crossbar!.at(-1)!], revision: 0 })),
@@ -173,23 +168,46 @@ describe('Handwriting model and tracing', () => {
   })
 
   it('owns separate strokes per finger while an unrelated held touch does not block tracing', () => {
-    const [left, bar] = Handwriting.currentGuide(Handwriting.init()).strokes
+    const model = target(HANDWRITING_LETTERS.indexOf('h'))
+    const [left, right, bar] = Handwriting.currentGuide(model).strokes
     Story.story(
       mutedUpdate,
-      Story.with(Handwriting.init()),
+      Story.with(model),
       Story.message(Handwriting.PenStarted({ id: 99, x: 0, y: 0, revision: 0 })),
       Story.message(Handwriting.PenStarted({ id: 1, ...left![0]!, revision: 0 })),
       Story.message(Handwriting.PenStarted({ id: 2, ...left![0]!, revision: 0 })),
       Story.model(next => expect(next.contacts.map(contact => [contact.id, contact.stroke])).toEqual([[1, 0]])),
       Story.message(Handwriting.PenStarted({ id: 2, ...bar![0]!, revision: 0 })),
       Story.message(Handwriting.PenStarted({ id: 1, ...bar![0]!, revision: 0 })),
-      Story.model(next => expect(next.contacts.map(contact => [contact.id, contact.stroke])).toEqual([[1, 0], [2, 1]])),
+      Story.model(next => expect(next.contacts.map(contact => [contact.id, contact.stroke])).toEqual([[1, 0], [2, 2]])),
       Story.message(Handwriting.PenMoved({ id: 2, points: bar!.slice(1), revision: 0 })),
-      Story.model(next => { expect(next.progress[1]).toBe(bar!.length); expect(next.progress[0]).toBeLessThan(left!.length) }),
+      Story.model(next => { expect(next.progress[2]).toBe(bar!.length); expect(next.progress[0]).toBeLessThan(left!.length) }),
       Story.message(Handwriting.PenEnded({ id: 2, revision: 0 })),
       Story.message(Handwriting.PenMoved({ id: 1, points: left!.slice(1), revision: 0 })),
       Story.message(Handwriting.PenEnded({ id: 1, revision: 0 })),
+      Story.message(Handwriting.PenStarted({ id: 3, ...right![0]!, revision: 0 })),
+      Story.message(Handwriting.PenMoved({ id: 3, points: right!.slice(1), revision: 0 })),
+      Story.message(Handwriting.PenEnded({ id: 3, revision: 0 })),
       Story.model(next => { expect(Handwriting.isComplete(next)).toBe(true); expect(next.contacts).toEqual([]) }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it.each(['b', 'h'])('traces lowercase %s through the stem retrace and arch without lifting', letter => {
+    const model = target(HANDWRITING_LETTERS.indexOf(letter), 'lower')
+    const guide = Handwriting.currentGuide(model)
+    expect(guide.strokes).toHaveLength(1)
+    const stroke = guide.strokes[0]!
+    Story.story(
+      update,
+      Story.with(model),
+      Story.message(Handwriting.PenStarted({ id: 1, ...stroke[0]!, revision: 0 })),
+      ...stroke.slice(1).map(point => Story.message(Handwriting.PenMoved({ id: 1, points: [point], revision: 0 }))),
+      Story.model(next => { expect(next.progress).toEqual([stroke.length]); expect(next.contacts.map(contact => contact.id)).toEqual([1]); expect(next.celebrated).toBe(false) }),
+      Story.Command.expectNone(),
+      Story.message(Handwriting.PenEnded({ id: 1, revision: 0 })),
+      Story.Command.resolveAll(sound),
+      Story.model(next => { expect(next.celebrated).toBe(true); expect(next.contacts).toEqual([]) }),
       Story.Command.expectNone(),
     )
   })
@@ -398,10 +416,13 @@ describe('Handwriting keyboard and accessible view', () => {
       Scene.expect(Scene.role('application', { name: tf('handwritingBoard', 'en', 'A') })).toHaveAttr('tabindex', '0'),
       Scene.expect(Scene.selector('.handwriting-board')).toHaveAccessibleDescription(t('handwritingKeyboardHint', 'en')),
       Scene.expect(Scene.selector('.handwriting-board')).toHaveAttr('data-complete', 'false'),
-      Scene.expectAll(Scene.all.selector('.handwriting-guide')).toHaveCount(2),
+      Scene.expectAll(Scene.all.selector('.handwriting-guide')).toHaveCount(3),
       Scene.expectAll(Scene.all.selector('.handwriting-start')).toHaveCount(2),
+      Scene.expectAll(Scene.all.selector('.handwriting-stroke-badge')).toHaveCount(3),
+      Scene.expectAll(Scene.all.selector('.handwriting-direction')).toHaveCount(3),
+      Scene.tap(simulation => expect(Scene.findAll(simulation.html, '.handwriting-stroke-number').map(Scene.textContent)).toEqual(['1', '2', '3'])),
       Scene.expectAll(Scene.all.selector('.handwriting-ink')).toBeEmpty(),
-      Scene.expect(Scene.selector('.handwriting-feedback[role="status"][aria-live="polite"]')).toHaveText(tf('handwritingProgress', 'en', '0', '2')),
+      Scene.expect(Scene.selector('.handwriting-feedback[role="status"][aria-live="polite"]')).toHaveText(tf('handwritingProgress', 'en', '0', '3')),
       Scene.expect(Scene.role('button', { name: t('handwritingPrevious', 'en') })).toBeEnabled(),
       Scene.expect(Scene.role('button', { name: t('handwritingAgain', 'en') })).toBeEnabled(),
       Scene.expect(Scene.role('button', { name: t('handwritingNext', 'en') })).toBeEnabled(),
@@ -420,12 +441,40 @@ describe('Handwriting keyboard and accessible view', () => {
       Scene.tap(simulation => expect(Option.getOrThrow(Scene.find(simulation.html, '.handwriting-board'))?.key).toBe('handwriting-board-0')),
       Scene.expectAll(Scene.all.selector('.handwriting-ink-highlight')).toHaveCount(1),
       Scene.expectAll(Scene.all.selector('.handwriting-start')).toBeEmpty(),
+      Scene.expectAll(Scene.all.selector('.handwriting-stroke-badge')).toBeEmpty(),
+      Scene.expectAll(Scene.all.selector('.handwriting-direction')).toBeEmpty(),
       Scene.expect(Scene.selector('.handwriting-feedback')).toHaveText(t('handwritingComplete', 'en')),
       Scene.click(Scene.role('button', { name: t('handwritingAgain', 'en') })),
       Scene.tap(simulation => expect(Option.getOrThrow(Scene.find(simulation.html, '.handwriting-board'))?.key).toBe('handwriting-board-1')),
       Scene.expect(Scene.selector('.handwriting-board')).toHaveAttr('data-handwriting-revision', '1'),
       Scene.expect(Scene.selector('.handwriting-board')).toHaveAttr('data-complete', 'false'),
       Scene.expectAll(Scene.all.selector('.handwriting-ink')).toBeEmpty(),
+      Scene.Command.expectNone(),
+    )
+  })
+
+  it('removes the active stroke’s formation cues while keeping the remaining numbered directions', () => {
+    const model = Handwriting.init()
+    const stroke = Handwriting.currentGuide(model).strokes[0]!
+    const [held] = mutedUpdate(model, Handwriting.PenStarted({ id: 1, ...stroke[0]!, revision: 0 }))
+    Scene.scene(
+      { update: mutedUpdate, view }, Scene.with(held),
+      Scene.Mount.resolveAll(boardMounted()),
+      Scene.expectAll(Scene.all.selector('.handwriting-stroke-badge')).toHaveCount(2),
+      Scene.expectAll(Scene.all.selector('.handwriting-direction')).toHaveCount(2),
+      Scene.tap(simulation => expect(Scene.findAll(simulation.html, '.handwriting-stroke-number').map(Scene.textContent)).toEqual(['2', '3'])),
+      Scene.expect(Scene.selector('g')).toHaveAttr('aria-hidden', 'true'),
+      Scene.Command.expectNone(),
+    )
+  })
+
+  it('localizes stroke numbers while leaving a lowercase dot without a misleading direction arrow', () => {
+    Scene.scene(
+      { update: mutedUpdate, view: (model: Handwriting.Model) => Handwriting.view(model, 'fa') }, Scene.with(target(HANDWRITING_LETTERS.indexOf('i'), 'lower')),
+      Scene.Mount.resolveAll(boardMounted()),
+      Scene.expectAll(Scene.all.selector('.handwriting-stroke-badge')).toHaveCount(2),
+      Scene.expectAll(Scene.all.selector('.handwriting-direction')).toHaveCount(1),
+      Scene.tap(simulation => expect(Scene.findAll(simulation.html, '.handwriting-stroke-number').map(Scene.textContent)).toEqual(['۱', '۲'])),
       Scene.Command.expectNone(),
     )
   })

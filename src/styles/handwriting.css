@@ -90,6 +90,17 @@
   stroke: var(--card-bg); stroke-width: 1.5;
   pointer-events: none;
 }
+.handwriting-direction {
+  fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
+  pointer-events: none;
+}
+.handwriting-stroke-badge {
+  fill: var(--card-bg); stroke-width: .7; pointer-events: none;
+}
+.handwriting-stroke-number {
+  font: 800 7px system-ui, sans-serif; text-anchor: middle; dominant-baseline: central;
+  pointer-events: none; user-select: none;
+}
 .handwriting-pen {
   fill: var(--card-bg); stroke: var(--text-primary); stroke-width: 1.5;
   pointer-events: none;

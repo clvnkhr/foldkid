@@ -73,9 +73,9 @@ export const offsetForTime = (hour: number, minute: number, second: number, now:
 export const timePhrase = (hour: number, minute: number, style: PhraseStyle = 'natural'): string => {
   const h = displayHour(hour)
   const next = displayHour(hour + 1)
+  if (minute === 0) return `${h} o'clock`
   if (minute === 30) return `half past ${h}`
   if (style === 'digital') return `${h}:${pad(minute)}`
-  if (minute === 0) return `${h} o'clock`
   if (minute === 15) return `quarter past ${h}`
   if (minute === 30) return `half past ${h}`
   if (minute === 45) return `quarter to ${next}`

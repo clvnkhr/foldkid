@@ -146,12 +146,46 @@ export const mountHandwriting = (element: Element): Stream.Stream<Message> => St
 }))
 
 const COLORS = ['#f43f5e', '#f59e0b', '#22c55e', '#06b6d4', '#6366f1', '#a855f7'] as const
+const strokeCues = (model: Model) => {
+  const guide = currentGuide(model)
+  const labels: HandwritingPoint[] = []
+  return guide.strokes.map((stroke, strokeIndex) => {
+    if (model.progress[strokeIndex] !== 0) return undefined
+    const start = stroke[0]!
+    const ahead = Math.min(3, stroke.length - 1)
+    const tip = stroke[ahead]!
+    const before = stroke[Math.max(0, ahead - 1)]!
+    const after = stroke[Math.min(stroke.length - 1, ahead + 1)]!
+    const length = Math.hypot(after.x - before.x, after.y - before.y) || 1
+    const dx = (after.x - before.x) / length
+    const dy = (after.y - before.y) / length
+    const candidates = [0, -8, 8].flatMap(along => [1, -1].map(side => ({
+      x: start.x + dx * along - dy * 13 * side, y: start.y + dy * along + dx * 13 * side,
+    })))
+    const clearance = (candidate: HandwritingPoint) => {
+      let score = Math.min(candidate.x - 7, guide.width - candidate.x - 7, candidate.y - 7, guide.height - candidate.y - 7)
+      for (const points of guide.strokes) for (const point of points)
+        score = Math.min(score, Math.hypot(candidate.x - point.x, candidate.y - point.y) - 6)
+      for (const label of labels) score = Math.min(score, Math.hypot(candidate.x - label.x, candidate.y - label.y) - 13)
+      return score
+    }
+    const label = candidates.map(point => ({ point, clearance: clearance(point) }))
+      .reduce((best, candidate) => candidate.clearance > best.clearance ? candidate : best).point
+    labels.push(label)
+    const arrow = stroke.length > 2 ? handwritingPath([
+      { x: tip.x - dx * 4.4 - dy * 3, y: tip.y - dy * 4.4 + dx * 3 }, tip,
+      { x: tip.x - dx * 4.4 + dy * 3, y: tip.y - dy * 4.4 - dx * 3 },
+    ]) : undefined
+    return { label, arrow }
+  })
+}
 export const view = (model: Model, language: string) => {
   const h = html<Message>()
   const guide = currentGuide(model)
   const complete = isComplete(model)
   const uppercase = model.mode === 'letters' && model.letterCase === 'upper'
   const numbers = new Intl.NumberFormat(normalizeLanguage(language))
+  const cues = strokeCues(model)
   const index = model.mode === 'letters' ? model.letterIndex : model.wordIndex
   return h.div([h.Class('page handwriting-page')], [h.div([h.Class('card handwriting-card')], [
     h.h1([h.Class('title')], [t('handwritingTitle', language)]),
@@ -181,17 +215,28 @@ export const view = (model: Model, language: string) => {
       h.g([h.AriaHidden(true), h.Attribute('focusable', 'false')], [
         h.path([h.Class('handwriting-midline'), h.D(`M 8 ${uppercase ? 72 : 65} H ${guide.width - 8}`)], []),
         h.path([h.Class('handwriting-baseline'), h.D(`M 8 ${uppercase ? 120 : 115} H ${guide.width - 8}`)], []),
+        ...guide.strokes.map(stroke => h.path([h.Class('handwriting-guide'), h.D(handwritingPath(stroke))], [])),
         ...guide.strokes.flatMap((stroke, strokeIndex) => {
           const progress = model.progress[strokeIndex]!
           const traced = stroke.slice(0, progress)
           const next = stroke[progress]
+          const cue = cues[strokeIndex]
+          const color = COLORS[strokeIndex % COLORS.length]!
+          const earlierStart = next && guide.strokes.some((earlier, earlierIndex) => {
+            const point = earlier[model.progress[earlierIndex]!]
+            return earlierIndex < strokeIndex && point && Math.hypot(point.x - next.x, point.y - next.y) < 1
+          })
           return [
-            h.path([h.Class('handwriting-guide'), h.D(handwritingPath(stroke))], []),
             ...(traced.length > 1 ? [
               h.path([h.Class('handwriting-ink'), h.D(handwritingPath(traced)), h.Stroke(`url(#handwriting-gradient-${model.revision}-${strokeIndex})`)], []),
               h.path([h.Class('handwriting-ink-highlight'), h.D(handwritingPath(traced))], []),
             ] : []),
-            ...(next ? [h.circle([h.Class('handwriting-start'), h.Cx(String(next.x)), h.Cy(String(next.y)), h.R('4.2'), h.Fill(COLORS[strokeIndex % COLORS.length]!)], [])] : []),
+            ...(cue ? [
+              ...(cue.arrow ? [h.path([h.Class('handwriting-direction'), h.D(cue.arrow), h.Stroke(color)], [])] : []),
+              h.circle([h.Class('handwriting-stroke-badge'), h.Cx(String(cue.label.x)), h.Cy(String(cue.label.y)), h.R('5.8'), h.Stroke(color)], []),
+              h.text([h.Class('handwriting-stroke-number'), h.Attribute('x', String(cue.label.x)), h.Attribute('y', String(cue.label.y)), h.Fill(color)], [numbers.format(strokeIndex + 1)]),
+            ] : []),
+            ...(next && !earlierStart ? [h.circle([h.Class('handwriting-start'), h.Cx(String(next.x)), h.Cy(String(next.y)), h.R('4.2'), h.Fill(color)], [])] : []),
           ]
         }),
         ...(model.pen ? [h.circle([h.Class('handwriting-pen'), h.Cx(String(model.pen.point.x)), h.Cy(String(model.pen.point.y)), h.R('3')], [])] : []),

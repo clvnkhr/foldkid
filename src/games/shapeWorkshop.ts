@@ -3,7 +3,10 @@ import { Command, Render } from 'foldkit'
 import { html, type Html } from 'foldkit/html'
 import { m } from 'foldkit/message'
 
-import { t } from '../i18n'
+import { chime, pop } from '../audio'
+import { normalizeLanguage, t, tf } from '../i18n'
+import { numberToWord } from '../numberWords'
+import { speak, type SpeechOptions } from '../speech'
 
 export type Point = readonly [x: number, y: number]
 export interface Bounds { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
@@ -411,8 +414,10 @@ export const init: Model = { roundIndex: 0, placedPieceIds: [], flyingPieceToken
 export const TapPiece = m('ShapeWorkshopTapPiece', { index: S.Number })
 export const PieceFlightFinished = m('ShapeWorkshopPieceFlightFinished', { index: S.Number, token: S.Number })
 export const NextPuzzle = m('ShapeWorkshopNextPuzzle')
+export const PreviousPuzzle = m('ShapeWorkshopPreviousPuzzle')
 export const ReplayPuzzle = m('ShapeWorkshopReplayPuzzle')
-export const Message = S.Union([TapPiece, PieceFlightFinished, NextPuzzle, ReplayPuzzle])
+export const SoundPlayed = m('ShapeWorkshopSoundPlayed')
+export const Message = S.Union([TapPiece, PieceFlightFinished, NextPuzzle, PreviousPuzzle, ReplayPuzzle, SoundPlayed])
 export type Message = typeof Message.Type
 
 export const normalizeRoundIndex = (index: number): number => {
@@ -425,6 +430,50 @@ export const normalizePuzzleIndex = (roundIndex: number): number =>
 
 export const currentPuzzle = (model: Pick<Model, 'roundIndex'>): WorkshopPuzzle =>
   WORKSHOP_PUZZLES[normalizePuzzleIndex(model.roundIndex)] ?? WORKSHOP_PUZZLES[0]!
+
+interface WorkshopPieceCount {
+  readonly nameKey: ShapeNameKey
+  readonly count: number
+}
+
+const puzzlePieceCounts = (puzzle: WorkshopPuzzle): readonly WorkshopPieceCount[] => {
+  const counts = new Map<ShapeNameKey, number>()
+  for (const piece of puzzle.pieces) counts.set(piece.nameKey, (counts.get(piece.nameKey) ?? 0) + 1)
+  return [...counts].map(([nameKey, count]) => ({ nameKey, count }))
+}
+
+const spokenShapeName = (nameKey: ShapeNameKey, language: string): string => {
+  const normalizedLanguage = normalizeLanguage(language)
+  const name = t(nameKey, normalizedLanguage)
+  return normalizedLanguage === 'de' ? name : name.toLocaleLowerCase(normalizedLanguage)
+}
+
+const pluralPieceName = (nameKey: ShapeNameKey, language: string): string => {
+  const normalizedLanguage = normalizeLanguage(language)
+  const singular = spokenShapeName(nameKey, normalizedLanguage)
+  if (normalizedLanguage === 'en') return `${singular}${singular.endsWith('s') ? 'es' : 's'}`
+  if (normalizedLanguage === 'fr') return `${singular}s`
+  if (normalizedLanguage === 'de') return `${singular}${nameKey === 'shapeRhombus' || nameKey === 'shapeDiamond' ? 'n' : 'e'}`
+  return singular
+}
+
+const pieceCountPhrase = ({ nameKey, count }: WorkshopPieceCount, language: string): string => {
+  const normalizedLanguage = normalizeLanguage(language)
+  const singular = spokenShapeName(nameKey, normalizedLanguage)
+  if (normalizedLanguage === 'zh') return `${count === 2 ? '两' : numberToWord(count, normalizedLanguage)}个${singular}`
+  if (normalizedLanguage === 'zh-HK') return `${count === 2 ? '兩' : numberToWord(count, normalizedLanguage)}個${singular}`
+  if (normalizedLanguage === 'ja') return `${numberToWord(count, normalizedLanguage)}個の${singular}`
+  if (normalizedLanguage === 'de' && count === 1) return `${nameKey === 'shapeRhombus' || nameKey === 'shapeDiamond' ? 'eine' : 'ein'} ${singular}`
+  return `${numberToWord(count, normalizedLanguage)} ${count === 1 ? singular : pluralPieceName(nameKey, normalizedLanguage)}`
+}
+
+export const puzzleCompletionPhrase = (puzzle: WorkshopPuzzle, language: string = 'en'): string => {
+  const normalizedLanguage = normalizeLanguage(language)
+  const ingredientList = new Intl.ListFormat(normalizedLanguage, { style: 'long', type: 'conjunction' })
+    .format(puzzlePieceCounts(puzzle).map(count => pieceCountPhrase(count, normalizedLanguage)))
+  const pieces = ingredientList.charAt(0).toLocaleUpperCase(normalizedLanguage) + ingredientList.slice(1)
+  return tf('shapeWorkshopCompletionSpeech', normalizedLanguage, pieces, spokenShapeName(puzzle.nameKey, normalizedLanguage), puzzle.nameKey)
+}
 
 export const validPlacedPieceIds = (model: Model): readonly number[] => {
   const puzzle = currentPuzzle(model)
@@ -554,7 +603,22 @@ const flyPieceCommand = (index: number, token: number, geometry: Geometry): Comm
   }),
 })
 
-export const update = (model: Model, message: Message): readonly [Model, ReadonlyArray<Command.Command<Message>>] =>
+const resetForPuzzle = (model: Model, roundIndex: number): Model => ({
+  ...model,
+  roundIndex: ((roundIndex % WORKSHOP_PUZZLES.length) + WORKSHOP_PUZZLES.length) % WORKSHOP_PUZZLES.length,
+  placedPieceIds: [],
+  flyingPieceTokens: [],
+  animationToken: Math.max(0, Math.trunc(model.animationToken)) + 1,
+  revision: Math.max(0, Math.trunc(model.revision)) + 1,
+})
+
+export const update = (
+  model: Model,
+  message: Message,
+  language: string = 'en',
+  muted: boolean = true,
+  speech: SpeechOptions = {},
+): readonly [Model, ReadonlyArray<Command.Command<Message>>] =>
   M.value(message).pipe(
     M.withReturnType<readonly [Model, ReadonlyArray<Command.Command<Message>>]>(),
     M.tagsExhaustive({
@@ -566,23 +630,51 @@ export const update = (model: Model, message: Message): readonly [Model, Readonl
         const flyingPieceTokens = puzzle.pieces.map((_, pieceIndex) =>
           Number.isInteger(model.flyingPieceTokens[pieceIndex]) ? model.flyingPieceTokens[pieceIndex]! : -1)
         flyingPieceTokens[index] = token
-        return [{ ...model, flyingPieceTokens, animationToken: token }, [flyPieceCommand(index, token, piece.geometry)]]
+        const audioCommands: ReadonlyArray<Command.Command<Message>> = muted
+          ? []
+          : [
+              pop(SoundPlayed()),
+              speak(t(piece.nameKey, language), SoundPlayed(), { ...speech, lang: language }),
+            ]
+        return [{ ...model, flyingPieceTokens, animationToken: token }, [flyPieceCommand(index, token, piece.geometry), ...audioCommands]]
       },
       ShapeWorkshopPieceFlightFinished: ({ index, token }) => {
         if (!validFlyingPieceIds(model).includes(index) || model.flyingPieceTokens[index] !== token) return [model, []]
         const flyingPieceTokens = currentPuzzle(model).pieces.map((_, pieceIndex) =>
           Number.isInteger(model.flyingPieceTokens[pieceIndex]) ? model.flyingPieceTokens[pieceIndex]! : -1)
         flyingPieceTokens[index] = -1
-        return [{ ...model, placedPieceIds: [...validPlacedPieceIds(model), index], flyingPieceTokens }, []]
+        const next = { ...model, placedPieceIds: [...validPlacedPieceIds(model), index], flyingPieceTokens }
+        const audioCommands: ReadonlyArray<Command.Command<Message>> = !muted && isPuzzleComplete(next)
+          ? [
+              chime(SoundPlayed()),
+              speak(puzzleCompletionPhrase(currentPuzzle(next), language), SoundPlayed(), { ...speech, lang: language }),
+            ]
+          : []
+        return [next, audioCommands]
       },
-      ShapeWorkshopNextPuzzle: () => isPuzzleComplete(model)
-        ? [{ ...model, roundIndex: normalizeRoundIndex(model.roundIndex) + 1, placedPieceIds: [], flyingPieceTokens: [], animationToken: model.animationToken + 1, revision: model.revision + 1 }, []]
-        : [model, []],
-      ShapeWorkshopReplayPuzzle: () => [{ ...model, roundIndex: normalizeRoundIndex(model.roundIndex), placedPieceIds: [], flyingPieceTokens: [], animationToken: model.animationToken + 1, revision: model.revision + 1 }, []],
+      ShapeWorkshopNextPuzzle: () => {
+        const next = resetForPuzzle(model, normalizePuzzleIndex(model.roundIndex) + 1)
+        return [next, muted ? [] : [
+          speak(t(currentPuzzle(next).nameKey, language), SoundPlayed(), { ...speech, lang: language }),
+        ]]
+      },
+      ShapeWorkshopPreviousPuzzle: () => {
+        const next = resetForPuzzle(model, normalizePuzzleIndex(model.roundIndex) - 1)
+        return [next, muted ? [] : [
+          speak(t(currentPuzzle(next).nameKey, language), SoundPlayed(), { ...speech, lang: language }),
+        ]]
+      },
+      ShapeWorkshopReplayPuzzle: () => {
+        const next = resetForPuzzle(model, normalizePuzzleIndex(model.roundIndex))
+        return [next, muted ? [] : [
+          speak(t('shapeWorkshopReplay', language), SoundPlayed(), { ...speech, lang: language }),
+        ]]
+      },
+      ShapeWorkshopSoundPlayed: () => [model, []],
     }),
   )
 
-type WorkshopTextKey = 'shapeWorkshopTitle' | 'shapeWorkshopRound' | 'shapeWorkshopPrompt' | 'shapeWorkshopTapPiece' | 'shapeWorkshopComplete' | 'shapeWorkshopNext' | 'shapeWorkshopReplay'
+type WorkshopTextKey = 'shapeWorkshopTitle' | 'shapeWorkshopRound' | 'shapeWorkshopPrompt' | 'shapeWorkshopTapPiece' | 'shapeWorkshopComplete' | 'shapeWorkshopNext' | 'shapeWorkshopPrevious' | 'shapeWorkshopReplay'
 const wt = (key: WorkshopTextKey, language: string): string => t(key, language)
 
 const paddedViewBox = (geometry: Geometry, padding = 8): string => {
@@ -591,9 +683,7 @@ const paddedViewBox = (geometry: Geometry, padding = 8): string => {
 }
 
 const puzzleEquation = (puzzle: WorkshopPuzzle, language: string): string => {
-  const counts = new Map<ShapeNameKey, number>()
-  for (const piece of puzzle.pieces) counts.set(piece.nameKey, (counts.get(piece.nameKey) ?? 0) + 1)
-  const ingredients = [...counts].map(([nameKey, count]) =>
+  const ingredients = puzzlePieceCounts(puzzle).map(({ nameKey, count }) =>
     count === 1 ? t(nameKey, language) : `${count} × ${t(nameKey, language)}`)
   return `${ingredients.join(' + ')} = ${t(puzzle.nameKey, language)}`
 }
@@ -634,7 +724,7 @@ export const view = (model: Model, language: string = 'en'): Html => {
           h.h1([h.Class('title')], [wt('shapeWorkshopTitle', language)]),
           h.p([h.Class('shape-workshop-prompt')], [wt('shapeWorkshopPrompt', language)]),
         ]),
-        h.span([h.Class('shape-workshop-progress'), h.Attribute('dir', 'ltr')], [`${wt('shapeWorkshopRound', language)} ${normalizeRoundIndex(model.roundIndex) + 1}`]),
+        h.span([h.Class('shape-workshop-progress'), h.Attribute('dir', 'ltr')], [`${wt('shapeWorkshopRound', language)} ${normalizePuzzleIndex(model.roundIndex) + 1}/${WORKSHOP_PUZZLES.length}`]),
       ]),
       target,
       h.div([h.Class('shape-workshop-status'), h.Attribute('role', 'status'), h.Attribute('aria-live', 'polite')], complete
@@ -661,8 +751,9 @@ export const view = (model: Model, language: string = 'en'): Html => {
         ])),
       ]),
       h.div([h.Class('shape-workshop-actions')], [
+        h.button([h.Class('btn btn-secondary shape-workshop-previous'), h.OnClick(PreviousPuzzle())], [wt('shapeWorkshopPrevious', language)]),
         h.button([h.Class('btn btn-secondary'), h.OnClick(ReplayPuzzle())], [wt('shapeWorkshopReplay', language)]),
-        h.button([h.Class('btn btn-primary'), h.OnClick(NextPuzzle()), h.Disabled(!complete)], [wt('shapeWorkshopNext', language)]),
+        h.button([h.Class('btn btn-primary shape-workshop-next'), h.OnClick(NextPuzzle())], [wt('shapeWorkshopNext', language)]),
       ]),
     ]),
   ])

@@ -201,6 +201,19 @@ describe('styles.css invariants', () => {
     expect(focus).toContain('outline: 3px solid var(--text-primary)')
   })
 
+  it('keeps four Growing Numbers cards visible with scrollable history', () => {
+    const strip = cssRule('.growing-numbers-sequence--explore')
+    const term = cssRule('.growing-numbers-term')
+
+    expect(strip).toContain('display: flex')
+    expect(strip).toContain('overflow-x: auto')
+    expect(strip).toContain('scroll-snap-type: x proximity')
+    expect(strip).toContain('-webkit-overflow-scrolling: touch')
+    expect(strip).toContain('--growing-numbers-term-width: calc((100% - 3 * var(--growing-numbers-gap)) / 4)')
+    expect(term).toContain('flex: 0 0 var(--growing-numbers-term-width, auto)')
+    expect(term).toContain('content-visibility: auto')
+  })
+
   it('keeps handwriting tracing scoped to the board with reachable native controls', () => {
     const board = cssRule('.handwriting-board')
     const choices = cssRule('.handwriting-choices')

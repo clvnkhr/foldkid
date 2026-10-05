@@ -312,10 +312,17 @@ export const Message = S.Union([
   GrowingNumbers.ChooseGrowth,
   GrowingNumbers.FinishGrowth,
   GrowingNumbers.NextPuzzle,
+  GrowingNumbers.PreviousPuzzle,
+  GrowingNumbers.SetMode,
+  GrowingNumbers.RevealNext,
+  GrowingNumbers.SequenceScrolled,
+  GrowingNumbers.SoundPlayed,
   ShapeWorkshop.TapPiece,
   ShapeWorkshop.PieceFlightFinished,
   ShapeWorkshop.NextPuzzle,
+  ShapeWorkshop.PreviousPuzzle,
   ShapeWorkshop.ReplayPuzzle,
+  ShapeWorkshop.SoundPlayed,
   MagneticBlocks.SpawnBlocks,
   MagneticBlocks.RemoveBlock,
   MagneticBlocks.SetBreakSpeed,
@@ -692,7 +699,7 @@ const updateGrowingNumbers = (
   model: Model,
   message: GrowingNumbers.Message,
 ): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
-  const [next, cmds] = GrowingNumbers.update(model.growingNumbers, message)
+  const [next, cmds] = GrowingNumbers.update(model.growingNumbers, message, model.language, model.muted, { rate: model.speechRate, pitch: model.speechPitch })
   return [{ ...model, growingNumbers: next }, cmds]
 }
 
@@ -700,7 +707,7 @@ const updateShapeWorkshop = (
   model: Model,
   message: ShapeWorkshop.Message,
 ): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
-  const [next, cmds] = ShapeWorkshop.update(model.shapeWorkshop, message)
+  const [next, cmds] = ShapeWorkshop.update(model.shapeWorkshop, message, model.language, model.muted, { rate: model.speechRate, pitch: model.speechPitch })
   return [{ ...model, shapeWorkshop: next }, cmds]
 }
 
@@ -921,10 +928,17 @@ const _update = (
       GrowingNumbersChooseGrowth: (msg) => updateGrowingNumbers(model, msg),
       GrowingNumbersFinishGrowth: (msg) => updateGrowingNumbers(model, msg),
       GrowingNumbersNextPuzzle: (msg) => updateGrowingNumbers(model, msg),
+      GrowingNumbersPreviousPuzzle: (msg) => updateGrowingNumbers(model, msg),
+      GrowingNumbersSetMode: (msg) => updateGrowingNumbers(model, msg),
+      GrowingNumbersRevealNext: (msg) => updateGrowingNumbers(model, msg),
+      GrowingNumbersSequenceScrolled: (msg) => updateGrowingNumbers(model, msg),
+      GrowingNumbersSoundPlayed: (msg) => updateGrowingNumbers(model, msg),
       ShapeWorkshopTapPiece: (msg) => updateShapeWorkshop(model, msg),
       ShapeWorkshopPieceFlightFinished: (msg) => updateShapeWorkshop(model, msg),
       ShapeWorkshopNextPuzzle: (msg) => updateShapeWorkshop(model, msg),
+      ShapeWorkshopPreviousPuzzle: (msg) => updateShapeWorkshop(model, msg),
       ShapeWorkshopReplayPuzzle: (msg) => updateShapeWorkshop(model, msg),
+      ShapeWorkshopSoundPlayed: (msg) => updateShapeWorkshop(model, msg),
       MagneticBlocksSpawn: (msg) => updateMagneticBlocks(model, msg),
       MagneticBlocksRemove: (msg) => updateMagneticBlocks(model, msg),
       MagneticBlocksSetBreakSpeed: (msg) => updateMagneticBlocks(model, msg),

@@ -281,12 +281,23 @@ describe('settings persistence', () => {
     {
       label: 'GrowingNumbersChooseGrowth',
       msg: GrowingNumbers.ChooseGrowth({ amount: 1 }),
-      resolves: [[{ name: 'GrowingNumbersFlyGrowth' }, GrowingNumbers.FinishGrowth()]],
+    },
+    {
+      label: 'GrowingNumbersRevealNext',
+      msg: GrowingNumbers.RevealNext(),
+      resolves: [
+        [{ name: 'GrowingNumbersScrollToNewest' }, GrowingNumbers.SequenceScrolled({ puzzleIndex: 0, revealedTermCount: 2 })],
+        [{ name: 'Speak' }, GrowingNumbers.SoundPlayed()],
+      ],
     },
     {
       label: 'ShapeWorkshopTapPiece',
       msg: ShapeWorkshop.TapPiece({ index: 0 }),
-      resolves: [[{ name: 'ShapeWorkshopFlyPiece' }, ShapeWorkshop.PieceFlightFinished({ index: 0, token: 1 })]],
+      resolves: [
+        [{ name: 'ShapeWorkshopFlyPiece' }, ShapeWorkshop.PieceFlightFinished({ index: 0, token: 1 })],
+        [{ name: 'PlayPop' }, ShapeWorkshop.SoundPlayed()],
+        [{ name: 'Speak' }, ShapeWorkshop.SoundPlayed()],
+      ],
     },
     { label: 'CounterPointerDown', msg: Counter.PointerDown({ timeStamp: 0, button: 'inc' }) },
     { label: 'CounterPressCancelled', msg: Counter.PressCancelled({ pointerId: 1 }) },
@@ -920,7 +931,8 @@ describe('Main', () => {
   })
 
   it('delegates both visual geometry game messages', () => {
-    const [growingNumbers] = Main.update(createModel(), GrowingNumbers.ChooseGrowth({ amount: 1 }))
+    const base = createModel()
+    const [growingNumbers] = Main.update({ ...base, growingNumbers: { ...base.growingNumbers, mode: 'quiz' } }, GrowingNumbers.ChooseGrowth({ amount: 1 }))
     const [shapeWorkshopFlying] = Main.update(createModel(), ShapeWorkshop.TapPiece({ index: 0 }))
     const [shapeWorkshop] = Main.update(shapeWorkshopFlying, ShapeWorkshop.PieceFlightFinished({ index: 0, token: 1 }))
 

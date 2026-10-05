@@ -81,7 +81,7 @@ describe('handwriting stroke guides', () => {
 
   it('preserves counters, separate bars and the small dots on lowercase i and j', () => {
     const letter = (text: string, letterCase: 'upper' | 'lower') => handwritingGuide('letters', letterCase, HANDWRITING_LETTERS.indexOf(text)).strokes
-    expect(letter('a', 'upper')).toHaveLength(2)
+    expect(letter('a', 'upper')).toHaveLength(3)
     expect(letter('h', 'upper')).toHaveLength(3)
     expect(letter('x', 'upper')).toHaveLength(2)
     for (const letterCase of ['upper', 'lower'] as const) {
@@ -123,6 +123,132 @@ describe('handwriting stroke guides', () => {
     expect(handwritingPath([])).toBe('')
     expect(handwritingPath([{ x: Number.NaN, y: 20 }])).toBe('')
     expect(handwritingPath([{ x: 10, y: Number.POSITIVE_INFINITY }])).toBe('')
+  })
+})
+
+describe('natural handwriting formation', () => {
+  const letter = (text: string, letterCase: 'upper' | 'lower' = 'upper') =>
+    handwritingGuide('letters', letterCase, HANDWRITING_LETTERS.indexOf(text)).strokes
+  const ends = (points: HandwritingStroke) => [points[0], points.at(-1)]
+
+  it('starts both uppercase A legs at the apex and draws the crossbar left to right', () => {
+    const [left, right, bar] = letter('a')
+    expect(ends(left!)).toEqual([{ x: 50, y: 25 }, { x: 20, y: 120 }])
+    expect(ends(right!)).toEqual([{ x: 50, y: 25 }, { x: 80, y: 120 }])
+    expect(ends(bar!)).toEqual([{ x: 32, y: 82 }, { x: 68, y: 82 }])
+    expect(left![1]!.y).toBeGreaterThan(left![0]!.y)
+    expect(right![1]!.y).toBeGreaterThan(right![0]!.y)
+  })
+
+  it.each(['e', 'f'])('draws uppercase %s down its stem before separate left-to-right bars', text => {
+    const [stem, ...bars] = letter(text)
+    expect(ends(stem!)).toEqual([{ x: 20, y: 25 }, { x: 20, y: 120 }])
+    expect(bars).toHaveLength(text === 'e' ? 3 : 2)
+    expect(bars.map(points => points[0]!.y)).toEqual(text === 'e' ? [25, 72, 120] : [25, 72])
+    for (const bar of bars) {
+      expect(bar[0]!.x).toBe(20)
+      expect(bar.at(-1)!.x).toBeGreaterThan(bar[0]!.x)
+      expect(bar.every(point => point.y === bar[0]!.y)).toBe(true)
+    }
+  })
+
+  it.each(['m', 'n'])('starts uppercase %s with a downward left stem and finishes with a downward right stem', text => {
+    const [left, diagonal, right] = letter(text)
+    expect(left![0]!.y).toBe(25)
+    expect(left!.at(-1)!.y).toBe(120)
+    expect(left!.every(point => point.x === left![0]!.x)).toBe(true)
+    expect(diagonal![0]).toEqual(left![0])
+    expect(diagonal![1]!.x).toBeGreaterThan(diagonal![0]!.x)
+    expect(diagonal![1]!.y).toBeGreaterThan(diagonal![0]!.y)
+    expect(right![0]!.y).toBe(25)
+    expect(right!.at(-1)!.y).toBe(120)
+    expect(right!.every(point => point.x === right![0]!.x)).toBe(true)
+  })
+
+  it('draws both uppercase Y branches downward and continues the right branch into its stem', () => {
+    const [left, right] = letter('y')
+    expect(ends(left!)).toEqual([{ x: 20, y: 25 }, { x: 50, y: 72 }])
+    expect(ends(right!)).toEqual([{ x: 80, y: 25 }, { x: 50, y: 120 }])
+    expect(right![1]!.y).toBeGreaterThan(right![0]!.y)
+    expect(Math.min(...right!.map(point => point.y))).toBe(25)
+  })
+
+  it.each([
+    { text: 'o', letterCase: 'upper' as const }, { text: 'q', letterCase: 'upper' as const },
+    ...['a', 'd', 'g', 'o', 'q'].map(text => ({ text, letterCase: 'lower' as const })),
+  ])('starts $letterCase $text counters at the upper right and curves anticlockwise', ({ text, letterCase }) => {
+    const counter = letter(text, letterCase)[0]!
+    const centerX = (Math.min(...counter.map(point => point.x)) + Math.max(...counter.map(point => point.x))) / 2
+    const centerY = (Math.min(...counter.map(point => point.y)) + Math.max(...counter.map(point => point.y))) / 2
+    expect(counter[0]!.x).toBeGreaterThan(centerX)
+    expect(counter[0]!.y).toBeLessThan(centerY)
+    expect(counter[1]!.x).toBeLessThan(counter[0]!.x)
+    expect(counter[1]!.y).toBeLessThan(counter[0]!.y)
+    expect(distance(counter[0]!, counter.at(-1)!)).toBeLessThan(0.02)
+  })
+
+  it.each(['b', 'h', 'm', 'n', 'p', 'r'])('keeps the lowercase %s downstroke and retraced arch connected', text => {
+    const strokes = letter(text, 'lower')
+    expect(strokes).toHaveLength(1)
+    const points = strokes[0]!
+    const stemX = points[0]!.x
+    expect(points[1]!.x).toBe(stemX)
+    expect(points[1]!.y).toBeGreaterThan(points[0]!.y)
+    const turn = points.findIndex((point, index) => index > 0 && point.y < points[index - 1]!.y)
+    expect(turn).toBeGreaterThan(5)
+    expect(points[turn]!.x).toBe(stemX)
+    const shoulder = points.findIndex((point, index) => index > turn && point.x > stemX + 5)
+    expect(shoulder).toBeGreaterThan(turn)
+    expect(points[shoulder]!.y).toBeLessThan(points[turn - 1]!.y - 15)
+    expect(completeTrace(points)).toBe(points.length)
+  })
+
+  it('continues uppercase G from its open curve into the inward crossbar without another start', () => {
+    const [points] = letter('g')
+    expect(letter('g')).toHaveLength(1)
+    expect(points![0]).toEqual(letter('c')[0]![0])
+    expect(points!.at(-1)).toEqual({ x: 50, y: 78 })
+    const end = points!.slice(-3)
+    expect(end.every(point => point.y === 78)).toBe(true)
+    expect(end[1]!.x).toBeLessThan(end[0]!.x)
+  })
+
+  it('connects the uppercase R bow to its diagonal leg instead of introducing a floating start', () => {
+    const [stem, bow] = letter('r')
+    expect(letter('r')).toHaveLength(2)
+    expect(ends(stem!)).toEqual([{ x: 20, y: 25 }, { x: 20, y: 120 }])
+    expect(ends(bow!)).toEqual([{ x: 20, y: 25 }, { x: 85, y: 120 }])
+    expect(Math.min(...bow!.map(point => distance(point, { x: 20, y: 75 })))).toBeLessThan(3)
+    expect(bow!.at(-1)!.y).toBeGreaterThan(bow!.at(-2)!.y)
+    expect(bow!.at(-1)!.x).toBeGreaterThan(bow!.at(-2)!.x)
+  })
+
+  it('keeps lowercase u connected and draws its final right stem downward', () => {
+    const [points] = letter('u', 'lower')
+    expect(letter('u', 'lower')).toHaveLength(1)
+    expect(ends(points!)).toEqual([{ x: 25, y: 65 }, { x: 75, y: 115 }])
+    expect(points![1]!.y).toBeGreaterThan(points![0]!.y)
+    expect(points!.at(-1)!.y).toBeGreaterThan(points!.at(-2)!.y)
+  })
+
+  it('joins both lowercase y diagonals before the right stroke continues into its descender', () => {
+    const [left, right] = letter('y', 'lower')
+    const junction = left!.at(-1)!
+    const start = right![0]!
+    const end = right!.at(-1)!
+    const fraction = (junction.y - start.y) / (end.y - start.y)
+    expect(fraction).toBeGreaterThan(0)
+    expect(fraction).toBeLessThan(1)
+    expect(junction.x).toBeCloseTo(start.x + (end.x - start.x) * fraction)
+  })
+
+  it('starts lowercase f at its upper hook and curves over into its downward stem', () => {
+    const [hook, bar] = letter('f', 'lower')
+    expect(hook![0]!.x).toBeGreaterThan(hook!.at(-1)!.x)
+    expect(hook![0]!.y).toBeLessThan(45)
+    expect(hook![1]!.x).toBeLessThan(hook![0]!.x)
+    expect(hook!.at(-1)!.y).toBe(115)
+    expect(bar![0]!.x).toBeLessThan(bar!.at(-1)!.x)
   })
 })
 

@@ -30,5 +30,5 @@ button.shape-workshop-target { cursor: pointer; border-radius: 1rem; }
 .dark .shape-workshop-target--complete .shape-workshop-outline { stroke: #a78bfa; }
 @keyframes shapeWorkshopGlow { 0% { filter: drop-shadow(0 0 0 transparent); transform: scale(.96); transform-origin: center; } 70% { filter: drop-shadow(0 0 15px #fbbf24); } 100% { filter: drop-shadow(0 0 9px #c4b5fd); transform: scale(1); } }
 @keyframes shapeWorkshopSlotPulse { from { opacity: .65; } to { opacity: 1; } }
-@media (max-width: 480px) { .shape-workshop-card { min-height: 78vh; } .shape-workshop-target { height: 34vh; } .shape-workshop-heading { padding-top: 1.5rem; } }
+@media (max-width: 480px) { .shape-workshop-card { min-height: 78vh; } .shape-workshop-target { height: 34vh; } .shape-workshop-heading { padding-top: 1.5rem; } .shape-workshop-actions { flex-wrap: wrap; } .shape-workshop-actions .btn { flex: 1 1 8rem; padding-inline: .8rem; } }
 @media (prefers-reduced-motion: reduce) { .shape-workshop-piece, .shape-workshop-piece-button { transition: none; } .shape-workshop-target--complete .shape-workshop-target-svg, .shape-workshop-slot--receiving { animation: none; } }

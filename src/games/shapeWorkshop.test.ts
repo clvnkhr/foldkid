@@ -7,6 +7,7 @@ import {
   Model,
   NextPuzzle,
   PieceFlightFinished,
+  PreviousPuzzle,
   ReplayPuzzle,
   TapPiece,
   WORKSHOP_PUZZLES,
@@ -21,6 +22,7 @@ import {
   normalizePuzzleIndex,
   normalizeRoundIndex,
   polygonArea,
+  puzzleCompletionPhrase,
   puzzleHasExactCoverage,
   puzzlePieceArea,
   update,
@@ -31,6 +33,7 @@ import {
   type PolygonGeometry,
   type WorkshopPuzzle,
 } from './shapeWorkshop'
+import { t } from '../i18n'
 
 const byId = (id: string): WorkshopPuzzle => {
   const puzzle = WORKSHOP_PUZZLES.find(candidate => candidate.id === id)
@@ -82,6 +85,50 @@ describe('Shape Workshop geometry', () => {
     expect(new Set(WORKSHOP_PUZZLES.map(puzzle => puzzle.nameKey))).toEqual(new Set([
       'shapeCircle', 'shapeTriangle', 'shapeSquare', 'shapeRectangle', 'shapePentagon', 'shapeHexagon', 'shapeOctagon', 'shapeRhombus', 'shapeTrapezoid',
     ]))
+  })
+
+  it('describes every completed recipe with natural counts, plurals, and articles', () => {
+    const expectedById: Readonly<Record<string, string>> = {
+      'triangles-square': 'Two triangles made a square.',
+      'semicircles-circle': 'Two semicircles made a circle.',
+      'triangles-rhombus': 'Two triangles made a rhombus.',
+      'triangles-trapezoid': 'Three triangles made a trapezoid.',
+      'triangles-large-triangle': 'Four triangles made a triangle.',
+      'triangles-hexagon': 'Six triangles made a hexagon.',
+      'squares-large-square': 'Four squares made a square.',
+      'squares-rectangle': 'Two squares made a rectangle.',
+      'rectangles-square': 'Two rectangles made a square.',
+      'triangles-rectangle': 'Two triangles made a rectangle.',
+      'rhombi-hexagon': 'Three rhombuses made a hexagon.',
+      'trapezoids-hexagon': 'Two trapezoids made a hexagon.',
+      'triangles-pentagon': 'Five triangles made a pentagon.',
+      'triangles-octagon': 'Eight triangles made an octagon.',
+      'trapezoids-square': 'Two trapezoids made a square.',
+      'triangles-square-pinwheel': 'Four triangles made a square.',
+      'rhombi-large-rhombus': 'Four rhombuses made a rhombus.',
+      'rectangles-rectangle-mosaic': 'Four rectangles made a rectangle.',
+      'trapezoids-rectangle': 'Two trapezoids made a rectangle.',
+      'pentagons-hexagon': 'Two pentagons made a hexagon.',
+      'triangle-and-trapezoid-triangle': 'One triangle and one trapezoid made a triangle.',
+      'mixed-octagon-mosaic': 'One square, four rectangles, and four triangles made an octagon.',
+    }
+
+    expect(Object.fromEntries(WORKSHOP_PUZZLES.map(puzzle => [puzzle.id, puzzleCompletionPhrase(puzzle)]))).toStrictEqual(expectedById)
+  })
+
+  it('localizes the completion sentence rather than mixing translated shapes with English grammar', () => {
+    const puzzle = byId('triangles-square')
+    expect(Object.fromEntries(['en', 'zh', 'fr', 'de', 'fa', 'ms', 'zh-HK', 'ja'].map(language =>
+      [language, puzzleCompletionPhrase(puzzle, language)]))).toStrictEqual({
+      en: 'Two triangles made a square.',
+      zh: '两个三角形拼成了一个正方形。',
+      fr: 'Deux triangles ont formé un carré.',
+      de: 'Zwei Dreiecke haben ein Quadrat ergeben.',
+      fa: 'دو مثلث یک مربع ساختند.',
+      ms: 'Dua segi tiga membentuk sebuah segi empat sama.',
+      'zh-HK': '兩個三角形砌成咗一個正方形。',
+      ja: '二個のさんかくでせいほうけいができました。',
+    })
   })
 
   it('covers every silhouette exactly with in-bounds pieces and valid SVG paths', () => {
@@ -306,7 +353,7 @@ describe('Shape Workshop update', () => {
   it('replays the current puzzle and increments the render revision', () => {
     const model: Model = { ...init, roundIndex: WORKSHOP_PUZZLES.length * 3 + 2, placedPieceIds: [0, 1], animationToken: 7, revision: 4 }
     const [replayed, commands] = update(model, ReplayPuzzle())
-    expect(replayed).toStrictEqual({ roundIndex: WORKSHOP_PUZZLES.length * 3 + 2, placedPieceIds: [], flyingPieceTokens: [], animationToken: 8, revision: 5 })
+    expect(replayed).toStrictEqual({ roundIndex: 2, placedPieceIds: [], flyingPieceTokens: [], animationToken: 8, revision: 5 })
     expect(commands).toStrictEqual([])
   })
 
@@ -375,25 +422,29 @@ describe('Shape Workshop update', () => {
     }
   })
 
-  it('does not advance until the current silhouette is complete', () => {
-    const [unchanged, commands] = update(init, NextPuzzle())
-    expect(unchanged).toBe(init)
+  it('navigates before completion and invalidates any in-flight piece', () => {
+    const [flying] = update(init, TapPiece({ index: 0 }))
+    const [next, commands] = update(flying, NextPuzzle())
+    const [afterLateLanding] = update(next, PieceFlightFinished({ index: 0, token: 1 }))
+
+    expect(next).toMatchObject({ roundIndex: 1, placedPieceIds: [], flyingPieceTokens: [], animationToken: 2, revision: 1 })
+    expect(afterLateLanding).toBe(next)
     expect(commands).toStrictEqual([])
   })
 
-  it('keeps an unbounded round counter while selecting recipes cyclically', () => {
+  it('cycles forwards and backwards through canonical puzzle positions', () => {
     let model: Model = init
-    const rounds = WORKSHOP_PUZZLES.length * 5 + 7
-    for (let index = 1; index <= rounds; index++) {
-      model = { ...model, placedPieceIds: currentPuzzle(model).pieces.map((_, pieceIndex) => pieceIndex) }
+    for (let index = 1; index <= WORKSHOP_PUZZLES.length; index++) {
       ;[model] = update(model, NextPuzzle())
-      expect(model.roundIndex).toBe(index)
+      expect(model.roundIndex).toBe(index % WORKSHOP_PUZZLES.length)
       expect(model.placedPieceIds).toStrictEqual([])
       expect(model.flyingPieceTokens).toStrictEqual([])
       expect(model.revision).toBe(index)
       expect(currentPuzzle(model).id).toBe(WORKSHOP_PUZZLES[index % WORKSHOP_PUZZLES.length]!.id)
     }
-    expect(model.roundIndex).toBeGreaterThan(WORKSHOP_PUZZLES.length)
+    ;[model] = update(model, PreviousPuzzle())
+    expect(model.roundIndex).toBe(WORKSHOP_PUZZLES.length - 1)
+    expect(currentPuzzle(model).id).toBe(WORKSHOP_PUZZLES.at(-1)!.id)
   })
 
   it('sanitizes invalid rounds only for state safety and uses modulo only for recipe lookup', () => {
@@ -413,6 +464,76 @@ describe('Shape Workshop update', () => {
     expect(Option.isNone(decode({ _tag: 'ShapeWorkshopTapPiece', index: '1' }))).toBe(true)
     expect(Option.isSome(decode({ _tag: 'ShapeWorkshopPieceFlightFinished', index: 1, token: 3 }))).toBe(true)
     expect(Option.isNone(decode({ _tag: 'ShapeWorkshopPieceFlightFinished', index: 1, token: '3' }))).toBe(true)
+    expect(Option.isSome(decode({ _tag: 'ShapeWorkshopPreviousPuzzle' }))).toBe(true)
+  })
+
+  it('speaks piece names on taps and explains the recipe after the final piece lands', () => {
+    const [, tapCommands] = update(init, TapPiece({ index: 0 }), 'en', false)
+    const almostComplete: Model = { ...init, placedPieceIds: [0], flyingPieceTokens: [-1, 2], animationToken: 2 }
+    const [, completeCommands] = update(almostComplete, PieceFlightFinished({ index: 1, token: 2 }), 'en', false)
+    const [, mutedCompleteCommands] = update(almostComplete, PieceFlightFinished({ index: 1, token: 2 }), 'en', true)
+    const [, nextCommands] = update(init, NextPuzzle(), 'en', false)
+
+    expect(tapCommands.map(command => command.name)).toEqual(['ShapeWorkshopFlyPiece', 'PlayPop', 'Speak'])
+    expect(completeCommands.map(command => command.name)).toEqual(['PlayChime', 'Speak'])
+    expect(mutedCompleteCommands).toEqual([])
+    expect(nextCommands.map(command => command.name)).toEqual(['Speak'])
+  })
+
+  it('emits the full mixed-piece sentence through speech with the selected voice settings', async () => {
+    const originalSpeechSynthesis = globalThis.speechSynthesis
+    const originalUtterance = globalThis.SpeechSynthesisUtterance
+    const spoken: Array<{ readonly text: string; readonly rate: number; readonly pitch: number; readonly lang: string }> = []
+    globalThis.speechSynthesis = {
+      cancel: () => {},
+      getVoices: () => [],
+      speak: (utterance: SpeechSynthesisUtterance) => {
+        spoken.push({ text: utterance.text, rate: utterance.rate, pitch: utterance.pitch, lang: utterance.lang })
+      },
+    } as unknown as SpeechSynthesis
+    globalThis.SpeechSynthesisUtterance = class MockUtterance {
+      text: string
+      rate = 1
+      pitch = 1
+      lang = 'en'
+      voice: SpeechSynthesisVoice | null = null
+      constructor(text: string) { this.text = text }
+    } as unknown as typeof SpeechSynthesisUtterance
+
+    try {
+      const roundIndex = WORKSHOP_PUZZLES.findIndex(puzzle => puzzle.id === 'mixed-octagon-mosaic')
+      const puzzle = WORKSHOP_PUZZLES[roundIndex]!
+      const finalIndex = puzzle.pieces.length - 1
+      const token = 17
+      const almostComplete: Model = {
+        ...init,
+        roundIndex,
+        placedPieceIds: puzzle.pieces.slice(0, finalIndex).map((_, index) => index),
+        flyingPieceTokens: puzzle.pieces.map((_, index) => index === finalIndex ? token : -1),
+        animationToken: token,
+      }
+      const [, commands] = update(
+        almostComplete,
+        PieceFlightFinished({ index: finalIndex, token }),
+        'en',
+        false,
+        { rate: 1.4, pitch: 0.7 },
+      )
+      const speakCommand = commands.find(command => command.name === 'Speak')
+      if (!speakCommand) throw new Error('missing completion Speak command')
+
+      await Effect.runPromise(speakCommand.effect)
+
+      expect(spoken).toStrictEqual([{
+        text: 'One square, four rectangles, and four triangles made an octagon.',
+        rate: 1.4,
+        pitch: 0.7,
+        lang: 'en',
+      }])
+    } finally {
+      globalThis.speechSynthesis = originalSpeechSynthesis
+      globalThis.SpeechSynthesisUtterance = originalUtterance
+    }
   })
 })
 
@@ -421,10 +542,11 @@ describe('Shape Workshop view', () => {
     Scene.scene(
       { update, view },
       Scene.with(init),
-      Scene.expect(Scene.selector('.shape-workshop-progress[dir="ltr"]')).toHaveText('Round 1'),
+      Scene.expect(Scene.selector('.shape-workshop-progress[dir="ltr"]')).toHaveText(`Round 1/${WORKSHOP_PUZZLES.length}`),
       Scene.expect(Scene.selector('.shape-workshop-target-svg[role="img"]')).toExist(),
       Scene.expect(Scene.selector('.shape-workshop-status[role="status"][aria-live="polite"]')).toExist(),
-      Scene.expect(Scene.selector('.shape-workshop-actions .btn-primary')).toBeDisabled(),
+      Scene.expect(Scene.selector('.shape-workshop-actions .btn-primary')).toBeEnabled(),
+      Scene.expect(Scene.role('button', { name: t('shapeWorkshopPrevious') })).toBeEnabled(),
       Scene.expect(Scene.selector('.shape-workshop-slot')).toExist(),
       Scene.expect(Scene.selector('.shape-workshop-piece-count[dir="ltr"]')).toHaveText('0/2'),
       Scene.expect(Scene.selector('button.shape-workshop-piece-button[data-piece-index="0"]')).toHaveAttr('aria-pressed', 'false'),
@@ -460,22 +582,15 @@ describe('Shape Workshop view', () => {
     )
   })
 
-  it('advances to ever-higher round labels without displaying a finite total', () => {
-    const roundIndex = WORKSHOP_PUZZLES.length * 6
-    const puzzle = currentPuzzle({ roundIndex })
-    const complete: Model = {
-      ...init,
-      roundIndex,
-      placedPieceIds: puzzle.pieces.map((_, index) => index),
-      revision: roundIndex,
-    }
+  it('shows a finite carousel position and wraps with both navigation buttons', () => {
     Scene.scene(
       { update, view },
-      Scene.with(complete),
-      Scene.expect(Scene.selector('.shape-workshop-progress')).toHaveText(`Round ${roundIndex + 1}`),
-      Scene.click(Scene.selector('.shape-workshop-actions .btn-primary')),
-      Scene.expect(Scene.selector('.shape-workshop-progress')).toHaveText(`Round ${roundIndex + 2}`),
-      Scene.expect(Scene.selector('.shape-workshop-actions .btn-primary')).toBeDisabled(),
+      Scene.with(init),
+      Scene.expect(Scene.selector('.shape-workshop-progress')).toHaveText(`Round 1/${WORKSHOP_PUZZLES.length}`),
+      Scene.click(Scene.role('button', { name: t('shapeWorkshopPrevious') })),
+      Scene.expect(Scene.selector('.shape-workshop-progress')).toHaveText(`Round ${WORKSHOP_PUZZLES.length}/${WORKSHOP_PUZZLES.length}`),
+      Scene.click(Scene.role('button', { name: t('shapeWorkshopNext') })),
+      Scene.expect(Scene.selector('.shape-workshop-progress')).toHaveText(`Round 1/${WORKSHOP_PUZZLES.length}`),
       Scene.Command.expectNone(),
     )
   })

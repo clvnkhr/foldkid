@@ -180,6 +180,7 @@ describe('talking clock', () => {
   })
 
   it('supports a digital speaking style', () => {
+    expect(timePhrase(2, 0, 'digital')).toBe("2 o'clock")
     expect(timePhrase(2, 5, 'digital')).toBe('2:05')
     expect(timePhrase(2, 30, 'digital')).toBe('half past 2')
   })
