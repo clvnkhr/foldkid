@@ -5,21 +5,21 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as Audio from '../audio'
 import { t, tf } from '../i18n'
 import * as Handwriting from './handwriting'
-import { HANDWRITING_LETTERS, HANDWRITING_WORDS } from './handwritingPaths'
+import { HANDWRITING_LETTERS, HANDWRITING_NUMBERS, HANDWRITING_WORDS } from './handwritingPaths'
 
 const update = (model: Handwriting.Model, message: Handwriting.Message) => Handwriting.update(model, message, false)
 const mutedUpdate = (model: Handwriting.Model, message: Handwriting.Message) => Handwriting.update(model, message, true)
 const view = (model: Handwriting.Model) => Handwriting.view(model, 'en')
 const sound = [{ name: 'HandwritingPlayChime' }, Handwriting.SoundPlayed()] as const
 const boardMounted = (revision = 0) => [{ name: 'handwritingInput' }, Handwriting.PenCancelled({ id: 999, revision })] as const
-const target = (index = 0, letterCase: 'upper' | 'lower' = 'upper', mode: 'letters' | 'words' = 'letters'): Handwriting.Model => {
-  const model = { ...Handwriting.init(), mode, letterCase, letterIndex: mode === 'letters' ? index : 0, wordIndex: mode === 'words' ? index : 0 }
+const target = (index = 0, letterCase: 'upper' | 'lower' = 'upper', mode: 'letters' | 'words' | 'numbers' = 'letters', style: 'print' | 'cursive' = 'print'): Handwriting.Model => {
+  const model = { ...Handwriting.init(), mode, letterCase, style, letterIndex: mode === 'letters' ? index : 0, wordIndex: mode === 'words' ? index : 0, numberIndex: mode === 'numbers' ? index : 0 }
   return { ...model, progress: Handwriting.currentGuide(model).strokes.map(() => 0) }
 }
 const traceMessages = (model: Handwriting.Model, release = true): Handwriting.Message[] =>
   Handwriting.currentGuide(model).strokes.flatMap((stroke, id) => [
     Handwriting.PenStarted({ id, ...stroke[0]!, revision: model.revision }),
-    Handwriting.PenMoved({ id, points: stroke.slice(1), revision: model.revision }),
+    ...Array.from({ length: Math.ceil((stroke.length - 1) / 256) }, (_, batch) => Handwriting.PenMoved({ id, points: stroke.slice(1 + batch * 256, 1 + (batch + 1) * 256), revision: model.revision })),
     ...(release ? [Handwriting.PenEnded({ id, revision: model.revision })] : []),
   ])
 const traced = (model: Handwriting.Model, release = true): Handwriting.Model => {
@@ -36,10 +36,121 @@ const traced = (model: Handwriting.Model, release = true): Handwriting.Model => 
 
 afterEach(() => vi.restoreAllMocks())
 
+describe('Handwriting cursive and numbers', () => {
+  for (const letterCase of ['upper', 'lower'] as const) {
+    it.each(HANDWRITING_LETTERS.map((letter, index) => ({ letter, index })))(`traces the cursive ${letterCase} $letter to a colored completion`, ({ letter, index }) => {
+      const model = target(index, letterCase, 'letters', 'cursive')
+      expect(Handwriting.currentGuide(model).text).toBe(letterCase === 'upper' ? letter.toUpperCase() : letter)
+      const complete = traced(model)
+      expect(Handwriting.isComplete(complete)).toBe(true)
+      expect(complete.progress).toEqual(Handwriting.currentGuide(model).strokes.map(stroke => stroke.length))
+      expect(complete.contacts).toEqual([])
+      expect(complete.celebrated).toBe(true)
+    })
+  }
+
+  it.each(HANDWRITING_NUMBERS.map((number, index) => ({ number, index })))('traces digit $number independently of the preserved writing style and letter case', ({ number, index }) => {
+    const model = target(index, 'lower', 'numbers', 'cursive')
+    expect(Handwriting.currentGuide(model).text).toBe(number)
+    expect(Handwriting.currentGuide(model)).toBe(Handwriting.currentGuide(target(index, 'upper', 'numbers')))
+    const complete = traced(model)
+    expect(Handwriting.isComplete(complete)).toBe(true)
+    expect(complete.celebrated).toBe(true)
+    expect(complete.contacts).toEqual([])
+  })
+
+  it.each(HANDWRITING_WORDS.map((word, index) => ({ ...word, index })))('traces joined cursive $text across letter boundaries before adding its detached marks', ({ text, index }) => {
+    const model = target(index, 'upper', 'words', 'cursive')
+    const guide = Handwriting.currentGuide(model)
+    expect(guide.text).toBe(text)
+    expect(Math.max(...guide.strokes[0]!.map(point => point.x)) - Math.min(...guide.strokes[0]!.map(point => point.x))).toBeGreaterThan(210)
+    const complete = traced(model)
+    expect(Handwriting.isComplete(complete)).toBe(true)
+    expect(complete.progress).toEqual(guide.strokes.map(stroke => stroke.length))
+    expect(complete.contacts).toEqual([])
+  })
+
+  it('keeps independent letter, word, and number choices and restores cursive after number practice', () => {
+    Story.story(
+      mutedUpdate, Story.with(Handwriting.init()),
+      Story.message(Handwriting.SetCase({ letterCase: 'lower' })),
+      Story.message(Handwriting.SetStyle({ style: 'cursive' })),
+      Story.message(Handwriting.SelectedTarget({ index: 7 })),
+      Story.message(Handwriting.SetMode({ mode: 'words' })),
+      Story.message(Handwriting.SelectedTarget({ index: 4 })),
+      Story.message(Handwriting.SetMode({ mode: 'numbers' })),
+      Story.message(Handwriting.SelectedTarget({ index: 9 })),
+      Story.message(Handwriting.SetStyle({ style: 'print' })),
+      Story.message(Handwriting.SetCase({ letterCase: 'upper' })),
+      Story.model(model => {
+        expect(model).toMatchObject({ mode: 'numbers', style: 'cursive', letterCase: 'lower', letterIndex: 7, wordIndex: 4, numberIndex: 9 })
+        expect(Handwriting.currentGuide(model).text).toBe('9')
+        expect(model.progress.every(progress => progress === 0)).toBe(true)
+      }),
+      Story.message(Handwriting.SetMode({ mode: 'words' })),
+      Story.model(model => { expect(Handwriting.currentGuide(model).text).toBe('cow'); expect(model.style).toBe('cursive') }),
+      Story.message(Handwriting.SetMode({ mode: 'letters' })),
+      Story.model(model => { expect(Handwriting.currentGuide(model).text).toBe('h'); expect(model.numberIndex).toBe(9); expect(model.style).toBe('cursive') }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('ignores duplicate or malformed styles and keeps hidden number controls from changing the model', () => {
+    const model = Handwriting.init()
+    expect(update(model, Handwriting.SetStyle({ style: 'print' }))).toEqual([model, []])
+    expect(update(model, { ...Handwriting.SetStyle({ style: 'print' }), style: 'ornate' } as unknown as Handwriting.Message)).toEqual([model, []])
+    const numbers = target(0, 'upper', 'numbers')
+    expect(update(numbers, Handwriting.SetStyle({ style: 'cursive' }))).toEqual([numbers, []])
+    expect(update(numbers, Handwriting.SetCase({ letterCase: 'lower' }))).toEqual([numbers, []])
+  })
+
+  it.each([false, true])('uses the same release feedback and mute behavior for a joined word and a digit: muted=%s', muted => {
+    for (const model of [target(HANDWRITING_WORDS.findIndex(word => word.text === 'pig'), 'lower', 'words', 'cursive'), target(8, 'upper', 'numbers')]) {
+      const messages = traceMessages(model)
+      Story.story(
+        (current: Handwriting.Model, message: Handwriting.Message) => Handwriting.update(current, message, muted),
+        Story.with(model),
+        ...messages.slice(0, -1).flatMap(message => [Story.message(message), Story.Command.expectNone()]),
+        Story.model(current => { expect(Handwriting.isComplete(current)).toBe(true); expect(current.celebrated).toBe(false) }),
+        Story.message(messages.at(-1)!),
+        muted ? Story.Command.expectNone() : Story.Command.resolveAll(sound),
+        Story.model(current => { expect(current.celebrated).toBe(true); expect(current.contacts).toEqual([]) }),
+        Story.Command.expectNone(),
+      )
+    }
+  })
+
+  it('exposes pressed print and cursive controls and offers exactly ten numeric choices without letter controls', () => {
+    Scene.scene(
+      { update: mutedUpdate, view }, Scene.with(Handwriting.init()),
+      Scene.Mount.resolveAll(boardMounted()),
+      Scene.expect(Scene.role('button', { name: t('handwritingNumbers', 'en') })).toHaveAttr('aria-pressed', 'false'),
+      Scene.expect(Scene.role('button', { name: t('handwritingPrint', 'en') })).toHaveAttr('aria-pressed', 'true'),
+      Scene.expect(Scene.role('button', { name: t('handwritingCursive', 'en') })).toHaveAttr('aria-pressed', 'false'),
+      Scene.click(Scene.role('button', { name: t('handwritingCursive', 'en') })),
+      Scene.expect(Scene.role('button', { name: t('handwritingCursive', 'en') })).toHaveAttr('aria-pressed', 'true'),
+      Scene.expect(Scene.role('button', { name: t('handwritingPrint', 'en') })).toHaveAttr('aria-pressed', 'false'),
+      Scene.click(Scene.role('button', { name: t('handwritingNumbers', 'en') })),
+      Scene.expect(Scene.role('button', { name: t('handwritingNumbers', 'en') })).toHaveAttr('aria-pressed', 'true'),
+      Scene.expectAll(Scene.all.selector('.handwriting-choice')).toHaveCount(10),
+      Scene.expectAll(Scene.all.selector('.handwriting-cases')).toBeEmpty(),
+      Scene.expectAll(Scene.all.role('group', { name: t('handwritingStyle', 'en') })).toBeEmpty(),
+      Scene.expect(Scene.role('button', { name: '0' })).toHaveAttr('aria-pressed', 'true'),
+      Scene.click(Scene.role('button', { name: '9' })),
+      Scene.expect(Scene.role('button', { name: '9' })).toHaveAttr('aria-pressed', 'true'),
+      Scene.expect(Scene.role('application', { name: tf('handwritingBoard', 'en', '9') })).toHaveAttr('viewBox', '0 0 100 160'),
+      Scene.click(Scene.role('button', { name: t('handwritingLetters', 'en') })),
+      Scene.expect(Scene.role('button', { name: t('handwritingCursive', 'en') })).toHaveAttr('aria-pressed', 'true'),
+      Scene.expectAll(Scene.all.selector('.handwriting-choice')).toHaveCount(26),
+      Scene.Command.expectNone(),
+    )
+  })
+})
+
 describe('Handwriting model and tracing', () => {
   it('starts with a fresh uppercase A guide and explicit contact and keyboard state', () => {
     expect(Handwriting.init()).toEqual({
-      mode: 'letters', letterCase: 'upper', letterIndex: 0, wordIndex: 0, revision: 0,
+      mode: 'letters', letterCase: 'upper', style: 'print', letterIndex: 0, wordIndex: 0, numberIndex: 0, revision: 0,
       progress: [0, 0, 0], contacts: [], pen: null, celebrated: false,
     })
     expect(Handwriting.currentGuide(Handwriting.init()).text).toBe('A')
@@ -425,16 +536,16 @@ describe('Handwriting feedback and navigation', () => {
   })
 
   it('wraps next and previous choices in each catalogue and rejects malformed or duplicate selection', () => {
-    for (const mode of ['letters', 'words'] as const) {
+    for (const mode of ['letters', 'words', 'numbers'] as const) {
       const model = target(0, 'upper', mode)
-      const count = mode === 'letters' ? HANDWRITING_LETTERS.length : HANDWRITING_WORDS.length
+      const count = mode === 'letters' ? HANDWRITING_LETTERS.length : mode === 'words' ? HANDWRITING_WORDS.length : HANDWRITING_NUMBERS.length
       for (const index of [-1, 0, 0.5, NaN, Infinity, count]) expect(update(model, Handwriting.SelectedTarget({ index }))).toEqual([model, []])
       Story.story(
         mutedUpdate, Story.with(model),
         Story.message(Handwriting.PreviousTarget()),
-        Story.model(next => expect(mode === 'letters' ? next.letterIndex : next.wordIndex).toBe(count - 1)),
+        Story.model(next => expect(mode === 'letters' ? next.letterIndex : mode === 'words' ? next.wordIndex : next.numberIndex).toBe(count - 1)),
         Story.message(Handwriting.NextTarget()),
-        Story.model(next => expect(mode === 'letters' ? next.letterIndex : next.wordIndex).toBe(0)),
+        Story.model(next => expect(mode === 'letters' ? next.letterIndex : mode === 'words' ? next.wordIndex : next.numberIndex).toBe(0)),
         Story.Command.expectNone(),
       )
     }
@@ -450,7 +561,7 @@ describe('Handwriting feedback and navigation', () => {
   it('invalidates held contacts and queued keyboard events on reset, target, case, and mode changes', () => {
     const stroke = Handwriting.currentGuide(Handwriting.init()).strokes[0]!
     const [held] = mutedUpdate(Handwriting.init(), Handwriting.PenStarted({ id: 1, ...stroke[0]!, revision: 0 }))
-    for (const change of [Handwriting.Restarted(), Handwriting.NextTarget(), Handwriting.PreviousTarget(), Handwriting.SelectedTarget({ index: 4 }), Handwriting.SetCase({ letterCase: 'lower' }), Handwriting.SetMode({ mode: 'words' })]) {
+    for (const change of [Handwriting.Restarted(), Handwriting.NextTarget(), Handwriting.PreviousTarget(), Handwriting.SelectedTarget({ index: 4 }), Handwriting.SetCase({ letterCase: 'lower' }), Handwriting.SetMode({ mode: 'words' }), Handwriting.SetMode({ mode: 'numbers' }), Handwriting.SetStyle({ style: 'cursive' })]) {
       Story.story(
         update, Story.with(held), Story.message(change),
         Story.model(model => { expect(model.revision).toBe(1); expect(model.contacts).toEqual([]); expect(model.pen).toBeNull(); expect(model.progress.every(progress => progress === 0)).toBe(true); expect(model.celebrated).toBe(false) }),
@@ -597,7 +708,7 @@ describe('Handwriting keyboard and accessible view', () => {
       Scene.click(Scene.role('button', { name: t('handwritingWords', 'fa') })),
       Scene.expect(Scene.role('button', { name: t('handwritingWords', 'fa') })).toHaveAttr('aria-pressed', 'true'),
       Scene.expectAll(Scene.all.selector('.handwriting-choice')).toHaveCount(32),
-      Scene.expectAll(Scene.all.selector('.handwriting-cases')).toBeEmpty(),
+      Scene.expectAll(Scene.all.role('group', { name: t('handwritingLetters', 'fa') })).toBeEmpty(),
       Scene.expect(Scene.selector('.handwriting-choice[aria-pressed="true"]')).toContainText('cat'),
       Scene.expect(Scene.selector('.handwriting-target')).toHaveAttr('dir', 'ltr'),
       Scene.expect(Scene.role('application', { name: tf('handwritingBoard', 'fa', 'cat') })).toHaveAttr('viewBox', '0 0 320 160'),

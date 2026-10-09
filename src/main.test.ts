@@ -264,6 +264,7 @@ describe('settings persistence', () => {
     { label: 'ClickedHandwriting', msg: ClickedHandwriting() },
     { label: 'HandwritingSetMode', msg: Handwriting.SetMode({ mode: 'words' }) },
     { label: 'HandwritingSetCase', msg: Handwriting.SetCase({ letterCase: 'lower' }) },
+    { label: 'HandwritingSetStyle', msg: Handwriting.SetStyle({ style: 'cursive' }) },
     { label: 'HandwritingSelectedTarget', msg: Handwriting.SelectedTarget({ index: 1 }) },
     { label: 'HandwritingNextTarget', msg: Handwriting.NextTarget() },
     { label: 'HandwritingPreviousTarget', msg: Handwriting.PreviousTarget() },
@@ -371,6 +372,39 @@ describe('Main', () => {
     expect(Handwriting.currentGuide(selected.handwriting).text).toBe('dog')
     expect(JSON.parse(exported.exportData).settings).not.toHaveProperty('handwriting')
     expect(commands).toEqual([])
+  })
+
+  it('delegates cursive and number practice while preserving selections across navigation and excluding them from saved settings', () => {
+    let cursiveGuide: ReturnType<typeof Handwriting.currentGuide> | undefined
+    Story.story(
+      Main.update, Story.with({ ...createModel(), muted: true }),
+      Story.message(ClickedHandwriting()),
+      Story.message(Handwriting.SetCase({ letterCase: 'lower' })),
+      Story.message(Handwriting.SetStyle({ style: 'cursive' })),
+      Story.message(Handwriting.SelectedTarget({ index: 7 })),
+      Story.model(model => {
+        expect(model.handwriting).toMatchObject({ letterCase: 'lower', style: 'cursive', letterIndex: 7 })
+        cursiveGuide = Handwriting.currentGuide(model.handwriting)
+        expect(cursiveGuide.text).toBe('h')
+      }),
+      Story.message(Handwriting.SetMode({ mode: 'numbers' })),
+      Story.message(Handwriting.SelectedTarget({ index: 9 })),
+      Story.model(model => {
+        expect(model.handwriting.numberIndex).toBe(9)
+        expect(Handwriting.currentGuide(model.handwriting).text).toBe('9')
+      }),
+      Story.message(ClickedLanding()),
+      Story.message(ClickedHandwriting()),
+      Story.model(model => { expect(model.handwriting.mode).toBe('numbers'); expect(model.handwriting.numberIndex).toBe(9) }),
+      Story.message(Handwriting.SetMode({ mode: 'letters' })),
+      Story.model(model => {
+        expect(model.handwriting).toMatchObject({ style: 'cursive', letterIndex: 7, numberIndex: 9 })
+        expect(Handwriting.currentGuide(model.handwriting)).toBe(cursiveGuide)
+      }),
+      Story.message(ExportSettings()),
+      Story.model(model => expect(JSON.parse(model.exportData).settings).not.toHaveProperty('handwriting')),
+      Story.Command.expectNone(),
+    )
   })
 
   it.each([false, true])('forwards root mute to handwriting completion without hiding the colored result: %s', muted => {

@@ -173,6 +173,7 @@ describe('i18n completeness', () => {
   it('localizes handwriting controls while retaining English letter case samples', () => {
     const keys = [
       'handwritingTitle', 'pageTitleHandwriting', 'handwritingLetters', 'handwritingWords',
+      'handwritingNumbers', 'handwritingPrint', 'handwritingCursive', 'handwritingStyle',
       'handwritingUppercaseLabel', 'handwritingLowercaseLabel', 'handwritingAgain', 'handwritingNext',
       'handwritingPrevious', 'handwritingTrace', 'handwritingComplete', 'handwritingKeyboardHint', 'handwritingPenLabel',
     ] as const
@@ -185,6 +186,9 @@ describe('i18n completeness', () => {
     }
     expect(i18n.t('handwritingTitle')).toBe('Handwriting')
     expect(i18n.t('handwritingWords')).toBe('3-letter words')
+    expect(i18n.t('handwritingNumbers')).toBe('Numbers')
+    expect(i18n.t('handwritingPrint')).toBe('Print')
+    expect(i18n.t('handwritingCursive')).toBe('Cursive')
     expect(i18n.t('handwritingTitle', 'xx')).toBe('Handwriting')
     expect(i18n.t('handwritingNext', 'fa')).toBe('بعدی ⬅')
     expect(i18n.t('handwritingPrevious', 'fa')).toBe('➡ قبلی')

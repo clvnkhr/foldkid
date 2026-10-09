@@ -47,6 +47,9 @@
   border-color: var(--number-color); background: var(--card-bg);
   box-shadow: 0 2px 7px var(--shadow-color);
 }
+.handwriting-cursive, .handwriting-cursive .handwriting-choice {
+  font-family: "Snell Roundhand", "Segoe Script", "Apple Chancery", cursive;
+}
 .handwriting-mode:hover, .handwriting-case:hover, .handwriting-choice:hover { background: var(--cell-hover-bg); }
 .handwriting-mode:focus-visible, .handwriting-case:focus-visible,
 .handwriting-choice:focus-visible, .handwriting-actions button:focus-visible, .handwriting-board:focus-visible {

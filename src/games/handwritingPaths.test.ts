@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
+import { cursiveJoinStarts } from './handwritingCursive'
 import {
-  advanceHandwritingStroke, HANDWRITING_LETTERS, HANDWRITING_TOLERANCE, HANDWRITING_WORDS,
+  advanceHandwritingStroke, HANDWRITING_LETTERS, HANDWRITING_NUMBERS, HANDWRITING_TOLERANCE, HANDWRITING_WORDS,
   handwritingGuide, handwritingPath, handwritingResumeDistance, type HandwritingPoint, type HandwritingStroke,
 } from './handwritingPaths'
 
@@ -123,6 +124,177 @@ describe('handwriting stroke guides', () => {
     expect(handwritingPath([])).toBe('')
     expect(handwritingPath([{ x: Number.NaN, y: 20 }])).toBe('')
     expect(handwritingPath([{ x: 10, y: Number.POSITIVE_INFINITY }])).toBe('')
+  })
+})
+
+describe('cursive and numeric stroke guides', () => {
+  it('offers the ten decimal digits in counting order', () => {
+    expect(HANDWRITING_NUMBERS).toEqual(['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'])
+    expect(new Set(HANDWRITING_NUMBERS).size).toBe(10)
+  })
+
+  for (const letterCase of ['upper', 'lower'] as const) {
+    it.each(HANDWRITING_LETTERS.map((letter, index) => ({ letter, index })))(`provides a finite, evenly sampled cursive ${letterCase} $letter that can be traced fully`, ({ letter, index }) => {
+      const guide = handwritingGuide('letters', letterCase, index, 'cursive')
+      expect(guide.text).toBe(letterCase === 'upper' ? letter.toUpperCase() : letter)
+      expect([guide.width, guide.height]).toEqual([100, 160])
+      expect(guide.emoji).toBe('')
+      expect(guide.strokes.length).toBeGreaterThan(0)
+      for (const points of guide.strokes) {
+        expect(points.length).toBeGreaterThan(1)
+        for (const [sample, point] of points.entries()) {
+          expect(Number.isFinite(point.x) && Number.isFinite(point.y)).toBe(true)
+          expect(point.x).toBeGreaterThanOrEqual(8)
+          expect(point.x).toBeLessThanOrEqual(92)
+          expect(point.y).toBeGreaterThanOrEqual(20)
+          expect(point.y).toBeLessThanOrEqual(145)
+          if (sample > 0) {
+            expect(distance(points[sample - 1]!, point)).toBeGreaterThan(0)
+            expect(distance(points[sample - 1]!, point)).toBeLessThanOrEqual(5.51)
+          }
+        }
+        expect(completeTrace(points)).toBe(points.length)
+      }
+      if (letterCase === 'lower') expect(guide.strokes[0]![0]).toEqual({ x: 15, y: 115 })
+    })
+  }
+
+  it('uses distinct cursive forms for every letter and preserves the existing print guides', () => {
+    const identities = ['upper', 'lower'].flatMap(letterCase => HANDWRITING_LETTERS.map((_, index) =>
+      handwritingGuide('letters', letterCase as 'upper' | 'lower', index, 'cursive').strokes.map(handwritingPath).join('|'),
+    ))
+    expect(new Set(identities).size).toBe(52)
+    for (const [index] of HANDWRITING_LETTERS.entries()) {
+      expect(handwritingGuide('letters', 'lower', index, 'cursive').strokes.map(handwritingPath)).not.toEqual(handwritingGuide('letters', 'lower', index).strokes.map(handwritingPath))
+      expect(handwritingGuide('letters', 'lower', index, 'print')).toBe(handwritingGuide('letters', 'lower', index))
+    }
+  })
+
+  it.each(HANDWRITING_NUMBERS.map((number, index) => ({ number, index })))('makes digit $number traceable with finite samples and one case-independent guide', ({ number, index }) => {
+    const guide = handwritingGuide('numbers', 'upper', index)
+    expect(guide.text).toBe(number)
+    expect(guide.emoji).toBe('')
+    expect([guide.width, guide.height]).toEqual([100, 160])
+    expect(guide.strokes.length).toBeGreaterThan(0)
+    expect(handwritingGuide('numbers', 'lower', index, 'cursive')).toBe(guide)
+    for (const points of guide.strokes) {
+      expect(points.length).toBeGreaterThan(1)
+      for (const [sample, point] of points.entries()) {
+        expect(Number.isFinite(point.x) && Number.isFinite(point.y)).toBe(true)
+        expect(point.x).toBeGreaterThanOrEqual(15)
+        expect(point.x).toBeLessThanOrEqual(85)
+        expect(point.y).toBeGreaterThanOrEqual(20)
+        expect(point.y).toBeLessThanOrEqual(140)
+        if (sample > 0) expect(distance(points[sample - 1]!, point)).toBeLessThanOrEqual(5.51)
+      }
+      expect(completeTrace(points)).toBe(points.length)
+    }
+  })
+
+  it.each(HANDWRITING_WORDS.map((word, index) => ({ ...word, index })))('joins cursive $text into one complete word stroke before its detached marks', ({ text, emoji, index }) => {
+    const guide = handwritingGuide('words', 'lower', index, 'cursive')
+    expect(guide.text).toBe(text)
+    expect(guide.emoji).toBe(emoji)
+    expect([guide.width, guide.height]).toEqual([270, 160])
+    const main = guide.strokes[0]!
+    expect(main[0]).toEqual({ x: 15, y: 115 })
+    expect(Math.max(...main.map(point => point.x)) - Math.min(...main.map(point => point.x))).toBeGreaterThan(210)
+    expect(guide.strokes).toHaveLength(1 + [...text].filter(letter => ['i', 'j', 't', 'x'].includes(letter)).length)
+    for (const points of guide.strokes) {
+      for (const [sample, point] of points.entries()) {
+        expect(Number.isFinite(point.x) && Number.isFinite(point.y)).toBe(true)
+        expect(point.x).toBeGreaterThanOrEqual(0)
+        expect(point.x).toBeLessThanOrEqual(guide.width)
+        expect(point.y).toBeGreaterThanOrEqual(20)
+        expect(point.y).toBeLessThanOrEqual(145)
+        if (sample > 0) expect(distance(points[sample - 1]!, point)).toBeLessThanOrEqual(5.51)
+      }
+      expect(completeTrace(points)).toBe(points.length)
+    }
+    expect(advanceHandwritingStroke(main, 0, main[0]!, main.at(-1)!)).toBeLessThan(main.length)
+  })
+
+  it('finishes the cursive word body before crossing t or dotting i', () => {
+    const cat = handwritingGuide('words', 'lower', HANDWRITING_WORDS.findIndex(word => word.text === 'cat'), 'cursive')
+    const pig = handwritingGuide('words', 'lower', HANDWRITING_WORDS.findIndex(word => word.text === 'pig'), 'cursive')
+    expect(cat.strokes).toHaveLength(2)
+    const bar = cat.strokes[1]!
+    expect(Math.max(...bar.map(point => point.y)) - Math.min(...bar.map(point => point.y))).toBeLessThan(4)
+    expect(bar.at(-1)!.x).toBeGreaterThan(bar[0]!.x)
+    expect(Math.min(...bar.map(point => point.x))).toBeGreaterThan(170)
+    expect(pig.strokes).toHaveLength(2)
+    const dot = pig.strokes[1]!
+    expect(dot).toHaveLength(2)
+    expect(dot.every(point => point.y < 60)).toBe(true)
+    expect(dot[0]!.x).toBeGreaterThan(85)
+    expect(dot[0]!.x).toBeLessThan(170)
+  })
+
+  it('joins the high exit of o directly into w without dipping back to the baseline', () => {
+    const owl = handwritingGuide('words', 'lower', HANDWRITING_WORDS.findIndex(word => word.text === 'owl'), 'cursive')
+    expect(owl.strokes).toHaveLength(1)
+    const bridge = owl.strokes[0]!.filter(point => point.x > 90 && point.x < 105)
+    expect(bridge.length).toBeGreaterThan(1)
+    expect(bridge.every(point => point.y < 85)).toBe(true)
+  })
+
+  it.each(['a', 'g', 'q'])('keeps the oval body of cursive %s after its joining entry', letter => {
+    const main = handwritingGuide('letters', 'lower', HANDWRITING_LETTERS.indexOf(letter), 'cursive').strokes[0]!
+    const body = main.slice(cursiveJoinStarts[letter]).filter(point => point.y >= 65 && point.y <= 115)
+    expect(body.some(point => point.x < 35)).toBe(true)
+    expect(body.some(point => point.y > 110)).toBe(true)
+  })
+
+  it.each(['bag', 'bat'])('retains the full a oval after the high exit of b in %s', text => {
+    const main = handwritingGuide('words', 'lower', HANDWRITING_WORDS.findIndex(word => word.text === text), 'cursive').strokes[0]!
+    const bottomOfA = main.filter(point => point.x > 108 && point.x < 135 && point.y > 110 && point.y <= 120)
+    expect(bottomOfA.length).toBeGreaterThan(1)
+  })
+
+  it('keeps cursive loops and numeral curves forgiving of a finger-width wobble', () => {
+    const guides = (['upper', 'lower'] as const).flatMap(letterCase => HANDWRITING_LETTERS.map((_, index) => handwritingGuide('letters', letterCase, index, 'cursive')))
+    guides.push(...HANDWRITING_NUMBERS.map((_, index) => handwritingGuide('numbers', 'upper', index)))
+    for (const guide of guides) for (const points of guide.strokes) {
+      const input = points.map((point, sample) => ({ x: point.x + (sample % 2 === 0 ? 14 : 16), y: point.y }))
+      let progress = advanceHandwritingStroke(points, 0, input[0]!, input[0]!)
+      for (let sample = 1; sample < input.length; sample++) progress = advanceHandwritingStroke(points, progress, input[sample - 1]!, input[sample]!)
+      expect(progress, `${guide.text} forgiving trace`).toBe(points.length)
+    }
+  })
+
+  it('uses a closed zero, an open four and a continuous figure eight with familiar downward strokes', () => {
+    const zero = handwritingGuide('numbers', 'upper', 0).strokes[0]!
+    expect(distance(zero[0]!, zero.at(-1)!)).toBeLessThan(0.02)
+    expect(zero[1]!.x).toBeLessThan(zero[0]!.x)
+    expect(zero[1]!.y).toBeLessThan(zero[0]!.y)
+    const [diagonal, stem] = handwritingGuide('numbers', 'upper', 4).strokes
+    expect(diagonal![1]!.x).toBeLessThan(diagonal![0]!.x)
+    expect(diagonal![1]!.y).toBeGreaterThan(diagonal![0]!.y)
+    expect(diagonal!.at(-1)!.x).toBeGreaterThan(diagonal![0]!.x)
+    expect(stem![0]!.y).toBeLessThan(stem!.at(-1)!.y)
+    expect(stem!.every(point => point.x === stem![0]!.x)).toBe(true)
+    const eight = handwritingGuide('numbers', 'upper', 8)
+    expect(eight.strokes).toHaveLength(1)
+    expect(distance(eight.strokes[0]![0]!, eight.strokes[0]!.at(-1)!)).toBeLessThan(0.02)
+    const body = eight.strokes[0]!
+    expect(body.filter(point => point.y < 60).some(point => point.x < 35)).toBe(true)
+    expect(body.filter(point => point.y > 85).some(point => point.x < 35)).toBe(true)
+    expect(body.filter(point => point.y > 85).some(point => point.x > 70)).toBe(true)
+  })
+
+  it.each([-1, 10, 1000, 0.5, Number.NaN, Number.POSITIVE_INFINITY])('falls back to digit zero for invalid index %s', index => {
+    expect(handwritingGuide('numbers', 'lower', index, 'cursive')).toBe(handwritingGuide('numbers', 'upper', 0))
+  })
+
+  it('caches immutable cursive and numeric guides just as it caches print guides', () => {
+    for (const guide of [handwritingGuide('letters', 'lower', 0, 'cursive'), handwritingGuide('words', 'lower', 0, 'cursive'), handwritingGuide('numbers', 'upper', 0)]) {
+      expect(Object.isFrozen(guide)).toBe(true)
+      expect(Object.isFrozen(guide.strokes)).toBe(true)
+      expect(Object.isFrozen(guide.strokes[0])).toBe(true)
+      expect(Object.isFrozen(guide.strokes[0]![0])).toBe(true)
+    }
+    expect(handwritingGuide('letters', 'lower', 0, 'cursive')).toBe(handwritingGuide('letters', 'lower', 0, 'cursive'))
+    expect(handwritingGuide('words', 'lower', 0, 'cursive')).toBe(handwritingGuide('words', 'lower', 0, 'cursive'))
   })
 })
 

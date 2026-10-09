@@ -1,5 +1,9 @@
-export interface HandwritingPoint { readonly x: number; readonly y: number }
-export type HandwritingStroke = ReadonlyArray<HandwritingPoint>
+import { distance, joinedStroke, oval, stroke, type HandwritingPoint, type HandwritingStroke } from './handwritingGeometry'
+import { cursiveJoinStarts, cursiveLower, cursiveUpper } from './handwritingCursive'
+import { HANDWRITING_NUMBERS, numberStrokes } from './handwritingNumbers'
+export type { HandwritingPoint, HandwritingStroke } from './handwritingGeometry'
+export { HANDWRITING_NUMBERS } from './handwritingNumbers'
+
 export interface HandwritingGuide {
   readonly text: string
   readonly emoji: string
@@ -23,63 +27,6 @@ export const HANDWRITING_WORDS = [
   { text: 'map', emoji: '🗺️' }, { text: 'egg', emoji: '🥚' }, { text: 'jam', emoji: '🫙' },
   { text: 'pot', emoji: '🍲' }, { text: 'pan', emoji: '🍳' },
 ] as const
-
-type XY = readonly [number, number]
-type Segment = XY | readonly [number, number, number, number] | readonly [number, number, number, number, number, number]
-const point = ([x, y]: XY): HandwritingPoint => ({ x, y })
-const distance = (a: HandwritingPoint, b: HandwritingPoint): number => Math.hypot(a.x - b.x, a.y - b.y)
-
-const resample = (points: HandwritingStroke): HandwritingStroke => {
-  const first = points[0]!
-  const samples: HandwritingPoint[] = [first]
-  let remaining = 5.5
-  for (let index = 1; index < points.length; index++) {
-    let from = points[index - 1]!
-    const to = points[index]!
-    let length = distance(from, to)
-    while (length >= remaining && length > 0) {
-      const ratio = remaining / length
-      from = { x: from.x + (to.x - from.x) * ratio, y: from.y + (to.y - from.y) * ratio }
-      samples.push(from)
-      length = distance(from, to)
-      remaining = 5.5
-    }
-    remaining -= length
-  }
-  const last = points.at(-1)!
-  if (distance(samples.at(-1)!, last) > 0.01) samples.push(last)
-  return samples
-}
-
-/** Lines, quadratic curves and cubic curves share the same evenly spaced guide dots. */
-const stroke = (start: XY, ...segments: ReadonlyArray<Segment>): HandwritingStroke => {
-  const points = [point(start)]
-  for (const segment of segments) {
-    const from = points.at(-1)!
-    if (segment.length === 2) { points.push(point(segment)); continue }
-    for (let index = 1; index <= 32; index++) {
-      const t = index / 32
-      const u = 1 - t
-      points.push(segment.length === 4 ? {
-        x: u * u * from.x + 2 * u * t * segment[0] + t * t * segment[2],
-        y: u * u * from.y + 2 * u * t * segment[1] + t * t * segment[3],
-      } : {
-        x: u ** 3 * from.x + 3 * u * u * t * segment[0] + 3 * u * t * t * segment[2] + t ** 3 * segment[4],
-        y: u ** 3 * from.y + 3 * u * u * t * segment[1] + 3 * u * t * t * segment[3] + t ** 3 * segment[5],
-      })
-    }
-  }
-  return resample(points)
-}
-
-const oval = (cx: number, cy: number, rx: number, ry: number, start = -Math.PI / 4, end = start - Math.PI * 2): HandwritingStroke =>
-  resample(Array.from({ length: 97 }, (_, index) => {
-    const angle = start + (end - start) * index / 96
-    return { x: cx + Math.cos(angle) * rx, y: cy + Math.sin(angle) * ry }
-  }))
-
-const joinedStroke = (...strokes: ReadonlyArray<HandwritingStroke>): HandwritingStroke =>
-  resample(strokes.flatMap((points, index) => index === 0 ? points : points.slice(1)))
 
 const capitalC = oval(50, 72.5, 30, 47.5, -Math.PI / 4, -Math.PI * 7 / 4)
 const capitalCEnd = capitalC.at(-1)!
@@ -142,32 +89,56 @@ const lower: Readonly<Record<string, ReadonlyArray<HandwritingStroke>>> = {
   z: [stroke([20, 65], [80, 65], [20, 115], [80, 115])],
 }
 
-const makeGuide = (mode: 'letters' | 'words', letterCase: 'upper' | 'lower', index: number): HandwritingGuide => {
+const freezeStrokes = (strokes: ReadonlyArray<HandwritingStroke>): ReadonlyArray<HandwritingStroke> =>
+  Object.freeze(strokes.map(points => Object.freeze(points.map(point => Object.freeze({ ...point })))))
+
+/** Finish the joined word first, then lift for its dots and crossbars. */
+const joinWord = (letters: ReadonlyArray<ReadonlyArray<HandwritingStroke>>, text: string): ReadonlyArray<HandwritingStroke> => {
+  const parts: HandwritingStroke[] = [letters[0]![0]!]
+  for (let index = 1; index < letters.length; index++) {
+    const previous = letters[index - 1]![0]!.at(-1)!
+    // Top exits connect into the next letter's body without an unnecessary dip to the baseline.
+    const nextStroke = previous.y < 95 ? letters[index]![0]!.slice(cursiveJoinStarts[text[index]!]!) : letters[index]![0]!
+    const next = nextStroke[0]!
+    const gap = next.x - previous.x
+    parts.push(stroke([previous.x, previous.y], [previous.x + gap / 3, previous.y, next.x - gap / 3, next.y, next.x, next.y]), nextStroke)
+  }
+  return [joinedStroke(...parts), ...letters.flatMap(strokes => strokes.slice(1))]
+}
+
+const makeGuide = (mode: 'letters' | 'words', letterCase: 'upper' | 'lower', index: number, style: 'print' | 'cursive'): HandwritingGuide => {
   const word = mode === 'words' ? HANDWRITING_WORDS[index]! : undefined
   const letters = word?.text ?? HANDWRITING_LETTERS[index]!
-  const catalogue = letterCase === 'upper' ? upper : lower
+  const catalogue = style === 'cursive' ? letterCase === 'upper' ? cursiveUpper : cursiveLower : letterCase === 'upper' ? upper : lower
+  const advance = style === 'cursive' ? 85 : 110
+  const letterStrokes = [...letters].map((letter, position) => catalogue[letter]!.map(points =>
+    points.map(({ x, y }) => ({ x: x + position * advance, y })),
+  ))
   return Object.freeze({
     text: letterCase === 'upper' ? letters.toUpperCase() : letters,
-    emoji: word?.emoji ?? '', width: mode === 'words' ? 320 : 100, height: 160,
-    strokes: Object.freeze([...letters].flatMap((letter, position) => catalogue[letter]!.map(points =>
-      Object.freeze(points.map(({ x, y }) => Object.freeze({ x: x + position * 110, y }))),
-    ))),
+    emoji: word?.emoji ?? '', width: mode === 'words' ? style === 'cursive' ? 270 : 320 : 100, height: 160,
+    strokes: freezeStrokes(mode === 'words' && style === 'cursive' && letterCase === 'lower' ? joinWord(letterStrokes, letters) : letterStrokes.flat()),
   })
 }
 
-const guides = Object.freeze({
+const styleGuides = (style: 'print' | 'cursive') => Object.freeze({
   letters: Object.freeze({
-    upper: Object.freeze(HANDWRITING_LETTERS.map((_, index) => makeGuide('letters', 'upper', index))),
-    lower: Object.freeze(HANDWRITING_LETTERS.map((_, index) => makeGuide('letters', 'lower', index))),
+    upper: Object.freeze(HANDWRITING_LETTERS.map((_, index) => makeGuide('letters', 'upper', index, style))),
+    lower: Object.freeze(HANDWRITING_LETTERS.map((_, index) => makeGuide('letters', 'lower', index, style))),
   }),
   words: Object.freeze({
-    upper: Object.freeze(HANDWRITING_WORDS.map((_, index) => makeGuide('words', 'upper', index))),
-    lower: Object.freeze(HANDWRITING_WORDS.map((_, index) => makeGuide('words', 'lower', index))),
+    upper: Object.freeze(HANDWRITING_WORDS.map((_, index) => makeGuide('words', 'upper', index, style))),
+    lower: Object.freeze(HANDWRITING_WORDS.map((_, index) => makeGuide('words', 'lower', index, style))),
   }),
 })
 
-export const handwritingGuide = (mode: 'letters' | 'words', letterCase: 'upper' | 'lower', index: number): HandwritingGuide => {
-  const catalogue = guides[mode][letterCase]
+const guides = Object.freeze({ print: styleGuides('print'), cursive: styleGuides('cursive') })
+const numbers: ReadonlyArray<HandwritingGuide> = Object.freeze(HANDWRITING_NUMBERS.map((text, index) => Object.freeze({
+  text, emoji: '', width: 100, height: 160, strokes: freezeStrokes(numberStrokes[index]!),
+})))
+
+export const handwritingGuide = (mode: 'letters' | 'words' | 'numbers', letterCase: 'upper' | 'lower', index: number, style: 'print' | 'cursive' = 'print'): HandwritingGuide => {
+  const catalogue = mode === 'numbers' ? numbers : guides[style][mode][letterCase]
   return catalogue[Number.isSafeInteger(index) && index >= 0 && index < catalogue.length ? index : 0]!
 }
 

@@ -6,18 +6,19 @@ import { m } from 'foldkit/message'
 import { chime } from '../audio'
 import { normalizeLanguage, t, tf } from '../i18n'
 import {
-  HANDWRITING_LETTERS, HANDWRITING_WORDS, HANDWRITING_TOLERANCE,
+  HANDWRITING_LETTERS, HANDWRITING_WORDS, HANDWRITING_NUMBERS, HANDWRITING_TOLERANCE,
   advanceHandwritingStroke, handwritingGuide, handwritingPath, handwritingResumeDistance, type HandwritingPoint,
 } from './handwritingPaths'
 import { createHandwritingRuntime } from './handwritingRuntime'
 
-export const Mode = S.Literals(['letters', 'words'])
+export const Mode = S.Literals(['letters', 'words', 'numbers'])
 export const LetterCase = S.Literals(['upper', 'lower'])
+export const Style = S.Literals(['print', 'cursive'])
 const Point = S.Struct({ x: S.Number, y: S.Number })
 const Contact = S.Struct({ id: S.Number, stroke: S.Number, point: Point })
 const Pen = S.Struct({ stroke: S.Number, point: Point })
 export const Model = S.Struct({
-  mode: Mode, letterCase: LetterCase, letterIndex: S.Number, wordIndex: S.Number,
+  mode: Mode, style: Style, letterCase: LetterCase, letterIndex: S.Number, wordIndex: S.Number, numberIndex: S.Number,
   revision: S.Number, progress: S.Array(S.Number), contacts: S.Array(Contact),
   pen: S.NullOr(Pen), celebrated: S.Boolean,
 })
@@ -25,6 +26,7 @@ export type Model = typeof Model.Type
 
 export const SetMode = m('HandwritingSetMode', { mode: Mode })
 export const SetCase = m('HandwritingSetCase', { letterCase: LetterCase })
+export const SetStyle = m('HandwritingSetStyle', { style: Style })
 export const SelectedTarget = m('HandwritingSelectedTarget', { index: S.Number })
 export const NextTarget = m('HandwritingNextTarget')
 export const PreviousTarget = m('HandwritingPreviousTarget')
@@ -37,27 +39,28 @@ export const KeyboardPressed = m('HandwritingKeyboardPressed', { key: S.String, 
 export const KeyboardLifted = m('HandwritingKeyboardLifted', { revision: S.Number })
 export const SoundPlayed = m('HandwritingSoundPlayed')
 export const Message = S.Union([
-  SetMode, SetCase, SelectedTarget, NextTarget, PreviousTarget, Restarted,
+  SetMode, SetCase, SetStyle, SelectedTarget, NextTarget, PreviousTarget, Restarted,
   PenStarted, PenMoved, PenEnded, PenCancelled, KeyboardPressed, KeyboardLifted, SoundPlayed,
 ])
 export type Message = typeof Message.Type
 
-export const currentGuide = (model: Model) => handwritingGuide(model.mode, model.mode === 'words' ? 'lower' : model.letterCase, model.mode === 'letters' ? model.letterIndex : model.wordIndex)
+const targetIndex = (model: Model): number => model.mode === 'letters' ? model.letterIndex : model.mode === 'words' ? model.wordIndex : model.numberIndex
+export const currentGuide = (model: Model) => handwritingGuide(model.mode, model.mode === 'words' ? 'lower' : model.letterCase, targetIndex(model), model.style)
 export const init = (): Model => ({
-  mode: 'letters', letterCase: 'upper', letterIndex: 0, wordIndex: 0, revision: 0,
+  mode: 'letters', style: 'print', letterCase: 'upper', letterIndex: 0, wordIndex: 0, numberIndex: 0, revision: 0,
   progress: handwritingGuide('letters', 'upper', 0).strokes.map(() => 0), contacts: [], pen: null, celebrated: false,
 })
 export const completedStrokes = (model: Model): number => currentGuide(model).strokes.filter((stroke, index) => model.progress[index] === stroke.length).length
 export const isComplete = (model: Model): boolean => completedStrokes(model) === currentGuide(model).strokes.length
 
-const reset = (model: Model, patch: Partial<Pick<Model, 'mode' | 'letterCase' | 'letterIndex' | 'wordIndex'>> = {}): Model => {
+const reset = (model: Model, patch: Partial<Pick<Model, 'mode' | 'style' | 'letterCase' | 'letterIndex' | 'wordIndex' | 'numberIndex'>> = {}): Model => {
   const next = { ...model, ...patch }
   return { ...next, revision: model.revision + 1, progress: currentGuide(next).strokes.map(() => 0), contacts: [], pen: null, celebrated: false }
 }
 // Keep the colored writing on navigation; invalidate any events already queued by the old board.
 export const interrupt = (model: Model): Model => ({ ...model, revision: model.revision + 1, contacts: [], pen: null })
-const targetCount = (model: Model): number => model.mode === 'letters' ? HANDWRITING_LETTERS.length : HANDWRITING_WORDS.length
-const select = (model: Model, index: number): Model => reset(model, model.mode === 'letters' ? { letterIndex: index } : { wordIndex: index })
+const targetCount = (model: Model): number => model.mode === 'letters' ? HANDWRITING_LETTERS.length : model.mode === 'words' ? HANDWRITING_WORDS.length : HANDWRITING_NUMBERS.length
+const select = (model: Model, index: number): Model => reset(model, model.mode === 'letters' ? { letterIndex: index } : model.mode === 'words' ? { wordIndex: index } : { numberIndex: index })
 const validId = (id: number): boolean => Number.isSafeInteger(id) && id >= 0
 const validPoint = (point: HandwritingPoint): boolean => [point.x, point.y].every(value => Number.isFinite(value) && Math.abs(value) < 10000)
 const KEY_DIRECTIONS: Readonly<Record<string, readonly [number, number]>> = { ArrowLeft: [-6, 0], ArrowRight: [6, 0], ArrowUp: [0, -6], ArrowDown: [0, 6] }
@@ -88,13 +91,15 @@ const celebrate = (model: Model, muted: boolean): readonly [Model, ReadonlyArray
 
 export const update = (model: Model, message: Message, muted: boolean): readonly [Model, ReadonlyArray<Command.Command<Message>>] =>
   M.value(message).pipe(M.withReturnType<readonly [Model, ReadonlyArray<Command.Command<Message>>]>(), M.tagsExhaustive({
-    HandwritingSetMode: msg => (msg.mode === 'letters' || msg.mode === 'words') && msg.mode !== model.mode ? [reset(model, { mode: msg.mode }), []] : [model, []],
+    HandwritingSetMode: msg => (msg.mode === 'letters' || msg.mode === 'words' || msg.mode === 'numbers') && msg.mode !== model.mode ? [reset(model, { mode: msg.mode }), []] : [model, []],
     HandwritingSetCase: msg => model.mode === 'letters' && (msg.letterCase === 'upper' || msg.letterCase === 'lower') && msg.letterCase !== model.letterCase
       ? [reset(model, { letterCase: msg.letterCase }), []] : [model, []],
+    HandwritingSetStyle: msg => model.mode !== 'numbers' && (msg.style === 'print' || msg.style === 'cursive') && msg.style !== model.style
+      ? [reset(model, { style: msg.style }), []] : [model, []],
     HandwritingSelectedTarget: msg => Number.isSafeInteger(msg.index) && msg.index >= 0 && msg.index < targetCount(model) &&
-      msg.index !== (model.mode === 'letters' ? model.letterIndex : model.wordIndex) ? [select(model, msg.index), []] : [model, []],
-    HandwritingNextTarget: () => [select(model, ((model.mode === 'letters' ? model.letterIndex : model.wordIndex) + 1) % targetCount(model)), []],
-    HandwritingPreviousTarget: () => [select(model, ((model.mode === 'letters' ? model.letterIndex : model.wordIndex) + targetCount(model) - 1) % targetCount(model)), []],
+      msg.index !== targetIndex(model) ? [select(model, msg.index), []] : [model, []],
+    HandwritingNextTarget: () => [select(model, (targetIndex(model) + 1) % targetCount(model)), []],
+    HandwritingPreviousTarget: () => [select(model, (targetIndex(model) + targetCount(model) - 1) % targetCount(model)), []],
     HandwritingRestarted: () => [reset(model), []],
     HandwritingPenStarted: msg => {
       if (msg.revision !== model.revision || !validId(msg.id) || !validPoint(msg) || isComplete(model) || model.contacts.some(contact => contact.id === msg.id)) return [model, []]
@@ -187,23 +192,29 @@ export const view = (model: Model, language: string) => {
   const h = html<Message>()
   const guide = currentGuide(model)
   const complete = isComplete(model)
-  const uppercase = model.mode === 'letters' && model.letterCase === 'upper'
+  const uppercase = model.mode === 'numbers' || (model.mode === 'letters' && model.letterCase === 'upper')
+  const cursive = model.style === 'cursive' && model.mode !== 'numbers'
   const numbers = new Intl.NumberFormat(normalizeLanguage(language))
   const cues = strokeCues(model)
-  const index = model.mode === 'letters' ? model.letterIndex : model.wordIndex
+  const index = targetIndex(model)
+  const modeLabel = model.mode === 'letters' ? 'handwritingLetters' : model.mode === 'words' ? 'handwritingWords' : 'handwritingNumbers'
+  const choices = model.mode === 'letters' ? HANDWRITING_LETTERS.map(letter => ({ text: model.letterCase === 'upper' ? letter.toUpperCase() : letter, emoji: '' }))
+    : model.mode === 'words' ? HANDWRITING_WORDS : HANDWRITING_NUMBERS.map(text => ({ text, emoji: '' }))
   return h.div([h.Class('page handwriting-page')], [h.div([h.Class('card handwriting-card')], [
     h.h1([h.Class('title')], [t('handwritingTitle', language)]),
     h.div([h.Class('handwriting-toolbar')], [
       h.div([h.Class('handwriting-modes'), h.Attribute('role', 'group'), h.Attribute('aria-label', t('handwritingTitle', language))],
-        (['letters', 'words'] as const).map(mode => h.button([h.Class('handwriting-mode'), h.Attribute('type', 'button'), h.Attribute('aria-pressed', String(model.mode === mode)), h.OnClick(SetMode({ mode }))], [t(mode === 'letters' ? 'handwritingLetters' : 'handwritingWords', language)]))),
+        (['letters', 'words', 'numbers'] as const).map(mode => h.button([h.Class('handwriting-mode'), h.Attribute('type', 'button'), h.Attribute('aria-pressed', String(model.mode === mode)), h.OnClick(SetMode({ mode }))], [t(mode === 'letters' ? 'handwritingLetters' : mode === 'words' ? 'handwritingWords' : 'handwritingNumbers', language)]))),
+      ...(model.mode !== 'numbers' ? [h.div([h.Class('handwriting-cases'), h.Attribute('role', 'group'), h.Attribute('aria-label', t('handwritingStyle', language))],
+        (['print', 'cursive'] as const).map(style => h.button([h.Class('handwriting-mode'), h.Attribute('type', 'button'), h.Attribute('aria-pressed', String(model.style === style)), h.OnClick(SetStyle({ style }))], [t(style === 'print' ? 'handwritingPrint' : 'handwritingCursive', language)])))] : []),
       ...(model.mode === 'letters' ? [h.div([h.Class('handwriting-cases'), h.Attribute('role', 'group'), h.Attribute('aria-label', t('handwritingLetters', language))],
         (['upper', 'lower'] as const).map(letterCase => h.button([h.Class('handwriting-case'), h.Attribute('type', 'button'), h.Attribute('aria-pressed', String(model.letterCase === letterCase)), h.Attribute('aria-label', t(letterCase === 'upper' ? 'handwritingUppercaseLabel' : 'handwritingLowercaseLabel', language)), h.OnClick(SetCase({ letterCase }))], [t(letterCase === 'upper' ? 'handwritingUppercase' : 'handwritingLowercase', language)])))] : []),
     ]),
-    h.div([h.Class('handwriting-choices'), h.Attribute('role', 'group'), h.Attribute('aria-label', t(model.mode === 'letters' ? 'handwritingLetters' : 'handwritingWords', language))],
-      (model.mode === 'letters' ? HANDWRITING_LETTERS.map(letter => ({ text: model.letterCase === 'upper' ? letter.toUpperCase() : letter, emoji: '' })) : HANDWRITING_WORDS).map((target, targetIndex) => h.button([
+    h.div([h.Class(cursive ? 'handwriting-choices handwriting-cursive' : 'handwriting-choices'), h.Attribute('role', 'group'), h.Attribute('aria-label', t(modeLabel, language))],
+      choices.map((target, targetIndex) => h.button([
         h.Class('handwriting-choice'), h.Key(`${model.mode}-${targetIndex}`), h.Attribute('type', 'button'), h.Attribute('aria-pressed', String(index === targetIndex)), h.OnClick(SelectedTarget({ index: targetIndex })),
       ], [h.span([h.AriaHidden(true)], [target.emoji]), h.span([h.Attribute('dir', 'ltr')], [target.text])]))),
-    h.div([h.Class('handwriting-target'), h.Attribute('dir', 'ltr')], [h.span([h.AriaHidden(true)], [guide.emoji]), guide.text]),
+    h.div([h.Class(cursive ? 'handwriting-target handwriting-cursive' : 'handwriting-target'), h.Attribute('dir', 'ltr')], [h.span([h.AriaHidden(true)], [guide.emoji]), guide.text]),
     h.svg([
       h.Class('handwriting-board'), h.Key(`handwriting-board-${model.revision}`), h.ViewBox(`0 0 ${guide.width} ${guide.height}`),
       h.Attribute('preserveAspectRatio', 'xMidYMid meet'), h.Attribute('role', 'application'), h.Attribute('tabindex', '0'), h.Attribute('focusable', 'true'),

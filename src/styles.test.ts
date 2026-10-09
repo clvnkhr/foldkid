@@ -252,6 +252,7 @@ describe('styles.css invariants', () => {
     expect(completed).toContain('border-color: var(--number-color)')
     expect(styles).toMatch(/@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{\s*\.handwriting-mode[^}]*transition:\s*none/)
     expect(cssRule('.handwriting-keyboard-hint')).toContain('clip-path: inset(50%)')
+    expect(cssRule('.handwriting-cursive, .handwriting-cursive .handwriting-choice')).toContain('cursive')
   })
 
   it('keeps Find It card boxes stable while sizing single and pair emoji separately', () => {
