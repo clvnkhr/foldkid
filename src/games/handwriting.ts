@@ -7,7 +7,7 @@ import { chime } from '../audio'
 import { normalizeLanguage, t, tf } from '../i18n'
 import {
   HANDWRITING_LETTERS, HANDWRITING_WORDS, HANDWRITING_TOLERANCE,
-  advanceHandwritingStroke, handwritingGuide, handwritingPath, type HandwritingPoint,
+  advanceHandwritingStroke, handwritingGuide, handwritingPath, handwritingResumeDistance, type HandwritingPoint,
 } from './handwritingPaths'
 import { createHandwritingRuntime } from './handwritingRuntime'
 
@@ -66,14 +66,18 @@ const nextStroke = (model: Model, point?: HandwritingPoint): number => {
   const strokes = currentGuide(model).strokes
   let nearest = -1
   let distance = HANDWRITING_TOLERANCE
+  let resumed = -1
+  let resumeDistance = HANDWRITING_TOLERANCE
   strokes.forEach((stroke, index) => {
     const next = stroke[model.progress[index]!]
     if (!next || model.contacts.some(contact => contact.stroke === index) || model.pen?.stroke === index) return
     const previous = stroke[Math.max(0, model.progress[index]! - 1)]!
     const gap = point ? Math.min(Math.hypot(point.x - next.x, point.y - next.y), Math.hypot(point.x - previous.x, point.y - previous.y)) : 0
     if (gap < distance || (nearest < 0 && gap <= distance)) { nearest = index; distance = gap }
+    const behind = point ? handwritingResumeDistance(stroke, model.progress[index]!, point) : 0
+    if (behind < resumeDistance || (resumed < 0 && behind <= resumeDistance)) { resumed = index; resumeDistance = behind }
   })
-  return nearest
+  return nearest >= 0 ? nearest : resumed
 }
 const celebrate = (model: Model, muted: boolean): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
   if (!isComplete(model) || model.celebrated) return [model, []]

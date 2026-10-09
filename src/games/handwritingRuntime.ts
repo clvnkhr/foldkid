@@ -1,4 +1,5 @@
 import { warmAudio } from '../audio'
+import { HANDWRITING_TOLERANCE } from './handwritingPaths'
 
 export interface HandwritingPoint { readonly x: number; readonly y: number }
 export interface HandwritingHandlers {
@@ -127,7 +128,8 @@ export const createHandwritingRuntime = (svg: SVGSVGElement, handlers: Handwriti
     const revision = revisionOf(svg)
     const point = localPoint(svg, client)
     const box = viewBoxOf(svg)
-    if (revision === undefined || !point || !box || point.x < box.x || point.x > box.x + box.width || point.y < box.y || point.y > box.y + box.height || !validId(nextId)) return false
+    if (revision === undefined || !point || !box || point.x < box.x - HANDWRITING_TOLERANCE || point.x > box.x + box.width + HANDWRITING_TOLERANCE ||
+      point.y < box.y - HANDWRITING_TOLERANCE || point.y > box.y + box.height + HANDWRITING_TOLERANCE || !validId(nextId)) return false
     const contact: Contact = { id: nextId++, revision, target, startedAt: time, touchPointer, x: client.clientX, y: client.clientY, lastTime: time, lastPoint: point, pending: [], paired: false }
     contacts.set(key, contact)
     try { svg.focus?.({ preventScroll: true }) } catch { /* Tracing also works when SVG focus is unavailable. */ }

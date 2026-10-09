@@ -167,6 +167,114 @@ describe('Handwriting model and tracing', () => {
     )
   })
 
+  it('accepts a finger-width offset from a lowercase l guide and completes on release', () => {
+    const model = target(HANDWRITING_LETTERS.indexOf('l'), 'lower')
+    const stroke = Handwriting.currentGuide(model).strokes[0]!
+    const offset = stroke.map(point => ({ x: point.x + 15, y: point.y }))
+    Story.story(
+      update,
+      Story.with(model),
+      Story.message(Handwriting.PenStarted({ id: 1, ...offset[0]!, revision: 0 })),
+      Story.model(next => { expect(next.contacts.map(contact => [contact.id, contact.stroke])).toEqual([[1, 0]]); expect(next.progress[0]).toBeGreaterThan(0) }),
+      Story.message(Handwriting.PenMoved({ id: 1, points: offset.slice(1), revision: 0 })),
+      Story.model(next => { expect(Handwriting.isComplete(next)).toBe(true); expect(next.celebrated).toBe(false) }),
+      Story.Command.expectNone(),
+      Story.message(Handwriting.PenEnded({ id: 1, revision: 0 })),
+      Story.Command.resolveAll(sound),
+      Story.model(next => { expect(next.celebrated).toBe(true); expect(next.contacts).toEqual([]) }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('recovers immediately when a held finger drifts away and returns near its next guide dots', () => {
+    const model = target(HANDWRITING_LETTERS.indexOf('l'))
+    const stroke = Handwriting.currentGuide(model).strokes[0]!
+    let progress = 0
+    Story.story(
+      mutedUpdate,
+      Story.with(model),
+      Story.message(Handwriting.PenStarted({ id: 1, ...stroke[0]!, revision: 0 })),
+      Story.message(Handwriting.PenMoved({ id: 1, points: stroke.slice(1, 8), revision: 0 })),
+      Story.model(next => { progress = next.progress[0]!; expect(progress).toBeGreaterThan(1); expect(progress).toBeLessThan(stroke.length) }),
+      Story.message(Handwriting.PenMoved({ id: 1, points: [{ x: 75, y: 60 }], revision: 0 })),
+      Story.model(next => { expect(next.progress[0]).toBe(progress); expect(next.contacts.map(contact => contact.id)).toEqual([1]) }),
+      Story.message(Handwriting.PenMoved({ id: 1, points: [stroke[12]!], revision: 0 })),
+      Story.model(next => expect(next.progress[0]).toBeGreaterThan(progress)),
+      Story.message(Handwriting.PenMoved({ id: 1, points: stroke.slice(13), revision: 0 })),
+      Story.message(Handwriting.PenEnded({ id: 1, revision: 0 })),
+      Story.model(next => { expect(Handwriting.isComplete(next)).toBe(true); expect(next.celebrated).toBe(true) }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('reacquires a partial stroke slightly behind its saved endpoint without losing ink', () => {
+    const model = target(HANDWRITING_LETTERS.indexOf('l'))
+    const stroke = Handwriting.currentGuide(model).strokes[0]!
+    let partial = model
+    Story.story(
+      mutedUpdate,
+      Story.with(model),
+      Story.message(Handwriting.PenStarted({ id: 1, ...stroke[0]!, revision: 0 })),
+      Story.message(Handwriting.PenMoved({ id: 1, points: stroke.slice(1, 8), revision: 0 })),
+      Story.message(Handwriting.PenEnded({ id: 1, revision: 0 })),
+      Story.model(next => { partial = next; expect(next.progress[0]).toBeGreaterThan(5); expect(next.contacts).toEqual([]) }),
+      Story.Command.expectNone(),
+    )
+    const progress = partial.progress[0]!
+    const resume = progress - 5
+    Story.story(
+      mutedUpdate,
+      Story.with(partial),
+      Story.message(Handwriting.PenStarted({ id: 2, ...stroke[resume]!, revision: 0 })),
+      Story.model(next => { expect(next.contacts.map(contact => [contact.id, contact.stroke])).toEqual([[2, 0]]); expect(next.progress[0]).toBe(progress) }),
+      Story.message(Handwriting.PenMoved({ id: 2, points: stroke.slice(resume + 1), revision: 0 })),
+      Story.message(Handwriting.PenEnded({ id: 2, revision: 0 })),
+      Story.model(next => { expect(next.progress[0]).toBe(stroke.length); expect(Handwriting.isComplete(next)).toBe(true); expect(next.celebrated).toBe(true) }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('keeps widened touch targets owned by their original fingers without crossing into another stroke', () => {
+    const model = target(HANDWRITING_LETTERS.indexOf('h'))
+    const [left, right] = Handwriting.currentGuide(model).strokes
+    let progress: ReadonlyArray<number> = []
+    Story.story(
+      mutedUpdate,
+      Story.with(model),
+      Story.message(Handwriting.PenStarted({ id: 1, x: left![0]!.x + 15, y: left![0]!.y, revision: 0 })),
+      Story.message(Handwriting.PenStarted({ id: 2, x: left![0]!.x + 15, y: left![0]!.y, revision: 0 })),
+      Story.model(next => expect(next.contacts.map(contact => [contact.id, contact.stroke])).toEqual([[1, 0]])),
+      Story.message(Handwriting.PenStarted({ id: 2, x: right![0]!.x - 15, y: right![0]!.y, revision: 0 })),
+      Story.model(next => { expect(next.contacts.map(contact => [contact.id, contact.stroke])).toEqual([[1, 0], [2, 1]]); progress = next.progress }),
+      Story.message(Handwriting.PenMoved({ id: 1, points: right!.slice(1), revision: 0 })),
+      Story.model(next => { expect(next.progress).toEqual(progress); expect(next.contacts.map(contact => [contact.id, contact.stroke])).toEqual([[1, 0], [2, 1]]) }),
+      Story.message(Handwriting.PenCancelled({ id: 1, revision: 0 })),
+      Story.message(Handwriting.PenCancelled({ id: 2, revision: 0 })),
+      Story.model(next => { expect(next.contacts).toEqual([]); expect(Handwriting.isComplete(next)).toBe(false) }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it.each([2, 9])('starts the untouched right A leg at its shared apex after lifting the left leg at sample %s', sample => {
+    const model = Handwriting.init()
+    const [left, right] = Handwriting.currentGuide(model).strokes
+    let leftProgress = 0
+    Story.story(
+      mutedUpdate,
+      Story.with(model),
+      Story.message(Handwriting.PenStarted({ id: 1, ...left![0]!, revision: 0 })),
+      Story.message(Handwriting.PenMoved({ id: 1, points: left!.slice(1, sample + 1), revision: 0 })),
+      Story.message(Handwriting.PenEnded({ id: 1, revision: 0 })),
+      Story.model(next => { leftProgress = next.progress[0]!; expect(leftProgress).toBeGreaterThan(0); expect(leftProgress).toBeLessThan(left!.length); expect(next.progress[1]).toBe(0) }),
+      Story.message(Handwriting.PenStarted({ id: 2, ...right![0]!, revision: 0 })),
+      Story.model(next => { expect(next.contacts.map(contact => [contact.id, contact.stroke])).toEqual([[2, 1]]); expect(next.progress[0]).toBe(leftProgress) }),
+      Story.message(Handwriting.PenMoved({ id: 2, points: right!.slice(1), revision: 0 })),
+      Story.message(Handwriting.PenEnded({ id: 2, revision: 0 })),
+      Story.model(next => { expect(next.progress[0]).toBe(leftProgress); expect(next.progress[1]).toBe(right!.length); expect(Handwriting.isComplete(next)).toBe(false) }),
+      Story.Command.expectNone(),
+    )
+  })
+
   it('owns separate strokes per finger while an unrelated held touch does not block tracing', () => {
     const model = target(HANDWRITING_LETTERS.indexOf('h'))
     const [left, right, bar] = Handwriting.currentGuide(model).strokes
@@ -378,7 +486,7 @@ describe('Handwriting keyboard and accessible view', () => {
       Story.model(next => expect(next.pen).toBeNull()),
       Story.Command.expectNone(),
       ...Array.from({ length: 2 }, () => [Story.message(Handwriting.KeyboardPressed({ key: 'ArrowDown', revision: 0 })), Story.Command.expectNone()]).flat(),
-      ...Array.from({ length: 9 }, () => [Story.message(Handwriting.KeyboardPressed({ key: 'ArrowRight', revision: 0 })), Story.Command.expectNone()]).flat(),
+      ...Array.from({ length: 6 }, () => [Story.message(Handwriting.KeyboardPressed({ key: 'ArrowRight', revision: 0 })), Story.Command.expectNone()]).flat(),
       Story.message(Handwriting.KeyboardPressed({ key: 'ArrowRight', revision: 0 })),
       Story.model(next => { expect(Handwriting.isComplete(next)).toBe(true); expect(next.celebrated).toBe(true) }),
       Story.Command.resolveAll(sound),

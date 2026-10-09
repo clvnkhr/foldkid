@@ -8,7 +8,7 @@ export interface HandwritingGuide {
   readonly strokes: ReadonlyArray<HandwritingStroke>
 }
 
-export const HANDWRITING_TOLERANCE = 11
+export const HANDWRITING_TOLERANCE = 18
 export const HANDWRITING_LETTERS: ReadonlyArray<string> = 'abcdefghijklmnopqrstuvwxyz'.split('')
 export const HANDWRITING_WORDS = [
   { text: 'cat', emoji: '🐈' }, { text: 'dog', emoji: '🐕' }, { text: 'sun', emoji: '☀️' },
@@ -185,30 +185,40 @@ const segmentDistance = (value: HandwritingPoint, from: HandwritingPoint, to: Ha
   return Math.hypot(value.x - from.x - t * dx, value.y - from.y - t * dy)
 }
 
-/** Progress counts reached samples; a fast straight trace works without allowing shortcuts through curves. */
+const windowDistance = (points: HandwritingStroke, first: number, last: number, value: HandwritingPoint): number => {
+  let gap = distance(value, points[last]!)
+  for (let index = first; index < last; index++) gap = Math.min(gap, segmentDistance(value, points[index]!, points[index + 1]!))
+  return gap
+}
+
+/** A short portion of existing ink stays touchable after lifting, without restarting at old crossings. */
+export const handwritingResumeDistance = (points: HandwritingStroke, progress: number, value: HandwritingPoint): number => {
+  if (!Number.isSafeInteger(progress) || progress < 0 || progress >= points.length || !finitePoint(value) || !points.every(finitePoint)) return Infinity
+  return windowDistance(points, Math.max(0, progress - 6), progress, value)
+}
+
+/** Progress follows a broad corridor in stroke order, accepting rough curves and brief slips. */
 export const advanceHandwritingStroke = (points: HandwritingStroke, progress: number, from: HandwritingPoint, to: HandwritingPoint): number => {
   const reached = Number.isSafeInteger(progress) ? Math.max(0, Math.min(points.length, progress)) : 0
   if (progress !== reached || reached === points.length || !finitePoint(from) || !finitePoint(to) || !points.every(finitePoint)) return reached
   const previous = Math.max(0, reached - 1)
-  if (Math.min(distance(from, points[previous]!), distance(from, points[reached]!)) > HANDWRITING_TOLERANCE + 0.000001) return reached
+  let origin = from
+  if (handwritingResumeDistance(points, reached, from) > HANDWRITING_TOLERANCE + 0.000001) {
+    // Rejoin nearby after a slip; an off-guide jump cannot skip a distant unwritten section.
+    if (reached === 0 || windowDistance(points, previous, Math.min(points.length - 1, previous + 6), to) > HANDWRITING_TOLERANCE) return reached
+    origin = points[previous]!
+  }
   let closest = previous
   let nearest = Infinity
   for (let index = previous; index < points.length; index++) {
+    // A nearby later loop must not block progress on the current stem or skip an untraced bend.
+    if (index >= reached && segmentDistance(points[index]!, origin, to) > HANDWRITING_TOLERANCE) break
     const gap = distance(to, points[index]!)
     if (gap < nearest) { nearest = gap; closest = index }
   }
   if (nearest > HANDWRITING_TOLERANCE) return reached
-  // Long curved sections need intermediate input, so a polygon cannot stand in for a counter.
-  if (distance(from, to) > HANDWRITING_TOLERANCE * 2 && closest > reached) {
-    for (let index = reached; index < closest; index++) {
-      if (segmentDistance(points[index]!, points[previous]!, points[closest]!) > HANDWRITING_TOLERANCE / 3) return reached
-    }
-  }
-  for (let index = reached; index <= closest; index++) {
-    if (segmentDistance(points[index]!, from, to) > HANDWRITING_TOLERANCE) return reached
-  }
   let next = reached
-  while (next < points.length && segmentDistance(points[next]!, from, to) <= HANDWRITING_TOLERANCE &&
+  while (next < points.length && segmentDistance(points[next]!, origin, to) <= HANDWRITING_TOLERANCE &&
     (next <= closest || distance(points[next]!, to) <= HANDWRITING_TOLERANCE)) next++
   return next
 }

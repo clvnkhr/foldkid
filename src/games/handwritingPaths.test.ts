@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   advanceHandwritingStroke, HANDWRITING_LETTERS, HANDWRITING_TOLERANCE, HANDWRITING_WORDS,
-  handwritingGuide, handwritingPath, type HandwritingPoint, type HandwritingStroke,
+  handwritingGuide, handwritingPath, handwritingResumeDistance, type HandwritingPoint, type HandwritingStroke,
 } from './handwritingPaths'
 
 const distance = (from: HandwritingPoint, to: HandwritingPoint): number => Math.hypot(from.x - to.x, from.y - to.y)
@@ -282,7 +282,7 @@ describe('handwriting tracing', () => {
     expect(completeTrace(loop)).toBe(loop.length)
   })
 
-  it('does not complete an oval by joining four points into an inscribed diamond', () => {
+  it('accepts a rough oval with only four movements around its curve', () => {
     const points = handwritingGuide('letters', 'lower', HANDWRITING_LETTERS.indexOf('o')).strokes[0]!
     let progress = advanceHandwritingStroke(points, 0, points[0]!, points[0]!)
     let from = points[0]!
@@ -291,8 +291,41 @@ describe('handwriting tracing', () => {
       progress = advanceHandwritingStroke(points, progress, from, to)
       from = to
     }
-    expect(progress).toBeLessThan(points.length / 4)
+    expect(progress).toBe(points.length)
     expect(completeTrace(points)).toBe(points.length)
+  })
+
+  it('accepts wobbly traces across every uppercase and lowercase guide', () => {
+    for (const letterCase of ['upper', 'lower'] as const) for (const [index, letter] of HANDWRITING_LETTERS.entries()) {
+      for (const points of handwritingGuide('letters', letterCase, index).strokes) {
+        const input = points.map((point, sample) => ({ x: point.x + (sample % 2 === 0 ? 14 : 16), y: point.y }))
+        let progress = advanceHandwritingStroke(points, 0, input[0]!, input[0]!)
+        for (let sample = 1; sample < input.length; sample++) progress = advanceHandwritingStroke(points, progress, input[sample - 1]!, input[sample]!)
+        expect(progress, `${letterCase} ${letter}`).toBe(points.length)
+      }
+    }
+  })
+
+  it('rejoins after a brief slip without crediting distant off-guide jumps', () => {
+    const progress = advanceHandwritingStroke(straight, 0, straight[0]!, straight[6]!)
+    const outside = { x: 90, y: straight[6]!.y }
+    expect(advanceHandwritingStroke(straight, progress, straight[6]!, outside)).toBe(progress)
+    const rejoined = advanceHandwritingStroke(straight, progress, outside, straight[11]!)
+    expect(rejoined).toBeGreaterThan(progress)
+    expect(rejoined).toBeLessThan(straight.length)
+    const beginning = advanceHandwritingStroke(straight, 0, straight[0]!, straight[0]!)
+    expect(advanceHandwritingStroke(straight, beginning, outside, straight.at(-1)!)).toBe(beginning)
+  })
+
+  it('resumes on nearby existing ink while ignoring old stroke starts and completed strokes', () => {
+    const progress = advanceHandwritingStroke(straight, 0, straight[0]!, straight[9]!)
+    const behind = straight[progress - 5]!
+    expect(handwritingResumeDistance(straight, progress, behind)).toBe(0)
+    expect(advanceHandwritingStroke(straight, progress, behind, straight.at(-1)!)).toBe(straight.length)
+    expect(handwritingResumeDistance(straight, progress, straight[0]!)).toBeGreaterThan(HANDWRITING_TOLERANCE)
+    expect(handwritingResumeDistance(straight, straight.length, straight.at(-1)!)).toBe(Infinity)
+    expect(handwritingResumeDistance(straight, Number.NaN, straight[0]!)).toBe(Infinity)
+    expect(handwritingResumeDistance(straight, progress, { x: Infinity, y: 0 })).toBe(Infinity)
   })
 
   it('rejects diagonal corner cutting and wild jumps to another letter or past the guide', () => {

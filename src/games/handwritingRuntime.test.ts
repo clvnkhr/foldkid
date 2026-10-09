@@ -86,7 +86,7 @@ describe('handwriting SVG input runtime', () => {
     expect(Audio.warmAudio).not.toHaveBeenCalled()
   })
 
-  it('leaves focus unchanged when a contact has invalid geometry or starts in letterboxing', () => {
+  it('leaves focus unchanged when a contact has invalid geometry or starts in distant letterboxing', () => {
     const { svg, handlers, setRect } = fixture()
     const focus = vi.spyOn(svg, 'focus')
     const previous = document.activeElement
@@ -97,6 +97,34 @@ describe('handwriting SVG input runtime', () => {
     expect(document.activeElement).toBe(previous)
     expect(handlers.started).not.toHaveBeenCalled()
     expect(Audio.warmAudio).not.toHaveBeenCalled()
+  })
+
+  it.each(['pointer', 'native'])('allows nearby letterboxing for %s tracing while ignoring distant starts and cleaning up on release', input => {
+    const { svg, handlers, captures } = fixture()
+    const accepted = input === 'native'
+      ? touch(svg, 'touchstart', [touchPoint(1, svg, 163, 40)])
+      : pointer(svg, 'pointerdown', 1, 163, 40)
+    const rejected = input === 'native'
+      ? touch(svg, 'touchstart', [touchPoint(2, svg, 179, 40)])
+      : pointer(svg, 'pointerdown', 2, 179, 40)
+    expect(accepted.defaultPrevented).toBe(true)
+    expect(rejected.defaultPrevented).toBe(false)
+    expect(handlers.started.mock.calls).toEqual([[0, 103, 20, 7]])
+    expect(Audio.warmAudio).not.toHaveBeenCalled()
+    expect(captures).toEqual(new Set(input === 'native' ? [] : [1]))
+    if (input === 'native') {
+      touch(document, 'touchend', [touchPoint(1, svg, 165, 42)])
+      touch(document, 'touchend', [touchPoint(2, svg, 179, 40)])
+    } else {
+      pointer(document, 'pointerup', 1, 165, 42)
+      pointer(document, 'pointerup', 2, 179, 40)
+    }
+    expect(handlers.moved.mock.calls).toEqual([[0, [{ x: 105, y: 22 }], 7]])
+    expect(handlers.ended.mock.calls).toEqual([[0, 7]])
+    expect(handlers.cancelled).not.toHaveBeenCalled()
+    expect(captures.size).toBe(0)
+    expect(frames.size).toBe(0)
+    expect(Audio.warmAudio).toHaveBeenCalledTimes(1)
   })
 
   it.each(['missing', 'throwing'])('keeps tracing functional with a %s SVG focus API', availability => {
@@ -341,7 +369,7 @@ describe('handwriting SVG input runtime', () => {
     expect(Audio.warmAudio).not.toHaveBeenCalled()
   })
 
-  it('ignores zero or malformed geometry and starts in letterboxing', () => {
+  it('ignores zero or malformed geometry and starts in distant letterboxing', () => {
     const { svg, handlers, setRect } = fixture()
     pointer(svg, 'pointerdown', 1, 30, 40)
     setRect({ left: 10, top: 20, width: 0, height: 100 })
