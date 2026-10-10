@@ -1,4 +1,4 @@
-import { Effect, Option } from 'effect'
+import { Effect, Fiber, Option, Stream } from 'effect'
 import { Scene, Story } from 'foldkit/test'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -35,6 +35,71 @@ const traced = (model: Handwriting.Model, release = true): Handwriting.Model => 
 }
 
 afterEach(() => vi.restoreAllMocks())
+
+describe('Handwriting mounted mobile tracing', () => {
+  it.each(['native', 'pointer', 'paired'] as const)('completes a real guide through the mounted %s finger stream', async input => {
+    let model = target(HANDWRITING_LETTERS.indexOf('l'))
+    const points = Handwriting.currentGuide(model).strokes[0]!
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    svg.setAttribute('viewBox', '0 0 100 160')
+    svg.setAttribute('data-handwriting-revision', String(model.revision))
+    Object.defineProperty(svg, 'getScreenCTM', { value: () => null })
+    vi.spyOn(svg, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 100, 160))
+    svg.setPointerCapture = vi.fn()
+    const listeners = vi.spyOn(svg, 'addEventListener')
+    vi.spyOn(Audio, 'warmAudio').mockImplementation(() => {})
+    document.body.append(svg)
+    const messages: Handwriting.Message[] = []
+    const fiber = Effect.runFork(Stream.runForEach(Handwriting.mountHandwriting(svg), message => Effect.sync(() => {
+      messages.push(message)
+      const [next, commands] = mutedUpdate(model, message)
+      expect(commands).toEqual([])
+      model = next
+    })))
+    let stamp = 100
+    const pointerEvent = (type: string, point: typeof points[number]) => {
+      const event = new PointerEvent(type, { bubbles: true, cancelable: true, pointerType: 'touch', pointerId: 1,
+        button: 0, buttons: type === 'pointerup' ? 0 : 1, clientX: point.x, clientY: point.y })
+      Object.defineProperty(event, 'timeStamp', { value: stamp++ })
+      const eventTarget = type === 'pointerdown' || type === 'lostpointercapture' ? svg : document
+      eventTarget.dispatchEvent(event)
+    }
+    const touchEvent = (type: string, point: typeof points[number]) => {
+      const event = new Event(type, { bubbles: true, cancelable: true })
+      const touch = { identifier: -203274, target: svg, clientX: point.x, clientY: point.y }
+      Object.defineProperties(event, { timeStamp: { value: stamp++ }, changedTouches: { value: { length: 1, item: () => touch } } })
+      const eventTarget = type === 'touchstart' ? svg : document
+      eventTarget.dispatchEvent(event)
+    }
+    try {
+      await vi.waitFor(() => expect(listeners.mock.calls.some(([name]) => name === 'touchstart')).toBe(true))
+      if (input !== 'native') {
+        pointerEvent('pointerdown', points[0]!)
+        pointerEvent('pointermove', points[1]!)
+        pointerEvent('lostpointercapture', points[1]!)
+      }
+      if (input !== 'pointer') touchEvent('touchstart', points[0]!)
+      for (const point of points.slice(1)) {
+        if (input === 'pointer') pointerEvent('pointermove', point)
+        else touchEvent('touchmove', point)
+      }
+      if (input !== 'native') pointerEvent('pointerup', points.at(-1)!)
+      if (input !== 'pointer') touchEvent('touchend', points.at(-1)!)
+      await vi.waitFor(() => expect(model.celebrated).toBe(true))
+      expect(Handwriting.isComplete(model)).toBe(true)
+      expect(model.contacts).toEqual([])
+      expect(messages.filter(message => message._tag === 'HandwritingPenStarted')).toEqual([
+        Handwriting.PenStarted({ id: 0, ...points[0]!, revision: 0 }),
+      ])
+      expect(messages.filter(message => message._tag === 'HandwritingPenCancelled')).toEqual([])
+      expect(svg.setPointerCapture).not.toHaveBeenCalled()
+      expect(Audio.warmAudio).toHaveBeenCalledTimes(1)
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(fiber))
+      svg.remove()
+    }
+  })
+})
 
 describe('Handwriting cursive and numbers', () => {
   for (const letterCase of ['upper', 'lower'] as const) {

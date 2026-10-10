@@ -14,6 +14,8 @@ interface Contact {
   readonly revision: number
   readonly target: EventTarget | null
   readonly startedAt: number
+  readonly startX: number
+  readonly startY: number
   readonly touchPointer: boolean
   x: number
   y: number
@@ -121,7 +123,10 @@ export const createHandwritingRuntime = (svg: SVGSVGElement, handlers: Handwriti
   }
   const ownedTarget = (target: EventTarget | null): boolean => target === svg || target instanceof Node && svg.contains(target)
   const sameStart = (contact: Contact, client: ClientPoint, target: EventTarget | null, time: number): boolean =>
-    contact.target === target && Math.abs(contact.startedAt - time) <= 40 && Math.hypot(contact.x - client.clientX, contact.y - client.clientY) <= 1
+    contact.target === target && Math.abs(contact.startedAt - time) <= 40 && Math.min(
+      Math.hypot(contact.startX - client.clientX, contact.startY - client.clientY),
+      Math.hypot(contact.x - client.clientX, contact.y - client.clientY),
+    ) <= 1
   const start = (key: string, client: ClientPoint, target: EventTarget | null, time: number, touchPointer: boolean, captureId?: number): boolean => {
     if (stopped || contacts.has(key) || !ownedTarget(target) || !Number.isFinite(time)) return false
     invalidate()
@@ -130,7 +135,8 @@ export const createHandwritingRuntime = (svg: SVGSVGElement, handlers: Handwriti
     const box = viewBoxOf(svg)
     if (revision === undefined || !point || !box || point.x < box.x - HANDWRITING_TOLERANCE || point.x > box.x + box.width + HANDWRITING_TOLERANCE ||
       point.y < box.y - HANDWRITING_TOLERANCE || point.y > box.y + box.height + HANDWRITING_TOLERANCE || !validId(nextId)) return false
-    const contact: Contact = { id: nextId++, revision, target, startedAt: time, touchPointer, x: client.clientX, y: client.clientY, lastTime: time, lastPoint: point, pending: [], paired: false }
+    const contact: Contact = { id: nextId++, revision, target, startedAt: time, startX: client.clientX, startY: client.clientY,
+      touchPointer, x: client.clientX, y: client.clientY, lastTime: time, lastPoint: point, pending: [], paired: false }
     contacts.set(key, contact)
     try { svg.focus?.({ preventScroll: true }) } catch { /* Tracing also works when SVG focus is unavailable. */ }
     if (captureId !== undefined) {
@@ -184,7 +190,9 @@ export const createHandwritingRuntime = (svg: SVGSVGElement, handlers: Handwriti
         return
       }
     }
-    if (start(pointerKey(event.pointerId), event, event.target, event.timeStamp, event.pointerType === 'touch', event.pointerId)) event.preventDefault()
+    // Fingers keep their native/document stream: SVG capture can interrupt mobile dragging.
+    const captureId = event.pointerType === 'touch' ? undefined : event.pointerId
+    if (start(pointerKey(event.pointerId), event, event.target, event.timeStamp, event.pointerType === 'touch', captureId)) event.preventDefault()
   }
   const pointerMove = (event: PointerEvent): void => {
     invalidate()
@@ -213,6 +221,8 @@ export const createHandwritingRuntime = (svg: SVGSVGElement, handlers: Handwriti
       return
     }
     const contact = contacts.get(pointerKey(event.pointerId))
+    // Losing implicit finger capture does not end a contact; up/cancel still arrive on document.
+    if (contact?.touchPointer && event.type === 'lostpointercapture') return
     if (contact && !contact.touchPointer && event.type === 'pointerup') {
       if ((event.buttons & 1) !== 0) { event.preventDefault(); return }
       if (event.button !== 0) {
@@ -228,7 +238,8 @@ export const createHandwritingRuntime = (svg: SVGSVGElement, handlers: Handwriti
     let handled = false
     for (let index = 0; index < list.length; index++) {
       const touch = typeof list.item === 'function' ? list.item(index) : list[index]
-      if (touch && validId(touch.identifier) && action(`touch:${touch.identifier}`, touch)) handled = true
+      // Browser touch IDs are signed; only our semantic IDs/revisions must be nonnegative.
+      if (touch && Number.isSafeInteger(touch.identifier) && action(`touch:${touch.identifier}`, touch)) handled = true
     }
     if (handled) event.preventDefault()
   }
