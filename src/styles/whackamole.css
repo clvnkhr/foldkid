@@ -1,4 +1,6 @@
 .whack-grid {
+  position: relative;
+  isolation: isolate;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: clamp(8px, 2.5vmin, 16px);
@@ -45,17 +47,6 @@
 .whack-cell:active {
   filter: brightness(0.85);
   transition: none;
-}
-
-.whack-cell:active .whack-mole-head {
-  animation: whackBonk 0.2s ease-out;
-}
-
-@keyframes whackBonk {
-  0% { transform: scale(1) rotate(0deg); }
-  30% { transform: scale(0.8) rotate(-8deg); }
-  60% { transform: scale(1.05) rotate(4deg); }
-  100% { transform: scale(1) rotate(0deg); }
 }
 
 .whack-cell--up .whack-mole {
@@ -420,4 +411,71 @@
 
 .dark .whack-mole--type-4 .whack-mole-ear {
   background: radial-gradient(ellipse at 50% 60%, #cc80a0 0%, #b05a80 55%, #8a4060 100%);
+}
+
+.whack-fx-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  pointer-events: none;
+  overflow: visible;
+  contain: layout style;
+}
+
+.whack-fx-burst {
+  position: absolute;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.whack-fx-ring,
+.whack-fx-puff,
+.whack-fx-particle {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  transform-origin: 50% 50%;
+  transform-box: border-box;
+  will-change: transform, opacity;
+}
+
+.whack-fx-ring {
+  border: 3px solid currentColor;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px #fff9;
+}
+
+.whack-fx-puff {
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff 0%, #ffffffb3 22%, currentColor 56%, transparent 72%);
+}
+
+.whack-fx-confetti,
+.whack-fx-streak,
+.whack-fx-petal {
+  background: currentColor;
+  border-radius: 35%;
+  box-shadow: inset 0 1px 0 #ffffff80;
+}
+
+.whack-fx-streak { border-radius: 999px; }
+.whack-fx-petal { border-radius: 65% 20% 65% 20%; }
+.whack-fx-star,
+.whack-fx-heart { fill: currentColor; overflow: visible; }
+.whack-fx-reduced .whack-fx-ring { opacity: 0.8; }
+.whack-fx-reduced .whack-fx-puff { opacity: 0.55; }
+
+@media (prefers-reduced-motion: reduce) {
+  .whack-mole,
+  .whack-mole-pupil { transition: none; }
+  .whack-mole-nose,
+  .whack-time--danger,
+  .whack-gameover,
+  .whack-mole--type-3 .whack-mole-head::before { animation: none; }
+  .whack-fx-ring,
+  .whack-fx-puff,
+  .whack-fx-particle { animation: none; will-change: auto; }
 }

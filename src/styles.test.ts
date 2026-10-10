@@ -124,6 +124,19 @@ describe('styles.css invariants', () => {
     }
   })
 
+  it('keeps mole hit effects local to the board and clear of touch targets', () => {
+    const board = cssRule('.whack-grid')
+    const layer = cssRule('.whack-fx-layer')
+    const particles = cssRule('.whack-fx-ring,\n.whack-fx-puff,\n.whack-fx-particle')
+
+    expect(board).toContain('position: relative')
+    expect(board).toContain('isolation: isolate')
+    expect(layer).toContain('position: absolute')
+    expect(layer).toContain('pointer-events: none')
+    expect(particles).toContain('pointer-events: none')
+    expect(particles).toContain('will-change: transform, opacity')
+  })
+
   it('keeps musicbox drumpads in the same footprint as the piano keyboard', () => {
     const piano = cssRule('.piano-container')
     const drumPad = cssRule('.drum-pad-panel')

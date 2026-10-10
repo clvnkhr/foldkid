@@ -1,9 +1,13 @@
-import { describe, expect, it } from 'vitest'
+import { Effect, Fiber, Stream } from 'effect'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Scene, Story } from 'foldkit/test'
+import { multitouchClickStream } from '../../multitouch'
+import { mountWhackEffects } from './effects'
 
 import {
   ClickedHole,
   init,
+  type Model,
   SoundPlayed,
   StartGame,
   Tick,
@@ -108,7 +112,7 @@ describe('Whackamole', () => {
     )
   })
 
-  it('scores native button clicks while pointerdown only produces visual feedback', () => {
+  it('scores native button activation and exposes the current mole type to hit effects', () => {
     const playing = {
       ...init,
       gameState: 'playing' as const,
@@ -118,13 +122,17 @@ describe('Whackamole', () => {
       { update, view },
       Scene.with(playing),
       Scene.Mount.resolve({ name: 'whackTimer' }, SoundPlayed()),
-      Scene.pointerDown(Scene.role('button', { name: 'Hole 1' }), { pointerType: 'touch' }),
       Scene.expect(Scene.selector('.whack-score')).toHaveText('Score: 0'),
       Scene.expect(Scene.selector('[data-whack-index="0"]')).toHaveClass('whack-cell--up'),
+      Scene.expect(Scene.selector('.whack-grid')).toHaveAttr('data-whack-tick', '30'),
+      Scene.expect(Scene.selector('[data-whack-index="0"]')).toHaveAttr('data-whack-type', '1'),
+      Scene.expect(Scene.selector('[data-whack-index="0"]')).not.toHaveHandler('pointerdown'),
+      Scene.expect(Scene.selector('.whack-fx-burst')).toBeAbsent(),
       Scene.Command.expectNone(),
       Scene.click(Scene.role('button', { name: 'Hole 1' })),
       Scene.expect(Scene.selector('.whack-score')).toHaveText('Score: 1'),
       Scene.expect(Scene.selector('[data-whack-index="0"]')).not.toHaveClass('whack-cell--up'),
+      Scene.expect(Scene.selector('[data-whack-index="0"]')).toHaveAttr('data-whack-type', '0'),
       Scene.Command.resolveAll(resolvePop),
       Scene.Command.expectNone(),
       // Native keyboard activation reaches this same click path without pointerdown.
@@ -252,5 +260,70 @@ describe('Whackamole', () => {
         expect(model.holes[0]).toBe(1)
       }),
     )
+  })
+
+  it.each([-1, 0.5, NaN, Infinity])('ignores invalid hole index %s without effects or scoring', index => {
+    const playing = { ...init, gameState: 'playing' as const, holes: [1, 0, 0, 0, 0, 0, 0, 0, 0] }
+    Story.story(
+      update,
+      Story.with(playing),
+      Story.message(ClickedHole({ index })),
+      Story.model(model => expect(model).toBe(playing)),
+      Story.Command.expectNone(),
+    )
+  })
+})
+
+describe('Whackamole effects with multitouch activation', () => {
+  afterEach(() => { vi.restoreAllMocks(); document.body.replaceChildren() })
+
+  it('bursts once per hit when two fingers release independently and suppresses compatibility clicks', async () => {
+    const grid = document.createElement('div')
+    grid.className = 'whack-grid'
+    grid.dataset.whackTick = '30'
+    grid.innerHTML = '<button class="whack-cell whack-cell--up" data-multitouch-click data-whack-index="0" data-whack-type="1"></button><button class="whack-cell whack-cell--up" data-multitouch-click data-whack-index="1" data-whack-type="3"></button>'
+    document.body.appendChild(grid)
+    const [first, second] = grid.querySelectorAll('button')
+    if (!first || !second) throw new Error('missing mole buttons')
+    vi.spyOn(grid, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 240, 320))
+    vi.spyOn(first, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 100, 140))
+    vi.spyOn(second, 'getBoundingClientRect').mockReturnValue(new DOMRect(120, 0, 100, 140))
+    vi.spyOn(document, 'elementFromPoint').mockImplementation(x => x < 100 ? first : second)
+    const clicks: number[] = []
+    let model: Model = { ...init, gameState: 'playing', holes: [1, 3, 0, 0, 0, 0, 0, 0, 0] }
+    for (const button of [first, second]) button.addEventListener('click', () => {
+      const index = Number(button.dataset.whackIndex)
+      clicks.push(index)
+      model = update(model, ClickedHole({ index }), true)[0]
+      button.dataset.whackType = String(model.holes[index])
+    })
+    const touch = (type: string, target: HTMLButtonElement, identifier: number, clientX: number): void => {
+      const event = new Event(type, { bubbles: true, cancelable: true })
+      const contact = { target, identifier, clientX, clientY: 40 }
+      Object.defineProperty(event, 'changedTouches', { value: { length: 1, item: () => contact } })
+      target.dispatchEvent(event)
+    }
+    const listener = vi.spyOn(grid, 'addEventListener')
+    const fiber = Effect.runFork(Stream.runDrain(Stream.merge(multitouchClickStream(grid), mountWhackEffects(grid))))
+    try {
+      await vi.waitFor(() => expect(listener).toHaveBeenCalledWith('click', expect.any(Function), true))
+      touch('touchstart', first, 11, 40)
+      touch('touchstart', second, 12, 160)
+      expect(grid.querySelectorAll('.whack-fx-burst')).toHaveLength(0)
+      touch('touchend', second, 12, 160)
+      expect(clicks).toEqual([1])
+      expect(model.score).toBe(3)
+      expect(grid.querySelectorAll('.whack-fx-burst')).toHaveLength(1)
+      second.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }))
+      expect(clicks).toEqual([1])
+      touch('touchend', first, 11, 40)
+      expect(clicks).toEqual([1, 0])
+      expect(model.score).toBe(4)
+      expect(grid.querySelectorAll('.whack-fx-burst')).toHaveLength(2)
+      expect(grid.querySelector('.whack-fx-layer')?.textContent).toBe('')
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(fiber))
+    }
+    expect(grid.querySelector('.whack-fx-layer')).toBeNull()
   })
 })
