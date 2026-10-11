@@ -2,6 +2,7 @@ import { makeHappyDrums, repeat, withDrums } from './helpers'
 
 export const song = withDrums({
   key: 'happy',
+  tonality: { tonic: 'F', mode: 'major' },
   emoji: '😊',
   lyrics: [
     "If you're happy and you know it, clap your hands!",

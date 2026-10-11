@@ -1,7 +1,9 @@
 import { Effect, Fiber, Stream } from 'effect'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { createPianoPointerRuntime } from './musicboxKeyboardRuntime'
+import { createMusicBoxKeyboardRuntime, createPianoPointerRuntime } from './musicboxKeyboardRuntime'
+import { MUSICBOX_FREQUENCIES } from './musicboxDomain'
+import { INSTRUMENTS } from './musicboxInstruments'
 
 type NoteMessage = { type: 'on' | 'off'; pitch: string }
 const tick = () => new Promise(resolve => setTimeout(resolve, 0))
@@ -36,6 +38,117 @@ afterEach(() => {
   vi.restoreAllMocks()
   if (originalElementsFromPoint) Object.defineProperty(document, 'elementsFromPoint', originalElementsFromPoint)
   else delete (document as unknown as { elementsFromPoint?: unknown }).elementsFromPoint
+})
+
+describe('piano keyboard controls', () => {
+  beforeEach(() => {
+    vi.stubGlobal('Audio', class {
+      play = () => Promise.resolve()
+    })
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  const setup = () => {
+    const audio = {
+      primeFromGesture: vi.fn(), startManualNote: vi.fn(), stopManualNote: vi.fn(),
+      playDrumHit: vi.fn(), clearActiveNotes: vi.fn(),
+    }
+    const runtime = createMusicBoxKeyboardRuntime({ document, frequencies: MUSICBOX_FREQUENCIES, getInstrument: () => INSTRUMENTS[0], audio })
+    const host = document.createElement('div')
+    document.body.append(host)
+    runtime.bind()
+    return { audio, runtime, host, cleanup: () => { runtime.reset(); host.remove() } }
+  }
+  const key = (target: EventTarget, type: 'keydown' | 'keyup', value: string, repeat = false): KeyboardEvent => {
+    const event = new KeyboardEvent(type, { key: value, repeat, bubbles: true, cancelable: true })
+    target.dispatchEvent(event)
+    return event
+  }
+
+  it.each(['a', 'o'])('preserves native accompaniment select typeahead for %s without playing or stopping piano notes', value => {
+    const { audio, host, cleanup } = setup()
+    const select = document.createElement('select')
+    select.innerHTML = '<option value="off">Off</option><option value="chords">Chords</option><option value="arpeggio">Arpeggio</option>'
+    host.append(select)
+    select.focus()
+    try {
+      expect(key(select, 'keydown', value).defaultPrevented).toBe(false)
+      expect(key(select, 'keyup', value).defaultPrevented).toBe(false)
+      expect(audio.startManualNote).not.toHaveBeenCalled()
+      expect(audio.stopManualNote).not.toHaveBeenCalled()
+      expect(audio.playDrumHit).not.toHaveBeenCalled()
+    } finally { cleanup() }
+  })
+
+  it.each(['input', 'textarea', 'editable', 'editable-child'] as const)('preserves typing and space inside %s', kind => {
+    const { audio, host, cleanup } = setup()
+    const editor = document.createElement(kind === 'input' || kind === 'textarea' ? kind : 'div')
+    let target: HTMLElement = editor
+    if (kind === 'editable' || kind === 'editable-child') editor.setAttribute('contenteditable', 'true')
+    if (kind === 'editable-child') {
+      target = document.createElement('span')
+      editor.append(target)
+    }
+    host.append(editor)
+    try {
+      for (const value of ['a', 'o', 'c', 'z', 'x', ' ']) {
+        expect(key(target, 'keydown', value).defaultPrevented).toBe(false)
+        expect(key(target, 'keyup', value).defaultPrevented).toBe(false)
+      }
+      expect(audio.startManualNote).not.toHaveBeenCalled()
+      expect(audio.stopManualNote).not.toHaveBeenCalled()
+      expect(audio.playDrumHit).not.toHaveBeenCalled()
+    } finally { cleanup() }
+  })
+
+  it('releases a piano key after focus moves to the accompaniment picker without taking over native keyup', () => {
+    const { audio, host, cleanup } = setup()
+    const button = document.createElement('button')
+    const select = document.createElement('select')
+    host.append(button, select)
+    try {
+      button.focus()
+      expect(key(button, 'keydown', 'a').defaultPrevented).toBe(true)
+      expect(audio.startManualNote).toHaveBeenCalledExactlyOnceWith('C4', INSTRUMENTS[0])
+      select.focus()
+      expect(key(select, 'keyup', 'a').defaultPrevented).toBe(false)
+      expect(audio.stopManualNote).toHaveBeenCalledExactlyOnceWith('C4')
+      key(select, 'keyup', 'a')
+      expect(audio.stopManualNote).toHaveBeenCalledTimes(1)
+    } finally { cleanup() }
+  })
+
+  it('releases the started pitch if octave changes while a piano key is held', () => {
+    const { audio, runtime, host, cleanup } = setup()
+    const input = document.createElement('input')
+    host.append(input)
+    try {
+      runtime.setOctaveOffset(1)
+      key(host, 'keydown', 'a')
+      runtime.setOctaveOffset(2)
+      key(input, 'keyup', 'a')
+      expect(audio.startManualNote).toHaveBeenCalledExactlyOnceWith('C5', INSTRUMENTS[0])
+      expect(audio.stopManualNote).toHaveBeenCalledExactlyOnceWith('C5')
+    } finally { cleanup() }
+  })
+
+  it('deduplicates held keyboard repeats and clears held keys on reset before binding again', () => {
+    const { audio, runtime, host, cleanup } = setup()
+    try {
+      expect(key(host, 'keydown', 'a').defaultPrevented).toBe(true)
+      expect(key(host, 'keydown', 'a', true).defaultPrevented).toBe(true)
+      expect(audio.startManualNote).toHaveBeenCalledTimes(1)
+      expect(key(host, 'keyup', 'a').defaultPrevented).toBe(true)
+      expect(audio.stopManualNote).toHaveBeenCalledExactlyOnceWith('C4')
+      key(host, 'keydown', 'a')
+      runtime.reset()
+      runtime.bind()
+      key(host, 'keydown', 'a')
+      expect(audio.startManualNote).toHaveBeenCalledTimes(3)
+      key(host, 'keyup', 'a')
+      expect(audio.stopManualNote).toHaveBeenCalledTimes(2)
+    } finally { cleanup() }
+  })
 })
 
 describe('piano multitouch runtime', () => {

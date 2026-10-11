@@ -1,0 +1,71 @@
+.dot-shapes-page {
+  min-height: 100dvh; justify-content: flex-start;
+  padding: calc(4.75rem + env(safe-area-inset-top)) clamp(.6rem, 2vw, 1.5rem) calc(1rem + env(safe-area-inset-bottom));
+}
+.dot-shapes-card {
+  width: 100%; max-width: 1100px; min-width: 0;
+  gap: .75rem; padding: clamp(.75rem, 2vw, 1.25rem);
+  color: var(--text-primary); background: var(--card-bg);
+}
+.dot-shapes-toolbar {
+  display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center;
+  width: 100%; gap: .65rem; min-width: 0;
+}
+.dot-shapes-toolbar .title { margin: 0; }
+.dot-shapes-actions { display: flex; flex-wrap: wrap; gap: .5rem; max-width: 100%; }
+.dot-shapes-actions button {
+  min-height: 44px; padding: .65rem 1rem; max-width: 100%;
+  overflow-wrap: anywhere; touch-action: manipulation;
+}
+.dot-shapes-board {
+  position: relative; width: 100%; min-width: 0; height: clamp(320px, 64dvh, 650px);
+  overflow: hidden; border: 2px solid color-mix(in srgb, var(--text-secondary) 25%, transparent);
+  border-radius: 1.25rem; background-color: var(--card-bg);
+  background-image: radial-gradient(circle, color-mix(in srgb, var(--text-secondary) 23%, transparent) 1px, transparent 1.5px);
+  background-size: 24px 24px; background-position: 12px 12px;
+  box-shadow: inset 0 2px 15px var(--cell-bg); cursor: crosshair;
+  touch-action: none; user-select: none; -webkit-user-select: none;
+}
+.dot-shapes-lines { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.dot-shapes-fill { opacity: .18; pointer-events: none; }
+.dot-shapes-edge { stroke-width: 4px; stroke-linecap: round; pointer-events: none; }
+.dot-shapes-point {
+  position: absolute; z-index: 1; display: grid; place-items: center;
+  width: 44px; height: 44px; margin: 0; padding: 0; transform: translate(-50%, -50%);
+  border: 0; border-radius: 50%; background: transparent; color: var(--dot-shapes-color);
+  cursor: grab; touch-action: none; -webkit-tap-highlight-color: transparent;
+}
+.dot-shapes-dot-core {
+  display: block; width: 18px; height: 18px; border-radius: 50%;
+  background: var(--dot-shapes-color); border: 2px solid var(--card-bg);
+  box-shadow: 0 0 0 2px var(--dot-shapes-color), 0 3px 8px var(--shadow-color);
+  pointer-events: none; transition: transform .12s;
+}
+.dot-shapes-point--dragging { cursor: grabbing; z-index: 2; }
+.dot-shapes-point--dragging .dot-shapes-dot-core { transform: scale(1.3); }
+.dot-shapes-point:hover .dot-shapes-dot-core { transform: scale(1.15); }
+.dot-shapes-board:focus-visible, .dot-shapes-actions button:focus-visible, .dot-shapes-point:focus-visible {
+  outline: 3px solid var(--text-primary); outline-offset: 3px;
+}
+.dot-shapes-cursor {
+  position: absolute; z-index: 3; width: 24px; height: 24px;
+  transform: translate(-50%, -50%); border: 2px dashed var(--text-primary); border-radius: 50%;
+  background: color-mix(in srgb, var(--card-bg) 75%, transparent); pointer-events: none;
+}
+.dot-shapes-status {
+  margin: 0; min-height: 1.5em; max-width: 100%; color: var(--text-secondary);
+  font-size: clamp(1rem, 2.6vw, 1.2rem); font-weight: 700; overflow-wrap: anywhere;
+}
+.dot-shapes-keyboard-hint {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
+}
+@media (max-width: 480px) {
+  .dot-shapes-toolbar { justify-content: center; }
+  .dot-shapes-actions { justify-content: center; width: 100%; }
+  .dot-shapes-actions button { flex: 1 1 5rem; }
+  .dot-shapes-board { height: clamp(320px, 58dvh, 560px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dot-shapes-dot-core { transition: none; }
+}

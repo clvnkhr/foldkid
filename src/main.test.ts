@@ -1,6 +1,6 @@
 import { Effect, Fiber, Option, Schema as S, Stream } from 'effect'
-import { beforeEach, describe, expect, it } from 'vitest'
-import { Story } from 'foldkit/test'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { Scene, Story } from 'foldkit/test'
 import * as Main from './main'
 import { multitouchClickStream } from './multitouch'
 import * as Counter from './games/counter'
@@ -8,7 +8,8 @@ import * as FindIt from './games/findit'
 import * as Bubbles from './games/bubbles'
 import * as Bubbles3d from './games/bubbles3d'
 import * as Handwriting from './games/handwriting'
-import { ClickedHandwriting } from './message'
+import * as DotShapes from './games/dotShapes'
+import { ClickedHandwriting, ClickedDotShapes } from './message'
 import { t, translations } from './i18n'
 import * as Draw from './games/draw'
 import * as Memory from './games/memory'
@@ -19,7 +20,7 @@ import * as TalkingKeyboard from './games/talkingKeyboard'
 import * as GrowingNumbers from './games/growingNumbers'
 import * as ShapeWorkshop from './games/shapeWorkshop'
 import { LANDING_GAME_COUNT, LANDING_GAMES } from './pages/landing'
-import { ApplyImport, ClickedLanding, ClickedCounter, ClickedFindIt, ClickedBubbles, ClickedBubbles3d, ClickedDarkMode, ClickedGrowingNumbers, ClickedMagneticBlocks, ClickedMemory, ClickedSettings, ClickedShapeWorkshop, ClickedTalkingKeyboard, ConfirmResetSettings, ExportSettings, ImportedSettings, LandingDragEnded, LandingDragStarted, LandingDroppedOn, LandingSettingsDragEnded, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsPersisted, ToggleMute } from './message'
+import { ApplyImport, ClickedLanding, ClickedCounter, ClickedFindIt, ClickedBubbles, ClickedBubbles3d, ClickedDarkMode, ClickedGrowingNumbers, ClickedMagneticBlocks, ClickedMemory, ClickedMusicBox, ClickedSettings, ClickedShapeWorkshop, ClickedTalkingKeyboard, ConfirmResetSettings, ExportSettings, ImportedSettings, LandingDragEnded, LandingDragStarted, LandingDroppedOn, LandingSettingsDragEnded, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsDragEnded, SettingsPersisted, ToggleMute } from './message'
 
 const resolveSettings = [{ name: 'PersistSettings' }, SettingsPersisted()] as const
 const resolveBubblesChime = [{ name: 'PlayChime' }, Bubbles.SoundPlayed()] as const
@@ -118,8 +119,13 @@ describe('landing catalogue migration', () => {
   const migratedOrder = [...previousOrder, previousCount]
   const migratedHidden = [...previousHidden, false]
   const malformedOrders = [
+    { label: 'empty', order: [] },
     { label: 'duplicate', order: previousOrder.map((index, position) => position === 0 ? 0 : index) },
     { label: 'gap', order: previousOrder.filter(index => index !== 2) },
+    { label: 'out-of-range', order: previousOrder.map((index, position) => position === 0 ? LANDING_GAME_COUNT : index) },
+    { label: 'negative', order: previousOrder.map((index, position) => position === 0 ? -1 : index) },
+    { label: 'fractional', order: previousOrder.map((index, position) => position === 0 ? 0.5 : index) },
+    { label: 'oversized', order: Array.from({ length: LANDING_GAME_COUNT + 1 }, (_, index) => index) },
   ]
 
   it('loads a historical reversed order and visibility without changing existing game indices', () => {
@@ -136,9 +142,18 @@ describe('landing catalogue migration', () => {
     expect(loaded.landingHiddenGames).toEqual(migratedHidden)
     expect(loaded.landingHiddenGames[previousCount]).toBe(false)
     expect(LANDING_GAMES[2]?.title).toBe('bubblesTitle')
-    expect(LANDING_GAMES[previousCount - 1]?.title).toBe('bubbles3dTitle')
-    expect(LANDING_GAMES[previousCount]?.title).toBe('handwritingTitle')
+    expect(LANDING_GAMES[previousCount - 1]?.title).toBe('handwritingTitle')
+    expect(LANDING_GAMES[previousCount]?.title).toBe('dotShapesTitle')
     expect(commands).toHaveLength(0)
+  })
+
+  it.each([17, 18, 19])('appends all missing games to a complete historical catalogue of %s games', count => {
+    const order = Array.from({ length: count }, (_, index) => index).reverse()
+    const hidden = Array.from({ length: count }, (_, index) => index === 2)
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ landingOrder: order, landingHiddenGames: hidden }))
+    const [loaded] = Main.init()
+    expect(loaded.landingOrder).toEqual([...order, ...Array.from({ length: LANDING_GAME_COUNT - count }, (_, index) => count + index)])
+    expect(loaded.landingHiddenGames).toEqual([...hidden, ...Array.from({ length: LANDING_GAME_COUNT - count }, () => false)])
   })
 
   it('imports, persists, exports and reimports the old catalogue order with the new game appended', async () => {
@@ -184,6 +199,53 @@ describe('landing catalogue migration', () => {
     expect(loaded.landingOrder).toEqual(Array.from({ length: LANDING_GAME_COUNT }, (_, index) => index))
   })
 
+  it('keeps a current complete permutation and visibility unchanged', () => {
+    const order = [...migratedOrder].reverse()
+    const hidden = migratedHidden.map((_, index) => index === previousCount)
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ landingOrder: order, landingHiddenGames: hidden }))
+    const [loaded] = Main.init()
+    expect(loaded.landingOrder).toEqual(order)
+    expect(loaded.landingHiddenGames).toEqual(hidden)
+  })
+
+  it('fills missing visibility flags from catalogue defaults', () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ landingHiddenGames: [true, false] }))
+    const [loaded] = Main.init()
+    expect(loaded.landingHiddenGames).toEqual(LANDING_GAMES.map((game, index) => index === 0 || game.title === 'phonemeGardenTitle'))
+    expect(loaded.landingHiddenGames[previousCount]).toBe(false)
+  })
+
+  it('keeps every old game hidden while showing the new game', () => {
+    const oldHidden = previousOrder.map(() => true)
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ landingOrder: previousOrder, landingHiddenGames: oldHidden }))
+    const [loaded] = Main.init()
+    expect(loaded.landingHiddenGames).toEqual([...oldHidden, false])
+    expect(loaded.landingHiddenGames.some(hidden => !hidden)).toBe(true)
+  })
+
+  it('restores visibility defaults if a saved catalogue hides every current game', () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ landingHiddenGames: migratedOrder.map(() => true) }))
+    const [loaded] = Main.init()
+    expect(loaded.landingHiddenGames).toEqual(LANDING_GAMES.map(game => game.title === 'phonemeGardenTitle'))
+    expect(loaded.landingHiddenGames.some(hidden => !hidden)).toBe(true)
+  })
+
+  it('imports old hidden flags without exposing previously hidden games', () => {
+    Story.story(
+      Main.update,
+      Story.with(createModel()),
+      Story.message(ImportedSettings({ data: JSON.stringify({ version: 1, settings: {
+        landingOrder: previousOrder, landingHiddenGames: previousOrder.map(() => true),
+      } }) })),
+      Story.model(model => {
+        expect(model.landingOrder).toEqual(migratedOrder)
+        expect(model.landingHiddenGames).toEqual([...previousOrder.map(() => true), false])
+      }),
+      Story.Command.resolveAll(resolveSettings),
+      Story.Command.expectNone(),
+    )
+  })
+
   it.each(malformedOrders)('rejects an imported $label without partially changing settings', ({ order }) => {
     const base = { ...createModel(), language: 'ja' as const, muted: true, landingOrder: migratedOrder, landingHiddenGames: migratedHidden }
     Story.story(
@@ -199,6 +261,390 @@ describe('landing catalogue migration', () => {
         expect(model.landingOrder).toEqual(base.landingOrder)
         expect(model.landingHiddenGames).toEqual(base.landingHiddenGames)
         expect(model.importExportMessage).toBeTruthy()
+      }),
+      Story.Command.expectNone(),
+    )
+  })
+})
+
+describe('Music Box accompaniment preferences', () => {
+  it('adds explicit chord accompaniment defaults to legacy saved settings', () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 1, language: 'fr', musicBoxDrumVolume: 0.35 }))
+    const [loaded] = Main.init()
+    expect(loaded.language).toBe('fr')
+    expect(loaded.musicBox.drumVolume).toBe(0.35)
+    expect(loaded.musicBox.accompanimentStyle).toBe('chords')
+    expect(loaded.musicBox.accompanimentVolume).toBe(0.45)
+  })
+
+  it.each(['off', 'chords', 'arpeggio'] as const)('loads the saved %s accompaniment style', style => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ musicBoxAccompanimentStyle: style, musicBoxAccompanimentVolume: 0.627 }))
+    const [loaded] = Main.init()
+    expect(loaded.musicBox.accompanimentStyle).toBe(style)
+    expect(loaded.musicBox.accompanimentVolume).toBe(0.63)
+  })
+
+  it.each([
+    { raw: '-3', expected: 0 }, { raw: '4', expected: 1 }, { raw: '0.456', expected: 0.46 },
+    { raw: '1e309', expected: 0.45 }, { raw: '-1e309', expected: 0.45 },
+  ])('normalizes saved accompaniment volume $raw', ({ raw, expected }) => {
+    localStorage.setItem(STORAGE_KEY, `{"musicBoxAccompanimentVolume":${raw}}`)
+    const [loaded] = Main.init()
+    expect(loaded.musicBox.accompanimentVolume).toBe(expected)
+  })
+
+  it.each([
+    { raw: '-3', expected: 0 }, { raw: '4', expected: 1 }, { raw: '0.456', expected: 0.46 },
+    { raw: '1e309', expected: 0.21 }, { raw: '-1e309', expected: 0.21 },
+  ])('normalizes imported volume $raw and keeps the current style', ({ raw, expected }) => {
+    const initial = createModel()
+    Story.story(
+      Main.update, Story.with({ ...initial, musicBox: { ...initial.musicBox, accompanimentStyle: 'off', accompanimentVolume: 0.21 } }),
+      Story.message(ImportedSettings({ data: `{"version":1,"settings":{"musicBoxAccompanimentVolume":${raw}}}` })),
+      Story.model(model => {
+        expect(model.musicBox.accompanimentStyle).toBe('off')
+        expect(model.musicBox.accompanimentVolume).toBe(expected)
+      }),
+      Story.Command.resolveAll(resolveSettings), Story.Command.expectNone(),
+    )
+  })
+
+  it('preserves accompaniment choices when an import omits them', () => {
+    const initial = createModel()
+    Story.story(
+      Main.update, Story.with({ ...initial, musicBox: { ...initial.musicBox, accompanimentStyle: 'arpeggio', accompanimentVolume: 0.23 } }),
+      Story.message(ImportedSettings({ data: JSON.stringify({ version: 1, settings: { language: 'ja' } }) })),
+      Story.model(model => {
+        expect(model.language).toBe('ja')
+        expect(model.musicBox.accompanimentStyle).toBe('arpeggio')
+        expect(model.musicBox.accompanimentVolume).toBe(0.23)
+      }),
+      Story.Command.resolveAll(resolveSettings), Story.Command.expectNone(),
+    )
+  })
+
+  it('roundtrips accompaniment style and volume without changing settings version', async () => {
+    const initial = createModel()
+    const customized = { ...initial, musicBox: { ...initial.musicBox, accompanimentStyle: 'arpeggio' as const, accompanimentVolume: 0.3 } }
+    const [exported, exportCommands] = Main.update(customized, ExportSettings())
+    const data = JSON.parse(exported.exportData) as { version: number; settings: { musicBoxAccompanimentStyle: string; musicBoxAccompanimentVolume: number } }
+    expect(data.version).toBe(1)
+    expect(data.settings.musicBoxAccompanimentStyle).toBe('arpeggio')
+    expect(data.settings.musicBoxAccompanimentVolume).toBe(0.3)
+    expect(exportCommands).toHaveLength(0)
+    const [imported, commands] = Main.update(createModel(), ImportedSettings({ data: exported.exportData }))
+    expect(imported.musicBox.accompanimentStyle).toBe('arpeggio')
+    expect(imported.musicBox.accompanimentVolume).toBe(0.3)
+    expect(commands.map(command => command.name)).toEqual(['PersistSettings'])
+    const persist = commands[0]
+    if (!persist) throw new Error('missing PersistSettings command')
+    expect(await Effect.runPromise(persist.effect)).toEqual(SettingsPersisted())
+    const [loaded] = Main.init()
+    expect(loaded.musicBox.accompanimentStyle).toBe('arpeggio')
+    expect(loaded.musicBox.accompanimentVolume).toBe(0.3)
+  })
+
+  it.each([
+    { musicBoxAccompanimentStyle: 'strum' }, { musicBoxAccompanimentStyle: false },
+    { musicBoxAccompanimentVolume: 'loud' }, { musicBoxAccompanimentVolume: null },
+  ])('rejects malformed accompaniment imports atomically: %j', malformed => {
+    const initial = createModel()
+    const base = { ...initial, language: 'ja' as const, muted: true,
+      musicBox: { ...initial.musicBox, accompanimentStyle: 'arpeggio' as const, accompanimentVolume: 0.3 },
+    }
+    Story.story(
+      Main.update, Story.with(base),
+      Story.message(ImportedSettings({ data: JSON.stringify({ version: 1, settings: { language: 'fr', muted: false, ...malformed } }) })),
+      Story.model(model => {
+        expect(model.language).toBe(base.language)
+        expect(model.muted).toBe(base.muted)
+        expect(model.musicBox).toEqual(base.musicBox)
+        expect(model.importExportMessage).toBe(t('settingsImportInvalid', base.language))
+      }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('decodes each accompaniment preference event at the root schema boundary', () => {
+    const decode = S.decodeUnknownOption(Main.Message)
+    for (const value of ['off', 'chords', 'arpeggio'] as const) {
+      expect(decode(MusicBox.SetAccompanimentStyle({ value }))).toEqual(Option.some(MusicBox.SetAccompanimentStyle({ value })))
+    }
+    expect(decode(MusicBox.SetAccompanimentVolume({ value: 0.35 }))).toEqual(Option.some(MusicBox.SetAccompanimentVolume({ value: 0.35 })))
+    expect(Option.isNone(decode({ _tag: 'MusicBoxSetAccompanimentStyle', value: 'strum' }))).toBe(true)
+    expect(Option.isNone(decode({ _tag: 'MusicBoxSetAccompanimentVolume', value: 'quiet' }))).toBe(true)
+  })
+
+  it.each([false, true])('delegates accompaniment choices while preserving core Music Box audio with mute=%s', muted => {
+    Story.story(
+      Main.update, Story.with({ ...createModel(), muted }),
+      Story.message(MusicBox.SetAccompanimentStyle({ value: 'arpeggio' })),
+      Story.Command.resolveAll(resolveSettings),
+      Story.message(MusicBox.SetAccompanimentVolume({ value: 0.3 })),
+      Story.Command.resolveAll(resolveSettings),
+      Story.model(model => {
+        expect(model.musicBox.accompanimentStyle).toBe('arpeggio')
+        expect(model.musicBox.accompanimentVolume).toBe(0.3)
+      }),
+      Story.message(MusicBox.Play()),
+      Story.model(model => { expect(model.musicBox.isPlaying).toBe(true) }),
+      Story.Command.resolveAll([{ name: 'PlayMusicBox' }, MusicBox.SongEnded({ playbackId: 1 })]),
+      Story.model(model => { expect(model.musicBox.isPlaying).toBe(false) }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it.each([false, true])('stops Music Box playback when returning home and ignores its stale completion with paused=%s', async paused => {
+    const initial = createModel()
+    const [opened] = Main.update({ ...initial, musicBox: {
+      ...initial.musicBox, accompanimentStyle: 'arpeggio', accompanimentVolume: 0.3, repeatMode: 'loop',
+    } }, ClickedMusicBox())
+    const [playing, playbackCommands] = Main.update(opened, MusicBox.Play())
+    const [active] = paused ? Main.update(playing, MusicBox.TogglePause()) : [playing, []] as const
+    expect(active.musicBox.isPlaying).toBe(true)
+    expect(active.musicBox.isPaused).toBe(paused)
+    expect(playbackCommands.map(command => command.name)).toEqual(['PlayMusicBox'])
+    const [stopped, commands] = Main.update(active, ClickedLanding())
+    expect(stopped.page._tag).toBe('PageLanding')
+    expect(stopped.musicBox.isPlaying).toBe(false)
+    expect(stopped.musicBox.isPaused).toBe(false)
+    expect(stopped.musicBox.accompanimentStyle).toBe('arpeggio')
+    expect(stopped.musicBox.accompanimentVolume).toBe(0.3)
+    expect(commands).toHaveLength(0)
+    const playback = playbackCommands[0]
+    if (!playback) throw new Error('missing PlayMusicBox command')
+    const staleCompletion = await Effect.runPromise(playback.effect)
+    expect(staleCompletion).toEqual(MusicBox.SongEnded({ playbackId: 1 }))
+    Story.story(
+      Main.update, Story.with(stopped),
+      Story.message(staleCompletion),
+      Story.model(model => { expect(model).toEqual(stopped) }),
+      Story.message(ClickedMusicBox()),
+      Story.model(model => { expect(model.musicBox.isPlaying).toBe(false); expect(model.musicBox.isPaused).toBe(false) }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it.each(['fr', 'fa'] as const)('renders a labelled accompaniment volume slider and persists input in %s', language => {
+    const [opened] = Main.update({ ...createModel(), language, showSettings: true }, ClickedMusicBox())
+    const slider = Scene.role('slider', { name: t('musicBoxAccompanimentVolume', language) })
+    Scene.scene(
+      { update: Main.update, view: Main.view }, Scene.with(opened),
+      Scene.Mount.resolveAll(
+        [{ name: 'multitouchClicks' }, SettingsPersisted()],
+        [{ name: 'settingsResize' }, SettingsDragEnded()],
+        [{ name: 'musicBoxSongPointerReorder' }, MusicBox.SongDragEnded()],
+        [{ name: 'landingSettingsPointerReorder' }, LandingSettingsDragEnded()],
+        [{ name: 'piano-top' }, MusicBox.NoteOff({ pitch: 'C4' })],
+      ),
+      Scene.expect(slider).toHaveAttr('min', '0'), Scene.expect(slider).toHaveAttr('max', '1'),
+      Scene.expect(slider).toHaveValue('0.45'),
+      Scene.type(slider, '0.6'),
+      Scene.expect(slider).toHaveValue('0.6'),
+      Scene.expect(Scene.text(new Intl.NumberFormat(language, { style: 'percent', maximumFractionDigits: 0 }).format(0.6))).toExist(),
+      Scene.Command.resolveAll(resolveSettings), Scene.Command.expectNone(),
+    )
+  })
+})
+
+describe('Music Box catalogue migration', () => {
+  const legacyOrder = [10, 2, 0, 8, 5, 1, 9, 6, 3, 7, 4]
+  const legacyHidden = [false, true, false, true, false, false, true, false, true, false, true]
+  const appended = Array.from({ length: 10 }, (_, index) => index + 11)
+  const migratedOrder = [...legacyOrder, ...appended]
+  const migratedHidden = [...legacyHidden, ...appended.map(() => false)]
+
+  it('loads an 11-song custom order and visibility while appending 10 visible songs', () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      version: 1, language: 'fr', musicBoxSongOrder: legacyOrder,
+      musicBoxHiddenSongs: legacyHidden, musicBoxDrumVolume: 0.35,
+    }))
+    const [loaded, commands] = Main.init()
+    expect(MusicBox.SONGS).toHaveLength(21)
+    expect(loaded.language).toBe('fr')
+    expect(loaded.musicBox.songOrder).toEqual(migratedOrder)
+    expect(loaded.musicBox.hiddenSongs).toEqual(migratedHidden)
+    expect(loaded.musicBox.drumVolume).toBe(0.35)
+    expect(loaded.musicBox.selectedSong).toBe(2)
+    expect(MusicBox.SONGS[loaded.musicBox.songOrder[0]!]!.key).toBe('birthday')
+    expect(MusicBox.SONGS[loaded.musicBox.songOrder[11]!]!.key).toBe('baaBaa')
+    expect(commands).toHaveLength(0)
+  })
+
+  it('keeps all 11 historically hidden songs hidden while making the additions available', () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ musicBoxSongOrder: legacyOrder, musicBoxHiddenSongs: legacyOrder.map(() => true) }))
+    const [loaded] = Main.init()
+    expect(loaded.musicBox.songOrder).toEqual(migratedOrder)
+    expect(loaded.musicBox.hiddenSongs).toEqual([...legacyOrder.map(() => true), ...appended.map(() => false)])
+    expect(loaded.musicBox.songOrder.filter(index => !loaded.musicBox.hiddenSongs[index])).toEqual(appended)
+    expect(loaded.musicBox.selectedSong).toBe(11)
+  })
+
+  it('imports, persists, exports, and reloads a legacy 11-song preference fixture', async () => {
+    const legacy = JSON.stringify({ version: 1, settings: {
+      language: 'ja', musicBoxSongOrder: legacyOrder, musicBoxHiddenSongs: legacyHidden, musicBoxDrumVolume: 0.4,
+    } })
+    const [imported, commands] = Main.update(createModel(), ImportedSettings({ data: legacy }))
+    expect(imported.musicBox.songOrder).toEqual(migratedOrder)
+    expect(imported.musicBox.hiddenSongs).toEqual(migratedHidden)
+    expect(commands.map(command => command.name)).toEqual(['PersistSettings'])
+    const persist = commands[0]
+    if (!persist) throw new Error('missing PersistSettings command')
+    expect(await Effect.runPromise(persist.effect)).toEqual(SettingsPersisted())
+    const [loaded] = Main.init()
+    expect(loaded.musicBox.songOrder).toEqual(migratedOrder)
+    expect(loaded.musicBox.hiddenSongs).toEqual(migratedHidden)
+    expect(loaded.musicBox.drumVolume).toBe(0.4)
+
+    const [exported, exportCommands] = Main.update(imported, ExportSettings())
+    const data = JSON.parse(exported.exportData) as { version: number; settings: { musicBoxSongOrder: number[]; musicBoxHiddenSongs: boolean[] } }
+    expect(data.version).toBe(1)
+    expect(data.settings.musicBoxSongOrder).toEqual(migratedOrder)
+    expect(data.settings.musicBoxHiddenSongs).toEqual(migratedHidden)
+    expect(exportCommands).toHaveLength(0)
+    localStorage.clear()
+    Story.story(
+      Main.update, Story.with(createModel()),
+      Story.message(ImportedSettings({ data: exported.exportData })),
+      Story.model(model => {
+        expect(model.musicBox.songOrder).toEqual(migratedOrder)
+        expect(model.musicBox.hiddenSongs).toEqual(migratedHidden)
+        expect(model.musicBox.drumVolume).toBe(0.4)
+      }),
+      Story.Command.resolveAll(resolveSettings), Story.Command.expectNone(),
+    )
+  })
+
+  it('preserves current song preferences when importing settings that omit them', () => {
+    const base = createModel()
+    const order = [...migratedOrder].reverse()
+    const hidden = migratedHidden.map((_, index) => index === 1 || index === 19)
+    Story.story(
+      Main.update, Story.with({ ...base, musicBox: { ...base.musicBox, songOrder: order, hiddenSongs: hidden } }),
+      Story.message(ImportedSettings({ data: JSON.stringify({ version: 1, settings: { language: 'fr' } }) })),
+      Story.model(model => {
+        expect(model.language).toBe('fr')
+        expect(model.musicBox.songOrder).toEqual(order)
+        expect(model.musicBox.hiddenSongs).toEqual(hidden)
+      }),
+      Story.Command.resolveAll(resolveSettings), Story.Command.expectNone(),
+    )
+  })
+
+  it('roundtrips reordered and hidden additions through export, import, persistence, and reload', async () => {
+    const initial = createModel()
+    const order = [20, 11, ...migratedOrder.filter(index => index !== 20 && index !== 11)]
+    const hidden = migratedHidden.map((_, index) => index === 1 || index === 13 || index === 20)
+    const customized = { ...initial, musicBox: { ...initial.musicBox, songOrder: order, hiddenSongs: hidden } }
+    const [exported] = Main.update(customized, ExportSettings())
+    const [imported, commands] = Main.update(createModel(), ImportedSettings({ data: exported.exportData }))
+    expect(imported.musicBox.songOrder).toEqual(order)
+    expect(imported.musicBox.hiddenSongs).toEqual(hidden)
+    expect(commands.map(command => command.name)).toEqual(['PersistSettings'])
+    const persist = commands[0]
+    if (!persist) throw new Error('missing PersistSettings command')
+    expect(await Effect.runPromise(persist.effect)).toEqual(SettingsPersisted())
+    const [loaded] = Main.init()
+    expect(loaded.musicBox.songOrder).toEqual(order)
+    expect(loaded.musicBox.hiddenSongs).toEqual(hidden)
+    expect(MusicBox.SONGS[loaded.musicBox.songOrder[0]!]!.key).toBe('boPeep')
+  })
+
+  it('allows an explicit empty visibility list to show every song', () => {
+    const base = createModel()
+    Story.story(
+      Main.update, Story.with({ ...base, musicBox: { ...base.musicBox, hiddenSongs: migratedHidden } }),
+      Story.message(ImportedSettings({ data: JSON.stringify({ version: 1, settings: { musicBoxHiddenSongs: [] } }) })),
+      Story.model(model => { expect(model.musicBox.hiddenSongs).toEqual(MusicBox.SONGS.map(() => false)) }),
+      Story.Command.resolveAll(resolveSettings), Story.Command.expectNone(),
+    )
+  })
+
+  it('selects the first visible addition if an idle import hides the previously selected song', () => {
+    Story.story(
+      Main.update, Story.with(createModel()),
+      Story.message(ImportedSettings({ data: JSON.stringify({ version: 1, settings: {
+        musicBoxSongOrder: legacyOrder, musicBoxHiddenSongs: legacyOrder.map(() => true),
+      } }) })),
+      Story.model(model => {
+        expect(model.musicBox.selectedSong).toBe(11)
+        expect(model.musicBox.hiddenSongs[model.musicBox.selectedSong]).toBe(false)
+      }),
+      Story.Command.resolveAll(resolveSettings), Story.Command.expectNone(),
+    )
+  })
+
+  it('keeps a visible idle selection when importing a different order', () => {
+    const initial = createModel()
+    Story.story(
+      Main.update, Story.with({ ...initial, musicBox: { ...initial.musicBox, selectedSong: 4 } }),
+      Story.message(ImportedSettings({ data: JSON.stringify({ version: 1, settings: { musicBoxSongOrder: migratedOrder } }) })),
+      Story.model(model => { expect(model.musicBox.selectedSong).toBe(4) }),
+      Story.Command.resolveAll(resolveSettings), Story.Command.expectNone(),
+    )
+  })
+
+  it('keeps the currently playing song during an import and selects a visible song once stopped', () => {
+    const initial = createModel()
+    Story.story(
+      Main.update, Story.with({ ...initial, musicBox: { ...initial.musicBox, selectedSong: 0, isPlaying: true } }),
+      Story.message(ImportedSettings({ data: JSON.stringify({ version: 1, settings: {
+        musicBoxSongOrder: legacyOrder, musicBoxHiddenSongs: legacyOrder.map(() => true),
+      } }) })),
+      Story.model(model => { expect(model.musicBox.selectedSong).toBe(0); expect(model.musicBox.isPlaying).toBe(true) }),
+      Story.Command.resolveAll(resolveSettings),
+      Story.message(MusicBox.Stop()),
+      Story.model(model => {
+        expect(model.musicBox.isPlaying).toBe(false)
+        expect(model.musicBox.selectedSong).toBe(11)
+        expect(model.musicBox.hiddenSongs[model.musicBox.selectedSong]).toBe(false)
+      }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it.each(['load', 'import'])('restores visible defaults if %s hides the entire current catalogue', source => {
+    const hidden = MusicBox.SONGS.map(() => true)
+    if (source === 'load') {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ musicBoxHiddenSongs: hidden }))
+      const [loaded] = Main.init()
+      expect(loaded.musicBox.hiddenSongs).toEqual(MusicBox.SONGS.map(() => false))
+    } else {
+      Story.story(
+        Main.update, Story.with(createModel()),
+        Story.message(ImportedSettings({ data: JSON.stringify({ version: 1, settings: { musicBoxHiddenSongs: hidden } }) })),
+        Story.model(model => { expect(model.musicBox.hiddenSongs).toEqual(MusicBox.SONGS.map(() => false)) }),
+        Story.Command.resolveAll(resolveSettings), Story.Command.expectNone(),
+      )
+    }
+  })
+
+  it('normalizes malformed numeric saved song indices without losing valid preferences', () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ musicBoxSongOrder: [10, 10, 99, 2, -1, 0, 1.5], musicBoxHiddenSongs: legacyHidden }))
+    const [loaded] = Main.init()
+    expect(loaded.musicBox.songOrder).toEqual([10, 2, 0, 1, 3, 4, 5, 6, 7, 8, 9, ...appended])
+    expect(loaded.musicBox.hiddenSongs).toEqual(migratedHidden)
+    expect(new Set(loaded.musicBox.songOrder).size).toBe(21)
+  })
+
+  it.each([
+    { musicBoxSongOrder: ['10', 2] }, { musicBoxSongOrder: 'birthday' },
+    { musicBoxHiddenSongs: [false, 'true'] }, { musicBoxHiddenSongs: null },
+  ])('rejects malformed song preferences atomically: %j', malformed => {
+    const initial = createModel()
+    const base = { ...initial, language: 'ja' as const, muted: true,
+      musicBox: { ...initial.musicBox, songOrder: migratedOrder, hiddenSongs: migratedHidden, drumVolume: 0.3 },
+    }
+    Story.story(
+      Main.update, Story.with(base),
+      Story.message(ImportedSettings({ data: JSON.stringify({ version: 1, settings: {
+        language: 'fr', muted: false, musicBoxDrumVolume: 0.9, ...malformed,
+      } }) })),
+      Story.model(model => {
+        expect(model.language).toBe(base.language)
+        expect(model.muted).toBe(base.muted)
+        expect(model.musicBox).toEqual(base.musicBox)
+        expect(model.importExportMessage).toBe(t('settingsImportInvalid', base.language))
       }),
       Story.Command.expectNone(),
     )
@@ -239,6 +685,8 @@ describe('settings persistence', () => {
     { label: 'MagneticBlocksSetBreakSpeed', msg: MagneticBlocks.SetBreakSpeed({ value: 875 }) },
     { label: 'TalkingKeyboardSetWordPackEnabled', msg: TalkingKeyboard.SetWordPackEnabled({ key: 'animals', value: false }) },
     { label: 'MusicBoxSetDrumVolume', msg: MusicBox.SetDrumVolume({ value: 0.35 }) },
+    { label: 'MusicBoxSetAccompanimentStyle', msg: MusicBox.SetAccompanimentStyle({ value: 'arpeggio' }) },
+    { label: 'MusicBoxSetAccompanimentVolume', msg: MusicBox.SetAccompanimentVolume({ value: 0.35 }) },
     { label: 'MusicBoxToggleSongVisibility', msg: MusicBox.ToggleSongVisibility({ index: 1 }) },
     { label: 'MusicBoxSongDroppedOn', msg: MusicBox.SongDroppedOn({ index: 1 }) },
     { label: 'LandingSettingsDroppedOn', msg: LandingSettingsDroppedOn({ index: 1 }) },
@@ -262,6 +710,15 @@ describe('settings persistence', () => {
     { label: 'Bubbles3dRendererFailed', msg: Bubbles3d.RendererFailed({ revision: 0 }) },
     { label: 'Bubbles3dSoundPlayed', msg: Bubbles3d.SoundPlayed() },
     { label: 'ClickedHandwriting', msg: ClickedHandwriting() },
+    { label: 'ClickedDotShapes', msg: ClickedDotShapes() },
+    { label: 'DotShapesContactStarted', msg: DotShapes.ContactStarted({ id: 0, x: 20, y: 30, dotId: null, revision: 0 }) },
+    { label: 'DotShapesContactMoved', msg: DotShapes.ContactMoved({ id: 0, x: 25, y: 35, revision: 0 }) },
+    { label: 'DotShapesContactEnded', msg: DotShapes.ContactEnded({ id: 0, x: 25, y: 35, moved: false, revision: 0 }) },
+    { label: 'DotShapesContactCancelled', msg: DotShapes.ContactCancelled({ id: 0, revision: 0 }) },
+    { label: 'DotShapesKeyboardPressed', msg: DotShapes.KeyboardPressed({ key: 'Enter', dotId: null, shift: false, revision: 0 }) },
+    { label: 'DotShapesUndo', msg: DotShapes.Undo() },
+    { label: 'DotShapesClear', msg: DotShapes.Clear() },
+    { label: 'DotShapesSoundPlayed', msg: DotShapes.SoundPlayed() },
     { label: 'HandwritingSetMode', msg: Handwriting.SetMode({ mode: 'words' }) },
     { label: 'HandwritingSetCase', msg: Handwriting.SetCase({ letterCase: 'lower' }) },
     { label: 'HandwritingSetStyle', msg: Handwriting.SetStyle({ style: 'cursive' }) },
@@ -358,6 +815,119 @@ describe('settings persistence', () => {
 })
 
 describe('Main', () => {
+  it('opens Dot Shapes with a localized page title and keeps its drawing transient', () => {
+    for (const language of Object.keys(translations) as Array<keyof typeof translations>) {
+      const [opened, commands] = Main.update({ ...createModel(), language }, ClickedDotShapes())
+      expect(opened.page._tag).toBe('PageDotShapes')
+      expect(opened.dotShapes).toEqual(DotShapes.init())
+      expect(Main.view(opened).title).toBe(t('pageTitleDotShapes', language))
+      expect(commands).toEqual([])
+      const [exported, exportCommands] = Main.update(opened, ExportSettings())
+      expect(JSON.parse(exported.exportData).settings).not.toHaveProperty('dotShapes')
+      expect(exportCommands).toEqual([])
+    }
+  })
+
+  it('delegates dot placement, undo and clear without persisting the drawing', () => {
+    const positions = [{ x: 200, y: 180 }, { x: 700, y: 180 }, { x: 450, y: 520 }]
+    Story.story(
+      Main.update, Story.with({ ...createModel(), muted: true }),
+      Story.message(ClickedDotShapes()),
+      ...positions.flatMap((point, id) => [
+        Story.message(DotShapes.ContactStarted({ id, ...point, dotId: null, revision: 0 })),
+        Story.message(DotShapes.ContactEnded({ id, ...point, moved: false, revision: 0 })),
+      ]),
+      Story.model(model => {
+        expect(model.dotShapes.points).toEqual(positions.map((point, id) => ({ id, ...point })))
+        expect(model.dotShapes.contacts).toEqual([])
+      }),
+      Story.message(DotShapes.Undo()),
+      Story.model(model => { expect(model.dotShapes.points).toHaveLength(2) }),
+      Story.message(DotShapes.Clear()),
+      Story.model(model => { expect(model.dotShapes.points).toEqual([]) }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it.each([false, true])('forwards root mute to the successful dot-release feedback: %s', muted => {
+    Story.story(
+      Main.update, Story.with({ ...createModel(), muted }),
+      Story.message(ClickedDotShapes()),
+      Story.message(DotShapes.ContactStarted({ id: 0, x: 200, y: 250, dotId: null, revision: 0 })),
+      Story.Command.expectNone(),
+      Story.message(DotShapes.ContactEnded({ id: 0, x: 200, y: 250, moved: false, revision: 0 })),
+      Story.model(model => { expect(model.dotShapes.points).toEqual([{ id: 0, x: 200, y: 250 }]) }),
+      muted ? Story.Command.expectNone() : Story.Command.resolveAll([{ name: 'DotShapesPlayPop' }, DotShapes.SoundPlayed()]),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('explicitly forwards language and the root speech preferences to Dot Shapes', () => {
+    const base = { ...createModel(), language: 'fr' as const, muted: true, speechRate: 1.4, speechPitch: 1.8 }
+    const [opened] = Main.update(base, ClickedDotShapes())
+    const message = DotShapes.KeyboardPressed({ key: 'ArrowRight', dotId: null, shift: false, revision: 0 })
+    const delegated = vi.spyOn(DotShapes, 'update')
+    try {
+      const [next, commands] = Main.update(opened, message)
+      expect(delegated).toHaveBeenCalledWith(opened.dotShapes, message, 'fr', true, { rate: 1.4, pitch: 1.8, lang: 'fr' })
+      expect(next.dotShapes.cursor.x).toBeGreaterThan(opened.dotShapes.cursor.x)
+      expect(commands).toEqual([])
+    } finally {
+      delegated.mockRestore()
+    }
+  })
+
+  it('preserves committed dots on navigation and rejects stale or off-page contacts', () => {
+    Story.story(
+      Main.update, Story.with({ ...createModel(), muted: true }),
+      Story.message(ClickedDotShapes()),
+      Story.message(DotShapes.ContactStarted({ id: 0, x: 200, y: 250, dotId: null, revision: 0 })),
+      Story.message(DotShapes.ContactEnded({ id: 0, x: 200, y: 250, moved: false, revision: 0 })),
+      Story.message(DotShapes.ContactStarted({ id: 1, x: 200, y: 250, dotId: 0, revision: 0 })),
+      Story.message(DotShapes.ContactMoved({ id: 1, x: 350, y: 300, revision: 0 })),
+      Story.message(ClickedLanding()),
+      Story.model(model => {
+        expect(model.dotShapes).toMatchObject({ revision: 1, points: [{ id: 0, x: 200, y: 250 }], contacts: [] })
+      }),
+      Story.message(DotShapes.ContactStarted({ id: 2, x: 700, y: 300, dotId: null, revision: 1 })),
+      Story.message(DotShapes.ContactEnded({ id: 1, x: 350, y: 300, moved: true, revision: 0 })),
+      Story.message(DotShapes.Clear()),
+      Story.message(ClickedDotShapes()),
+      Story.message(DotShapes.ContactMoved({ id: 1, x: 450, y: 300, revision: 0 })),
+      Story.message(DotShapes.ContactCancelled({ id: 1, revision: 0 })),
+      Story.message(DotShapes.ContactEnded({ id: 2, x: 700, y: 300, moved: false, revision: 1 })),
+      Story.model(model => {
+        expect(model.dotShapes).toMatchObject({ revision: 1, points: [{ id: 0, x: 200, y: 250 }], contacts: [] })
+      }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('delegates independent dot drags, cancellation and keyboard placement', () => {
+    Story.story(
+      Main.update, Story.with({ ...createModel(), muted: true }),
+      Story.message(ClickedDotShapes()),
+      Story.message(DotShapes.ContactStarted({ id: 0, x: 200, y: 200, dotId: null, revision: 0 })),
+      Story.message(DotShapes.ContactEnded({ id: 0, x: 200, y: 200, moved: false, revision: 0 })),
+      Story.message(DotShapes.ContactStarted({ id: 1, x: 700, y: 200, dotId: null, revision: 0 })),
+      Story.message(DotShapes.ContactEnded({ id: 1, x: 700, y: 200, moved: false, revision: 0 })),
+      Story.message(DotShapes.ContactStarted({ id: 2, x: 200, y: 200, dotId: 0, revision: 0 })),
+      Story.message(DotShapes.ContactStarted({ id: 3, x: 700, y: 200, dotId: 1, revision: 0 })),
+      Story.message(DotShapes.ContactMoved({ id: 2, x: 300, y: 300, revision: 0 })),
+      Story.message(DotShapes.ContactMoved({ id: 3, x: 650, y: 350, revision: 0 })),
+      Story.message(DotShapes.ContactCancelled({ id: 2, revision: 0 })),
+      Story.message(DotShapes.ContactEnded({ id: 3, x: 650, y: 350, moved: true, revision: 0 })),
+      Story.model(model => {
+        expect(model.dotShapes.points).toEqual([{ id: 0, x: 200, y: 200 }, { id: 1, x: 650, y: 350 }])
+        expect(model.dotShapes.contacts).toEqual([])
+      }),
+      Story.message(DotShapes.KeyboardPressed({ key: 'ArrowDown', dotId: null, shift: true, revision: 0 })),
+      Story.message(DotShapes.KeyboardPressed({ key: 'Enter', dotId: null, shift: false, revision: 0 })),
+      Story.model(model => { expect(model.dotShapes.points).toHaveLength(3) }),
+      Story.Command.expectNone(),
+    )
+  })
+
   it('opens Handwriting, localizes its title, and keeps its learning modes transient', () => {
     for (const language of Object.keys(translations) as Array<keyof typeof translations>) {
       const [opened] = Main.update({ ...createModel(), language }, ClickedHandwriting())
@@ -565,6 +1135,26 @@ describe('Main', () => {
         ...createModel(),
         counter: { ...createModel().counter, displayMode: 'huge' },
       }))).toBe(true)
+      expect(Option.isNone(decodeModel({
+        ...createModel(), dotShapes: { ...DotShapes.init(), revision: '0' },
+      }))).toBe(true)
+    })
+
+    it('decodes every Dot Shapes event through the root message schema', () => {
+      const messages = [
+        ClickedDotShapes(),
+        DotShapes.ContactStarted({ id: 0, x: 20, y: 30, dotId: null, revision: 0 }),
+        DotShapes.ContactMoved({ id: 0, x: 25, y: 35, revision: 0 }),
+        DotShapes.ContactEnded({ id: 0, x: 25, y: 35, moved: false, revision: 0 }),
+        DotShapes.ContactCancelled({ id: 0, revision: 0 }),
+        DotShapes.KeyboardPressed({ key: 'Enter', dotId: null, shift: false, revision: 0 }),
+        DotShapes.Undo(), DotShapes.Clear(), DotShapes.SoundPlayed(),
+      ]
+      for (const message of messages) {
+        const decoded = decodeMessage(message)
+        expect(Option.isSome(decoded), message._tag).toBe(true)
+        if (Option.isSome(decoded)) expect(decoded.value).toEqual(message)
+      }
     })
 
     it('falls back to defaults when persisted settings fail schema decoding', () => {

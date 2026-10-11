@@ -1,3 +1,5 @@
+import type { MusicalKey } from './musicboxTheory'
+
 export interface Note {
   pitch: string
   dur: number
@@ -25,6 +27,7 @@ export interface DrumHit {
 
 export interface Song {
   key: string
+  readonly tonality: MusicalKey
   emoji: string
   notes: Note[]
   drums: DrumHit[]
@@ -34,6 +37,8 @@ export interface Song {
 export interface HarmonicDef {
   readonly ratio: number
   readonly gain: number
+  /** Seconds for a struck/plucked partial to fade naturally, even while its key is held. */
+  readonly decay?: number
 }
 
 export interface Instrument {
@@ -51,6 +56,13 @@ export interface Instrument {
   readonly detune?: number
   readonly tremoloFreq?: FrequencyHz
   readonly tremoloDepth?: number
+  readonly filterRatio?: number
+  readonly vibratoFreq?: number
+  readonly vibratoDepth?: number
+  readonly vibratoDelay?: number
+  readonly noiseGain?: number
+  readonly noiseDuration?: number
+  readonly noiseFilterType?: BiquadFilterType
 }
 
 declare const PitchBrand: unique symbol

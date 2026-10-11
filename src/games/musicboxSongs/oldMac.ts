@@ -2,6 +2,7 @@ import { repeat, withDrums } from './helpers'
 
 export const song = withDrums({
   key: 'oldMac',
+  tonality: { tonic: 'G', mode: 'major' },
   emoji: '🐷',
   lyrics: [
     'Old MacDonald had a farm,',

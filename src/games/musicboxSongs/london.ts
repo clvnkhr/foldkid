@@ -2,6 +2,7 @@ import { repeat, withDrums } from './helpers'
 
 export const song = withDrums({
   key: 'london',
+  tonality: { tonic: 'C', mode: 'major' },
   emoji: '🌉',
   lyrics: [
     'London Bridge is falling down,',

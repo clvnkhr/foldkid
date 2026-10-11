@@ -2,6 +2,7 @@ import { repeat, withDrums } from './helpers'
 
 export const song = withDrums({
   key: 'fish',
+  tonality: { tonic: 'C', mode: 'major' },
   emoji: '🐟',
   lyrics: [
     'One, two, three, four, five,',

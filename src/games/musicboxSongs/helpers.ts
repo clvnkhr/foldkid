@@ -62,6 +62,16 @@ export const makeThreeFourDrums = (notes: readonly Note[]): DrumHit[] => {
   return drums
 }
 
+export const makeTwoFourDrums = (notes: readonly Note[]): DrumHit[] => {
+  const total = songDuration(notes)
+  const drums: DrumHit[] = []
+  for (let at = 0; at < total; at += 2) {
+    pushDrum(drums, total, { at, kind: 'kick', gain: 0.48 })
+    pushDrum(drums, total, { at: at + 1, kind: 'hatClosed', gain: 0.22 })
+  }
+  return drums
+}
+
 export const makeHappyDrums = (notes: readonly Note[]): DrumHit[] => {
   const actionDrums: DrumHit[] = []
   const actionRanges: Array<{ start: number; end: number }> = []

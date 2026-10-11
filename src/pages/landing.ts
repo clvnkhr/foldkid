@@ -1,6 +1,6 @@
 import { html } from 'foldkit/html'
 
-import { ClickedAudioTest, ClickedBsl, ClickedBubbles, ClickedBubbles3d, ClickedHandwriting, ClickedCounter, ClickedDraw, ClickedFindIt, ClickedGrowingNumbers, ClickedMagneticBlocks, ClickedMemory, ClickedMusicBox, ClickedPhonemeGarden, ClickedRps, ClickedShapeWorkshop, ClickedSpeakerCalculator, ClickedTalkingClock, ClickedTalkingKeyboard, ClickedWhackamole, ClickedPattern, LandingDragEnded, LandingDragStarted, LandingDroppedOn } from '../message'
+import { ClickedAudioTest, ClickedBsl, ClickedBubbles, ClickedBubbles3d, ClickedHandwriting, ClickedDotShapes, ClickedCounter, ClickedDraw, ClickedFindIt, ClickedGrowingNumbers, ClickedMagneticBlocks, ClickedMemory, ClickedMusicBox, ClickedPhonemeGarden, ClickedRps, ClickedShapeWorkshop, ClickedSpeakerCalculator, ClickedTalkingClock, ClickedTalkingKeyboard, ClickedWhackamole, ClickedPattern, LandingDragEnded, LandingDragStarted, LandingDroppedOn } from '../message'
 import { t, type StringKey } from '../i18n'
 import { pointerReorder } from '../pointerReorder'
 
@@ -24,6 +24,7 @@ type NavigationMessage = ReturnType<typeof ClickedCounter>
   | ReturnType<typeof ClickedShapeWorkshop>
   | ReturnType<typeof ClickedBubbles3d>
   | ReturnType<typeof ClickedHandwriting>
+  | ReturnType<typeof ClickedDotShapes>
 type Message = NavigationMessage
   | ReturnType<typeof LandingDragStarted>
   | ReturnType<typeof LandingDroppedOn>
@@ -55,6 +56,7 @@ export const LANDING_GAMES: readonly LandingGame[] = [
   { msg: ClickedShapeWorkshop, title: 'shapeWorkshopTitle' as const, emoji: '🔷' },
   { msg: ClickedBubbles3d, title: 'bubbles3dTitle' as const, emoji: '🔮' },
   { msg: ClickedHandwriting, title: 'handwritingTitle' as const, emoji: '🖍️' },
+  { msg: ClickedDotShapes, title: 'dotShapesTitle' as const, emoji: '🔺' },
 ]
 
 export const LANDING_GAME_COUNT = LANDING_GAMES.length

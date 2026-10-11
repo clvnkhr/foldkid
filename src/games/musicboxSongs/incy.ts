@@ -2,6 +2,7 @@ import { makeSixEightDrums, withDrums } from './helpers'
 
 export const song = withDrums({
   key: 'incy',
+  tonality: { tonic: 'G', mode: 'major' },
   emoji: '🕷️',
   lyrics: [
     'Incy Wincy Spider climbed up the spout',

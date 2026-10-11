@@ -2,6 +2,7 @@ import { makeThreeFourDrums, withDrums } from './helpers'
 
 export const song = withDrums({
   key: 'birthday',
+  tonality: { tonic: 'F', mode: 'major' },
   emoji: '🎂',
   lyrics: [
     "Happy birthday to you,",

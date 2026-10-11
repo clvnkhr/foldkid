@@ -1,5 +1,5 @@
-import { MutableRef } from 'effect'
 import type { DrumHit, DrumKind, FrequencyTable, Instrument, Pitch } from './musicboxDomain'
+import { envelopeLevel, voicePartials } from './musicboxInstruments'
 
 export type { Instrument } from './musicboxDomain'
 
@@ -12,7 +12,9 @@ export interface KeyHighlightHooks {
 
 export interface ScheduledNote {
   readonly pitch: Pitch
+  /** Seconds until note-off, already adjusted for the playback tempo. */
   readonly duration: number
+  readonly track?: 'melody' | 'accompaniment'
 }
 
 export interface MusicBoxAudioRuntime {
@@ -22,6 +24,9 @@ export interface MusicBoxAudioRuntime {
   readonly startManualNote: (pitch: Pitch, instrument: Instrument) => void
   readonly stopManualNote: (pitch: Pitch) => void
   readonly stopAllManualNotes: () => void
+  readonly stopAccompanimentNotes: () => void
+  readonly stopScheduledNotes: () => void
+  readonly stopAllNotes: () => void
   readonly clearActiveNotes: () => void
   readonly resetGraph: () => void
 }
@@ -34,6 +39,21 @@ export interface MusicBoxAudioRuntimeDeps {
 }
 
 const SAFETY_MARGIN = 0.03
+const MIN_GAIN = 0.00001
+const MAX_VOICES = 32
+
+interface ToneVoice {
+  readonly context: AudioContext
+  readonly nodes: AudioNode[]
+  readonly sources: Array<OscillatorNode | AudioBufferSourceNode>
+  readonly masterGain: GainNode
+  readonly instrument: Instrument
+  readonly startedAt: number
+  readonly gate?: number
+  readonly track?: ScheduledNote['track']
+  cleanupId?: ReturnType<typeof setTimeout>
+  releasing: boolean
+}
 
 const DRUM_GAIN: Record<DrumKind, number> = {
   kick: 0.22,
@@ -48,11 +68,8 @@ const DRUM_GAIN: Record<DrumKind, number> = {
 }
 
 export const createMusicBoxAudioRuntime = (deps: MusicBoxAudioRuntimeDeps): MusicBoxAudioRuntime => {
-  const activeNotes = MutableRef.make(new Map<string, {
-    nodes: Array<{ osc: OscillatorNode; gain: GainNode }>
-    masterGain: GainNode
-    release: number
-  }>())
+  const activeNotes = new Map<Pitch, ToneVoice>()
+  const voices = new Set<ToneVoice>()
 
   let masterCompressor: DynamicsCompressorNode | undefined
   let compressorContext: AudioContext | undefined
@@ -64,37 +81,32 @@ export const createMusicBoxAudioRuntime = (deps: MusicBoxAudioRuntimeDeps): Musi
   } | undefined
 
   const getMusicBoxContext = (): AudioContext | undefined => {
-    const ctx = deps.getContext()
-    if (!ctx) return undefined
-    if (!masterCompressor || compressorContext !== ctx) {
-      masterCompressor = ctx.createDynamicsCompressor()
-      masterCompressor.threshold.value = -18
-      masterCompressor.knee.value = 12
-      masterCompressor.ratio.value = 12
-      masterCompressor.attack.value = 0.003
-      masterCompressor.release.value = 0.1
-      masterCompressor.connect(ctx.destination)
-      compressorContext = ctx
+    try {
+      const ctx = deps.getContext()
+      if (!ctx || ctx.state === 'closed') return undefined
+      if (!masterCompressor || compressorContext !== ctx) {
+        if (masterCompressor) masterCompressor.disconnect()
+        masterCompressor = ctx.createDynamicsCompressor()
+        masterCompressor.threshold.value = -16
+        masterCompressor.knee.value = 18
+        masterCompressor.ratio.value = 4
+        masterCompressor.attack.value = 0.008
+        masterCompressor.release.value = 0.18
+        masterCompressor.connect(ctx.destination)
+        compressorContext = ctx
+      }
+      return ctx
+    } catch {
+      try { masterCompressor?.disconnect() } catch { /* unavailable audio graph */ }
+      masterCompressor = undefined
+      compressorContext = undefined
+      return undefined
     }
-    return ctx
   }
 
   const connectToOutput = (ctx: AudioContext, node: AudioNode): void => {
     const dest = masterCompressor ?? ctx.destination
     node.connect(dest)
-  }
-
-  const connectMasterGain = (ctx: AudioContext, masterGain: GainNode, inst: Instrument): void => {
-    if (inst.filterType && inst.filterFreq) {
-      const filter = ctx.createBiquadFilter()
-      filter.type = inst.filterType
-      filter.frequency.value = inst.filterFreq
-      filter.Q.value = inst.filterQ ?? 1
-      masterGain.connect(filter)
-      connectToOutput(ctx, filter)
-    } else {
-      connectToOutput(ctx, masterGain)
-    }
   }
 
   const makeNoiseSource = (ctx: AudioContext, duration: number): AudioBufferSourceNode => {
@@ -321,166 +333,236 @@ export const createMusicBoxAudioRuntime = (deps: MusicBoxAudioRuntimeDeps): Musi
     }
   }
 
-  const playScheduledNote = (note: ScheduledNote, inst: Instrument): void => {
-    const ctx = getMusicBoxContext()
-    if (!ctx) return
-    const freq = deps.frequencies.get(note.pitch)
-    if (!freq) return
-    const now = ctx.currentTime + SAFETY_MARGIN
-    const totalTime = Math.max(note.duration * 0.45, inst.attack + inst.release + 0.02)
-    const relStart = now + totalTime - inst.release
-
-    const masterGain = ctx.createGain()
-
-    masterGain.gain.value = 0
-    masterGain.gain.setValueAtTime(0, now)
-    masterGain.gain.linearRampToValueAtTime(inst.gain, now + inst.attack)
-    const decEnd = now + inst.attack + inst.decay
-    masterGain.gain.linearRampToValueAtTime(inst.gain * inst.sustain, decEnd)
-    if (relStart > decEnd) {
-      masterGain.gain.setValueAtTime(inst.gain * inst.sustain, relStart)
+  const cleanupVoice = (voice: ToneVoice): void => {
+    if (voice.cleanupId !== undefined) clearTimeout(voice.cleanupId)
+    voice.cleanupId = undefined
+    for (const source of voice.sources) {
+      try { source.stop() } catch { /* already stopped */ }
     }
-    const end = now + totalTime
-    masterGain.gain.linearRampToValueAtTime(0, end)
-
-    connectMasterGain(ctx, masterGain, inst)
-
-    const nodes: Array<{ osc: OscillatorNode; gain: GainNode }> = []
-    for (const h of inst.harmonics) {
-      const osc = ctx.createOscillator()
-      osc.type = inst.type
-      osc.frequency.value = freq * h.ratio
-      if (inst.detune) osc.detune.value = inst.detune
-      const hGain = ctx.createGain()
-      hGain.gain.value = h.gain
-      osc.connect(hGain)
-      hGain.connect(masterGain)
-      osc.start(now)
-      osc.stop(end + 0.01)
-      nodes.push({ osc, gain: hGain })
+    for (const node of voice.nodes) {
+      try { node.disconnect() } catch { /* already disconnected */ }
     }
+    voices.delete(voice)
+  }
 
-    if (inst.tremoloFreq && inst.tremoloDepth) {
-      const lfo = ctx.createOscillator()
-      lfo.type = 'sine'
-      lfo.frequency.value = inst.tremoloFreq
-      const lfoGain = ctx.createGain()
-      lfoGain.gain.value = inst.tremoloDepth
-      lfo.connect(lfoGain)
-      lfoGain.connect(masterGain.gain)
-      lfo.start()
-      lfo.stop(end + 0.01)
-      nodes.push({ osc: lfo, gain: lfoGain })
+  const finishVoiceAt = (voice: ToneVoice, end: number): void => {
+    if (voice.cleanupId !== undefined) clearTimeout(voice.cleanupId)
+    for (const source of voice.sources) {
+      try { source.stop(end + 0.01) } catch { /* source may already have ended */ }
     }
+    voice.cleanupId = setTimeout(() => cleanupVoice(voice), Math.max(0, end - voice.context.currentTime) * 1000 + 50)
+  }
 
-    setTimeout(() => {
-      for (const { osc, gain } of nodes) {
-        try { osc.stop() } catch { /* already stopped */ }
-        osc.disconnect()
-        gain.disconnect()
+  const releaseVoice = (voice: ToneVoice): void => {
+    if (voice.releasing) return
+    voice.releasing = true
+    const now = voice.context.currentTime
+    const param = voice.masterGain.gain
+    const hold = (): void => {
+      param.cancelScheduledValues(now)
+      const elapsed = now - voice.startedAt
+      const level = voice.gate !== undefined && elapsed > voice.gate
+        ? envelopeLevel(voice.instrument, voice.gate) * Math.max(0, 1 - (elapsed - voice.gate) / voice.instrument.release)
+        : envelopeLevel(voice.instrument, elapsed)
+      param.setValueAtTime(level, now)
+    }
+    try {
+      if (typeof param.cancelAndHoldAtTime === 'function') param.cancelAndHoldAtTime(now)
+      else hold()
+    } catch { hold() }
+    param.linearRampToValueAtTime(0, now + voice.instrument.release)
+    finishVoiceAt(voice, now + voice.instrument.release)
+  }
+
+  // Manual and sequenced notes use exactly the same spectrum, articulation and graph.
+  const createVoice = (
+    ctx: AudioContext,
+    frequency: number,
+    inst: Instrument,
+    gate?: number,
+    track?: ScheduledNote['track'],
+  ): ToneVoice | undefined => {
+    const partials = voicePartials(inst, frequency, ctx.sampleRate)
+    if (partials.length === 0) return undefined
+    const now = ctx.currentTime + (gate === undefined ? 0 : SAFETY_MARGIN)
+    const nodes: AudioNode[] = []
+    const sources: Array<OscillatorNode | AudioBufferSourceNode> = []
+    let voice: ToneVoice | undefined
+    try {
+      const masterGain = ctx.createGain()
+      nodes.push(masterGain)
+      voice = { context: ctx, nodes, sources, masterGain, instrument: inst, startedAt: now, gate, track, releasing: false }
+      masterGain.gain.value = 0
+      masterGain.gain.setValueAtTime(0, now)
+      const attackEnd = Math.min(inst.attack, gate ?? Infinity)
+      if (attackEnd > 0) masterGain.gain.linearRampToValueAtTime(envelopeLevel(inst, attackEnd), now + attackEnd)
+      else masterGain.gain.setValueAtTime(inst.gain, now)
+      const decayEnd = Math.min(inst.attack + inst.decay, gate ?? Infinity)
+      if (decayEnd > attackEnd) masterGain.gain.linearRampToValueAtTime(envelopeLevel(inst, decayEnd), now + decayEnd)
+      if (gate !== undefined) {
+        if (gate > decayEnd) masterGain.gain.setValueAtTime(envelopeLevel(inst, gate), now + gate)
+        masterGain.gain.linearRampToValueAtTime(0, now + gate + inst.release)
       }
-      masterGain.disconnect()
-    }, totalTime * 1000 + 100)
+
+      if (inst.filterType && inst.filterFreq) {
+        const filter = ctx.createBiquadFilter()
+        nodes.push(filter)
+        filter.type = inst.filterType
+        filter.frequency.value = Math.min(inst.filterFreq, inst.filterRatio ? frequency * inst.filterRatio : inst.filterFreq, ctx.sampleRate * 0.45)
+        filter.Q.value = inst.filterQ ?? 0.7
+        masterGain.connect(filter)
+        connectToOutput(ctx, filter)
+      } else connectToOutput(ctx, masterGain)
+
+      const oscillators: OscillatorNode[] = []
+      for (const partial of partials) {
+        const osc = ctx.createOscillator()
+        nodes.push(osc)
+        sources.push(osc)
+        oscillators.push(osc)
+        osc.type = inst.type
+        osc.frequency.value = partial.frequency
+        osc.detune.value = inst.detune ?? 0
+        const gain = ctx.createGain()
+        nodes.push(gain)
+        gain.gain.value = partial.gain
+        if (partial.decay !== undefined) {
+          gain.gain.setValueAtTime(partial.gain, now)
+          gain.gain.exponentialRampToValueAtTime(MIN_GAIN, now + partial.decay)
+        }
+        osc.connect(gain)
+        gain.connect(masterGain)
+        osc.start(now)
+      }
+
+      if (inst.vibratoFreq && inst.vibratoDepth) {
+        const lfo = ctx.createOscillator()
+        nodes.push(lfo)
+        sources.push(lfo)
+        lfo.type = 'sine'
+        lfo.frequency.value = inst.vibratoFreq
+        const gain = ctx.createGain()
+        nodes.push(gain)
+        gain.gain.value = 0
+        gain.gain.setValueAtTime(0, now)
+        gain.gain.setValueAtTime(0, now + (inst.vibratoDelay ?? 0))
+        gain.gain.linearRampToValueAtTime(inst.vibratoDepth, now + (inst.vibratoDelay ?? 0) + 0.16)
+        lfo.connect(gain)
+        for (const osc of oscillators) gain.connect(osc.detune)
+        lfo.start(now)
+      }
+
+      if (inst.noiseGain) {
+        const source = makeNoiseSource(ctx, inst.noiseDuration ?? 0.25)
+        nodes.push(source)
+        sources.push(source)
+        source.loop = inst.noiseDuration === undefined
+        const filter = ctx.createBiquadFilter()
+        nodes.push(filter)
+        filter.type = inst.noiseFilterType ?? 'bandpass'
+        filter.frequency.value = Math.min(Math.max(frequency * 4, 1200), 6500, ctx.sampleRate * 0.4)
+        filter.Q.value = 0.6
+        const gain = ctx.createGain()
+        nodes.push(gain)
+        gain.gain.value = inst.noiseGain
+        if (inst.noiseDuration) {
+          gain.gain.setValueAtTime(inst.noiseGain, now)
+          gain.gain.exponentialRampToValueAtTime(MIN_GAIN, now + inst.noiseDuration)
+        }
+        source.connect(filter)
+        filter.connect(gain)
+        gain.connect(masterGain)
+        source.start(now)
+        if (inst.noiseDuration) source.stop(now + inst.noiseDuration)
+      }
+
+      if (voices.size >= MAX_VOICES) {
+        const oldest = voices.values().next().value
+        if (oldest) {
+          for (const [pitch, active] of activeNotes) {
+            if (active === oldest) {
+              activeNotes.delete(pitch)
+              deps.hooks.unhighlightKey(pitch)
+            }
+          }
+          cleanupVoice(oldest)
+        }
+      }
+      voices.add(voice)
+      if (gate !== undefined) finishVoiceAt(voice, now + gate + inst.release)
+      return voice
+    } catch {
+      if (voice) cleanupVoice(voice)
+      else for (const node of nodes) { try { node.disconnect() } catch { /* partial graph */ } }
+      return undefined
+    }
+  }
+
+  const playScheduledNote = (note: ScheduledNote, inst: Instrument): void => {
+    if (!Number.isFinite(note.duration) || note.duration <= 0) return
+    const frequency = deps.frequencies.get(note.pitch)
+    if (!frequency) return
+    const ctx = getMusicBoxContext()
+    if (ctx) createVoice(ctx, frequency, inst, note.duration, note.track === 'accompaniment' ? 'accompaniment' : 'melody')
   }
 
   const startManualNote = (pitch: Pitch, inst: Instrument): void => {
-    const freq = deps.frequencies.get(pitch)
-    if (!freq || MutableRef.get(activeNotes).has(pitch)) return
+    const frequency = deps.frequencies.get(pitch)
+    if (!frequency || activeNotes.has(pitch)) return
     const ctx = getMusicBoxContext()
     if (!ctx) return
-    const now = ctx.currentTime
-    const masterGain = ctx.createGain()
-
-    masterGain.gain.value = 0
-    masterGain.gain.setValueAtTime(0, now)
-    masterGain.gain.linearRampToValueAtTime(inst.gain, now + inst.attack)
-    const decEnd = now + inst.attack + inst.decay
-    masterGain.gain.linearRampToValueAtTime(inst.gain * inst.sustain, decEnd)
-
-    connectMasterGain(ctx, masterGain, inst)
-
-    const nodes: Array<{ osc: OscillatorNode; gain: GainNode }> = []
-    for (const h of inst.harmonics) {
-      const osc = ctx.createOscillator()
-      osc.type = inst.type
-      osc.frequency.value = freq * h.ratio
-      if (inst.detune) osc.detune.value = inst.detune
-      const hGain = ctx.createGain()
-      hGain.gain.value = h.gain
-      osc.connect(hGain)
-      hGain.connect(masterGain)
-      osc.start(now)
-      nodes.push({ osc, gain: hGain })
-    }
-
-    if (inst.tremoloFreq && inst.tremoloDepth) {
-      const lfo = ctx.createOscillator()
-      lfo.type = 'sine'
-      lfo.frequency.value = inst.tremoloFreq
-      const lfoGain = ctx.createGain()
-      lfoGain.gain.value = inst.tremoloDepth
-      lfo.connect(lfoGain)
-      lfoGain.connect(masterGain.gain)
-      lfo.start()
-      nodes.push({ osc: lfo, gain: lfoGain })
-    }
-
-    MutableRef.get(activeNotes).set(pitch, { nodes, masterGain, release: inst.release })
+    const voice = createVoice(ctx, frequency, inst)
+    if (!voice) return
+    activeNotes.set(pitch, voice)
     deps.hooks.highlightKey(pitch)
   }
 
   const stopManualNote = (pitch: Pitch): void => {
-    const entry = MutableRef.get(activeNotes).get(pitch)
-    if (!entry) return
-    const { nodes, masterGain, release } = entry
-    MutableRef.get(activeNotes).delete(pitch)
+    const voice = activeNotes.get(pitch)
+    if (!voice) return
+    activeNotes.delete(pitch)
     deps.hooks.unhighlightKey(pitch)
-    const ctx = getMusicBoxContext()
-    const now = ctx?.currentTime ?? performance.now() / 1000
-
-    if (typeof masterGain.gain.cancelAndHoldAtTime === 'function') {
-      masterGain.gain.cancelAndHoldAtTime(now)
-    } else {
-      masterGain.gain.cancelScheduledValues(now)
-      masterGain.gain.setValueAtTime(masterGain.gain.value, now)
-    }
-    masterGain.gain.linearRampToValueAtTime(0, now + release)
-
-    setTimeout(() => {
-      for (const { osc, gain } of nodes) {
-        try { osc.stop() } catch { /* already stopped */ }
-        osc.disconnect()
-        gain.disconnect()
-      }
-      masterGain.disconnect()
-    }, release * 1000 + 50)
+    try { releaseVoice(voice) } catch { cleanupVoice(voice) }
   }
 
   const stopAllManualNotes = (): void => {
-    for (const pitch of MutableRef.get(activeNotes).keys()) {
-      const typedPitch = deps.frequencies.pitch(pitch)
-      if (typedPitch) stopManualNote(typedPitch)
+    for (const pitch of activeNotes.keys()) stopManualNote(pitch)
+  }
+
+  const stopAccompanimentNotes = (): void => {
+    for (const voice of voices) {
+      if (voice.track !== 'accompaniment') continue
+      try { releaseVoice(voice) } catch { cleanupVoice(voice) }
+    }
+  }
+
+  const stopScheduledNotes = (): void => {
+    for (const voice of voices) {
+      if (voice.track === undefined) continue
+      try { releaseVoice(voice) } catch { cleanupVoice(voice) }
+    }
+  }
+
+  const stopAllNotes = (): void => {
+    stopAllManualNotes()
+    for (const voice of voices) {
+      try { releaseVoice(voice) } catch { cleanupVoice(voice) }
     }
   }
 
   const clearActiveNotes = (): void => {
-    for (const { nodes, masterGain } of MutableRef.get(activeNotes).values()) {
-      for (const { osc, gain } of nodes) {
-        try { osc.stop() } catch { /* already stopped */ }
-        try { osc.disconnect() } catch { /* already disconnected */ }
-        try { gain.disconnect() } catch { /* already disconnected */ }
-      }
-      try { masterGain.disconnect() } catch { /* already disconnected */ }
-    }
-    MutableRef.get(activeNotes).clear()
+    for (const voice of voices) cleanupVoice(voice)
+    activeNotes.clear()
     deps.hooks.unhighlightAllKeys()
   }
 
   const resetGraph = (): void => {
     clearActiveNotes()
-    deps.resetContext()
+    cleanupOpenHat()
+    try { masterCompressor?.disconnect() } catch { /* already disconnected */ }
     masterCompressor = undefined
     compressorContext = undefined
+    deps.resetContext()
   }
 
   return {
@@ -490,6 +572,9 @@ export const createMusicBoxAudioRuntime = (deps: MusicBoxAudioRuntimeDeps): Musi
     startManualNote,
     stopManualNote,
     stopAllManualNotes,
+    stopAccompanimentNotes,
+    stopScheduledNotes,
+    stopAllNotes,
     clearActiveNotes,
     resetGraph,
   }

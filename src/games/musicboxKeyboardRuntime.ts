@@ -74,6 +74,13 @@ const applyOctaveOffset = (pitch: Pitch, offset: number, frequencies: FrequencyT
   return m ? frequencies.pitch(`${m[1]}${parseInt(m[2] ?? '0') + offset}`) : undefined
 }
 
+const isFormTarget = (target: EventTarget | null): boolean => {
+  if (!(target instanceof Element)) return false
+  if (target.closest('input, select, textarea')) return true
+  const editable = target.closest('[contenteditable]')
+  return editable !== null && editable.getAttribute('contenteditable')?.toLowerCase() !== 'false'
+}
+
 interface PianoPointerRuntimeDeps<Message> {
   readonly document: Document
   readonly noteOn: (pitch: string) => Message
@@ -285,25 +292,31 @@ export const createMusicBoxKeyboardRuntime = (deps: MusicBoxKeyboardRuntimeDeps)
   const keyboardBound = MutableRef.make(false)
   const shortcutKeysBound = MutableRef.make(false)
   const currentOctaveOffset = MutableRef.make(0)
+  const heldKeys = new Map<string, Pitch>()
   let firstTouchHandler: (() => void) | undefined
 
   const handleKeyDown = (e: KeyboardEvent): void => {
-    const pitch = QWERTY_MAP[e.key.toLowerCase()]
+    if (isFormTarget(e.target)) return
+    const key = e.key.toLowerCase()
+    const pitch = QWERTY_MAP[key]
     if (pitch) {
       e.preventDefault()
+      if (heldKeys.has(key)) return
       const instr = deps.getInstrument()
       const shiftedPitch = applyOctaveOffset(pitch, MutableRef.get(currentOctaveOffset), deps.frequencies)
       if (!instr || !shiftedPitch) return
+      heldKeys.set(key, shiftedPitch)
       deps.audio.startManualNote(shiftedPitch, instr)
     }
   }
 
   const handleKeyUp = (e: KeyboardEvent): void => {
-    const pitch = QWERTY_MAP[e.key.toLowerCase()]
+    const key = e.key.toLowerCase()
+    const pitch = heldKeys.get(key)
     if (pitch) {
-      e.preventDefault()
-      const shiftedPitch = applyOctaveOffset(pitch, MutableRef.get(currentOctaveOffset), deps.frequencies)
-      if (shiftedPitch) deps.audio.stopManualNote(shiftedPitch)
+      heldKeys.delete(key)
+      if (!isFormTarget(e.target)) e.preventDefault()
+      deps.audio.stopManualNote(pitch)
     }
   }
 
@@ -341,9 +354,8 @@ export const createMusicBoxKeyboardRuntime = (deps: MusicBoxKeyboardRuntimeDeps)
 
   const handleShortcutKeyDown = (e: KeyboardEvent): void => {
     if (e.repeat) return
+    if (isFormTarget(e.target)) return
     if (!(e.target instanceof HTMLElement)) return
-    const target = e.target
-    if (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA') return
     const key = e.key.toLowerCase()
     const drumKind = DRUM_KEY_MAP[key]
     if (drumKind) {
@@ -381,6 +393,7 @@ export const createMusicBoxKeyboardRuntime = (deps: MusicBoxKeyboardRuntimeDeps)
 
   const reset = (): void => {
     deps.audio.clearActiveNotes()
+    heldKeys.clear()
     deps.document.removeEventListener('keydown', handleKeyDown)
     deps.document.removeEventListener('keyup', handleKeyUp)
     deps.document.removeEventListener('keydown', handleShortcutKeyDown)

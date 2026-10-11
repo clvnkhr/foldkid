@@ -3,7 +3,7 @@ import { Command } from 'foldkit'
 import { html } from 'foldkit/html'
 import { m } from 'foldkit/message'
 import { getContext, resetContext } from '../audio'
-import { t, type StringKey } from '../i18n'
+import { t, tf, type StringKey } from '../i18n'
 import {
   createMusicBoxAudioRuntime,
 } from './musicboxAudioRuntime'
@@ -19,14 +19,17 @@ import {
   MUSICBOX_FREQUENCIES,
   Pitch,
   shiftStart,
-  transposePitch,
-  type DrumHit,
   type DrumKind,
-  type Instrument,
   type KeyDef,
   type Song,
 } from './musicboxDomain'
 import { SONGS, SONG_TKEYS } from './musicboxSongs'
+import { INSTRUMENTS } from './musicboxInstruments'
+import { tonicLabel, transposeKey } from './musicboxTheory'
+import { ACCOMPANIMENT_STYLES, type AccompanimentStyle } from './musicboxAccompaniment'
+import { playMusicBoxSong } from './musicboxPlayback'
+
+export { INSTRUMENTS } from './musicboxInstruments'
 
 export {
   DRUM_KEYBINDS,
@@ -35,6 +38,7 @@ export {
 } from './musicboxKeyboardRuntime'
 export { DRUM_KINDS, FREQUENCIES, buildKeyboard, shiftStart } from './musicboxDomain'
 export { SONGS, SONG_TKEYS } from './musicboxSongs'
+export { ACCOMPANIMENT_STYLES, type AccompanimentStyle } from './musicboxAccompaniment'
 
 export const MIN_WHITE_KEYS = 1
 export const MAX_WHITE_KEYS = 15
@@ -46,6 +50,7 @@ export const REPEAT_MODES = ['off', 'loop', 'loopOne', 'shuffle'] as const
 export type RepeatMode = typeof REPEAT_MODES[number]
 const BottomPanelModeSchema = S.Union([S.Literal('simple'), S.Literal('drums'), S.Literal('keyboard')])
 const RepeatModeSchema = S.Union([S.Literal('off'), S.Literal('loop'), S.Literal('loopOne'), S.Literal('shuffle')])
+const AccompanimentStyleSchema = S.Union([S.Literal('off'), S.Literal('chords'), S.Literal('arpeggio')])
 const DrumKindSchema = S.Union([
   S.Literal('kick'),
   S.Literal('snare'),
@@ -151,67 +156,6 @@ const unhighlightAllLyricLines = (): void => {
   MutableRef.set(currentLyricLine, -1)
 }
 
-export const INSTRUMENTS: Instrument[] = [
-  {
-    key: 'bell',
-    type: 'sine',
-    gain: 0.06,
-    attack: 0.008,
-    decay: 0.4,
-    sustain: 0.55,
-    release: 1.0,
-    harmonics: [
-      { ratio: 1, gain: 1 },
-      { ratio: 2, gain: 0.6 },
-      { ratio: 3, gain: 0.35 },
-      { ratio: 4, gain: 0.15 },
-    ],
-  },
-  {
-    key: 'flute',
-    type: 'sine',
-    gain: 0.1,
-    attack: 0.08,
-    decay: 0.05,
-    sustain: 0.95,
-    release: 0.15,
-    harmonics: [
-      { ratio: 1, gain: 1 },
-      { ratio: 2, gain: 0.2 },
-    ],
-    detune: 4,
-  },
-  {
-    key: 'sawtooth',
-    type: 'sawtooth',
-    gain: 0.08,
-    attack: 0.01,
-    decay: 0.02,
-    sustain: 1.0,
-    release: 0.05,
-    harmonics: [
-      { ratio: 1, gain: 1 },
-      { ratio: 2, gain: 0.4 },
-      { ratio: 3, gain: 0.2 },
-      { ratio: 4, gain: 0.1 },
-    ],
-  },
-  {
-    key: 'guitar',
-    type: 'triangle',
-    gain: 0.1,
-    attack: 0.002,
-    decay: 0.3,
-    sustain: 0.1,
-    release: 0.2,
-    harmonics: [
-      { ratio: 1, gain: 1 },
-      { ratio: 2, gain: 0.4 },
-      { ratio: 3, gain: 0.15 },
-    ],
-  },
-]
-
 export const INST_TKEYS: Record<string, StringKey> = {
   bell: 'musicBoxBell',
   flute: 'musicBoxFlute',
@@ -260,79 +204,53 @@ const playSongCmd = (
   song: Song,
   msg: ReturnType<typeof SongEnded>,
   currentPlaybackId: number,
-): Command.Command<ReturnType<typeof SongEnded>> => ({
-  name: 'PlayMusicBox',
-  effect: Effect.gen(function* () {
-    const isCurrentPlayback = (): boolean => MutableRef.get(playbackId) === currentPlaybackId
-    const shouldStop = (): boolean => MutableRef.get(stopFlag) || !isCurrentPlayback()
-    if (!isCurrentPlayback()) return msg
-    MutableRef.set(stopFlag, false)
-    MutableRef.set(pauseFlag, false)
-    const instr = INSTRUMENTS[MutableRef.get(selectedInstrumentIndex)]
-    if (!instr) return msg
-    const totalDur = song.notes.reduce((sum, n) => sum + n.dur, 0)
-    const nonEmptyIndices = song.lyrics
-      .map((line, i) => line === '' ? -1 : i)
-      .filter(i => i >= 0)
-    const beatsPerLine = totalDur / nonEmptyIndices.length
-    const drums = [...song.drums].sort((a, b) => a.at - b.at)
-    let drumIndex = 0
-    const playDrum = (drum: DrumHit): void => {
-      const volume = MutableRef.get(playbackDrumVolume)
-      if (volume <= 0) return
-      audioRuntime.playDrumHit({ kind: drum.kind, gain: (drum.gain ?? 1) * volume })
-    }
-    let cumDur = 0
-    for (let i = 0; i < song.notes.length; i++) {
-      if (shouldStop()) break
-      const note = song.notes[i]!
-      while (drumIndex < drums.length && drums[drumIndex]!.at <= cumDur + 0.0001 && !shouldStop()) {
-        playDrum(drums[drumIndex]!)
-        drumIndex += 1
-      }
-      if (shouldStop()) break
-      if (note.pitch) {
-        const tp = transposePitch(note.pitch, MutableRef.get(playbackTranspose))
-        const pitch = Pitch.fromString(tp, MUSICBOX_FREQUENCIES)
-        if (pitch) audioRuntime.playScheduledNote({ pitch, duration: note.dur }, instr)
-        highlightKey(tp)
-      }
-      const rawIdx = Math.min(Math.floor(cumDur / beatsPerLine), nonEmptyIndices.length - 1)
-      highlightLyricLine(nonEmptyIndices[rawIdx]!)
-      const noteEnd = cumDur + note.dur
-      let segmentStart = cumDur
-      while (drumIndex < drums.length && drums[drumIndex]!.at < noteEnd - 0.0001 && !shouldStop()) {
-        const drum = drums[drumIndex]!
-        if (drum.at > segmentStart + 0.0001) {
-          yield* Effect.sleep(((drum.at - segmentStart) * 350) / MutableRef.get(playbackTempo))
-          if (shouldStop()) break
-          while (MutableRef.get(pauseFlag) && !shouldStop()) {
-            yield* Effect.sleep(100)
-          }
-          if (shouldStop()) break
-        }
-        playDrum(drum)
-        segmentStart = drum.at
-        drumIndex += 1
-      }
-      if (shouldStop()) break
-      cumDur += note.dur
-      yield* Effect.sleep(((noteEnd - segmentStart) * 350) / MutableRef.get(playbackTempo))
-      if (shouldStop()) break
-      unhighlightAllKeys()
-      while (MutableRef.get(pauseFlag) && !shouldStop()) {
-        yield* Effect.sleep(100)
-      }
-    }
-    if (isCurrentPlayback()) {
+  model: Model,
+): Command.Command<ReturnType<typeof SongEnded>> => {
+  const isCurrentPlayback = (): boolean => MutableRef.get(playbackId) === currentPlaybackId
+  const currentControls = (): HTMLElement | null => document.querySelector<HTMLElement>('.musicbox-card')
+  return {
+    name: 'PlayMusicBox',
+    effect: Effect.gen(function* () {
+      if (!isCurrentPlayback()) return msg
       MutableRef.set(stopFlag, false)
       MutableRef.set(pauseFlag, false)
-      unhighlightAllKeys()
-      unhighlightAllLyricLines()
-    }
-    return msg
-  }),
-})
+      yield* playMusicBoxSong(song, {
+        shouldStop: () => MutableRef.get(stopFlag) || !isCurrentPlayback(),
+        isPaused: () => MutableRef.get(pauseFlag),
+        getTempo: () => MutableRef.get(playbackTempo),
+        getTranspose: () => MutableRef.get(playbackTranspose),
+        getDrumVolume: () => MutableRef.get(playbackDrumVolume),
+        getInstrument: () => INSTRUMENTS[MutableRef.get(selectedInstrumentIndex)],
+        getAccompanimentStyle: () => {
+          const value = currentControls()?.dataset.accompanimentStyle as AccompanimentStyle | undefined
+          return value && ACCOMPANIMENT_STYLES.includes(value) ? value : model.accompanimentStyle
+        },
+        getAccompanimentVolume: () => {
+          const value = currentControls()?.dataset.accompanimentVolume
+          return value === undefined ? model.accompanimentVolume : Number(value)
+        },
+        playScheduledNote: audioRuntime.playScheduledNote,
+        playDrumHit: audioRuntime.playDrumHit,
+        stopAccompanimentNotes: audioRuntime.stopAccompanimentNotes,
+        stopScheduledNotes: audioRuntime.stopScheduledNotes,
+        highlightKey,
+        unhighlightAllKeys,
+        highlightLyricLine,
+      })
+      return msg
+    }).pipe(
+      Effect.ensuring(Effect.sync(() => {
+        if (!isCurrentPlayback()) return
+        audioRuntime.stopScheduledNotes()
+        MutableRef.set(stopFlag, false)
+        MutableRef.set(pauseFlag, false)
+        unhighlightAllKeys()
+        unhighlightAllLyricLines()
+      })),
+      Effect.catchCause(() => Effect.succeed(msg)),
+    ),
+  }
+}
 
 export const MIN_OCTAVE = -3
 export const MAX_OCTAVE = 3
@@ -374,6 +292,8 @@ export const Model = S.Struct({
   topShift: S.Number,
   tempo: S.Number,
   drumVolume: S.Number,
+  accompanimentStyle: AccompanimentStyleSchema,
+  accompanimentVolume: S.Number,
   repeatMode: RepeatModeSchema,
   lyricsExpanded: S.Boolean,
   songOrder: S.Array(S.Number),
@@ -407,13 +327,15 @@ export const TransposeUp = m('MusicBoxTransposeUp')
 export const TransposeDown = m('MusicBoxTransposeDown')
 export const CycleRepeatMode = m('MusicBoxCycleRepeatMode')
 export const SetDrumVolume = m('MusicBoxSetDrumVolume', { value: S.Number })
+export const SetAccompanimentStyle = m('MusicBoxSetAccompanimentStyle', { value: AccompanimentStyleSchema })
+export const SetAccompanimentVolume = m('MusicBoxSetAccompanimentVolume', { value: S.Number })
 export const DrumPadHit = m('MusicBoxDrumPadHit', { kind: DrumKindSchema })
 export const ToggleSongVisibility = m('MusicBoxToggleSongVisibility', { index: S.Number })
 export const SongDragStarted = m('MusicBoxSongDragStarted', { index: S.Number })
 export const SongDroppedOn = m('MusicBoxSongDroppedOn', { index: S.Number })
 export const SongDragEnded = m('MusicBoxSongDragEnded')
 
-export const Message = S.Union([Play, Stop, SetSong, SetInstrument, SongEnded, PreviousSong, SkipSong, NoteOn, NoteOff, AddKey, RemoveKey, OctaveUp, OctaveDown, ToggleBottomKeyboard, SetBottomPanelMode, ShiftBottom, ShiftTop, TempoUp, TempoDown, ToggleLyrics, TogglePause, TransposeUp, TransposeDown, CycleRepeatMode, SetDrumVolume, DrumPadHit, ToggleSongVisibility, SongDragStarted, SongDroppedOn, SongDragEnded])
+export const Message = S.Union([Play, Stop, SetSong, SetInstrument, SongEnded, PreviousSong, SkipSong, NoteOn, NoteOff, AddKey, RemoveKey, OctaveUp, OctaveDown, ToggleBottomKeyboard, SetBottomPanelMode, ShiftBottom, ShiftTop, TempoUp, TempoDown, ToggleLyrics, TogglePause, TransposeUp, TransposeDown, CycleRepeatMode, SetDrumVolume, SetAccompanimentStyle, SetAccompanimentVolume, DrumPadHit, ToggleSongVisibility, SongDragStarted, SongDroppedOn, SongDragEnded])
 export type Message = typeof Message.Type
 
 const visibleSongOrder = (model: Model): number[] =>
@@ -431,7 +353,7 @@ const stopPlaybackForSongChange = (): void => {
   MutableRef.set(stopFlag, true)
   MutableRef.set(pauseFlag, false)
   MutableRef.set(playbackId, MutableRef.get(playbackId) + 1)
-  audioRuntime.stopAllManualNotes()
+  audioRuntime.stopAllNotes()
   unhighlightAllKeys()
   unhighlightAllLyricLines()
 }
@@ -446,7 +368,7 @@ const playSelectedSong = (model: Model, selectedSong: number): readonly [Model, 
   MutableRef.set(playbackId, nextPlaybackId)
   return [
     { ...model, selectedSong, isPlaying: true, isPaused: false },
-    [playSongCmd(song, SongEnded({ playbackId: nextPlaybackId }), nextPlaybackId)],
+    [playSongCmd(song, SongEnded({ playbackId: nextPlaybackId }), nextPlaybackId, model)],
   ]
 }
 
@@ -478,7 +400,7 @@ export const init = (): Model => {
   MutableRef.set(playbackDrumVolume, 1)
   MutableRef.set(playbackId, 0)
   MutableRef.set(currentLyricLine, -1)
-  return { selectedSong: 0, selectedInstrument: 0, isPlaying: false, isPaused: false, songTranspose: 0, whiteKeys: 8, bottomPanelMode: 'simple', octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, drumVolume: 1, repeatMode: 'off', lyricsExpanded: false, songOrder: SONGS.map((_, i) => i), hiddenSongs: SONGS.map(() => false), dragIndex: -1 }
+  return { selectedSong: 0, selectedInstrument: 0, isPlaying: false, isPaused: false, songTranspose: 0, whiteKeys: 8, bottomPanelMode: 'simple', octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, drumVolume: 1, accompanimentStyle: 'chords', accompanimentVolume: 0.45, repeatMode: 'off', lyricsExpanded: false, songOrder: SONGS.map((_, i) => i), hiddenSongs: SONGS.map(() => false), dragIndex: -1 }
 }
 
 export const update = (
@@ -489,6 +411,7 @@ export const update = (
     M.withReturnType<readonly [Model, ReadonlyArray<Command.Command<Message>>]>(),
     M.tagsExhaustive({
       MusicBoxPlay: () => {
+        if (model.isPlaying && !model.isPaused) return [model, []]
         if (model.isPaused) {
           MutableRef.set(pauseFlag, false)
           return [{ ...model, isPaused: false }, []]
@@ -500,7 +423,7 @@ export const update = (
         MutableRef.set(stopFlag, true)
         MutableRef.set(pauseFlag, false)
         MutableRef.set(playbackId, MutableRef.get(playbackId) + 1)
-        audioRuntime.stopAllManualNotes()
+        audioRuntime.stopAllNotes()
         unhighlightAllKeys()
         unhighlightAllLyricLines()
         return [{ ...model, isPlaying: false, isPaused: false }, []]
@@ -533,8 +456,8 @@ export const update = (
         return [{ ...model, selectedInstrument: msg.value }, []]
       },
       MusicBoxSongEnded: (msg) => {
-        MutableRef.set(pauseFlag, false)
         if (msg.playbackId !== MutableRef.get(playbackId)) return [model, []]
+        MutableRef.set(pauseFlag, false)
         if (!model.isPlaying) return [{ ...model, isPaused: false }, []]
         const selectedSong = nextSongForRepeat(model)
         if (selectedSong === undefined) return [{ ...model, isPlaying: false, isPaused: false }, []]
@@ -594,11 +517,13 @@ export const update = (
         return [{ ...model, lyricsExpanded: !model.lyricsExpanded }, []]
       },
       MusicBoxTogglePause: () => {
+        if (!model.isPlaying) return [model, []]
         if (model.isPaused) {
           MutableRef.set(pauseFlag, false)
           return [{ ...model, isPaused: false }, []]
         } else {
           MutableRef.set(pauseFlag, true)
+          audioRuntime.stopScheduledNotes()
           unhighlightAllKeys()
           return [{ ...model, isPaused: true }, []]
         }
@@ -622,6 +547,15 @@ export const update = (
         const next = clampDrumVolume(msg.value)
         MutableRef.set(playbackDrumVolume, next)
         return [{ ...model, drumVolume: next }, []]
+      },
+      MusicBoxSetAccompanimentStyle: (msg) =>
+        ACCOMPANIMENT_STYLES.includes(msg.value) && msg.value !== model.accompanimentStyle
+          ? [{ ...model, accompanimentStyle: msg.value }, []]
+          : [model, []],
+      MusicBoxSetAccompanimentVolume: (msg) => {
+        if (!Number.isFinite(msg.value)) return [model, []]
+        const next = Math.min(1, Math.max(0, Math.round(msg.value * 100) / 100))
+        return next === model.accompanimentVolume ? [model, []] : [{ ...model, accompanimentVolume: next }, []]
       },
       MusicBoxDrumPadHit: (msg) => {
         const gain = clampDrumVolume(model.drumVolume)
@@ -745,15 +679,21 @@ export const view = (model: Model, language: string = 'en') => {
   keyboardRuntime.setOctaveOffset(model.octaveOffset)
   const h = html<Message>()
   const repeatMode = repeatModeOrDefault(model.repeatMode)
+  const song = SONGS[model.selectedSong]
+  const musicalKey = song ? transposeKey(song.tonality, model.songTranspose) : undefined
   const visibleSongs = visibleSongOrder(model)
   const topKb = buildKeyboard(shiftStart('C4', model.topShift), model.whiteKeys, model.octaveOffset)
   const topWhite = topKb.keys.filter(k => k.type === 'white')
   const topBlack = topKb.keys.filter(k => k.type === 'black')
 
   return h.div(
-    [h.Class('page')],
+    [h.Class('page musicbox-page')],
     [
-        h.div([h.Class('card musicbox-card'), h.Key('card')], [
+        h.div([
+          h.Class('card musicbox-card'), h.Key('card'),
+          h.Attribute('data-accompaniment-style', model.accompanimentStyle),
+          h.Attribute('data-accompaniment-volume', model.accompanimentVolume.toString()),
+        ], [
         h.div([h.Class('musicbox-card-inner'), h.Key('inner')], [
           h.h1([h.Class('title')], [t('musicBoxTitle', language)]),
 
@@ -786,10 +726,15 @@ export const view = (model: Model, language: string = 'en') => {
               h.select(
                 [
                   h.Value(model.selectedSong.toString()),
+                  h.Attribute('aria-label', t('musicBoxPickSong', language)),
                   h.OnChange(v => SetSong({ value: parseInt(v) })),
                   h.Class('musicbox-select'),
                 ],
                 [
+                  ...(model.isPlaying && song && !visibleSongs.includes(model.selectedSong) ? [h.option(
+                    [h.Value(model.selectedSong.toString()), h.Disabled(true)],
+                    [`${song.emoji} ${t(SONG_TKEYS[song.key] ?? 'musicBoxTwinkle', language)}`],
+                  )] : []),
                   ...visibleSongs.map(songIdx => {
                       const song = SONGS[songIdx]!
                       const key = SONG_TKEYS[song.key]
@@ -862,6 +807,24 @@ export const view = (model: Model, language: string = 'en') => {
             ]),
           ]),
 
+          ...(musicalKey ? [h.p([h.Class('musicbox-key'), h.Role('status'), h.Attribute('aria-live', 'polite')], [
+            tf(musicalKey.mode === 'major' ? 'musicBoxMajorKey' : 'musicBoxMinorKey', language, tonicLabel(musicalKey)),
+          ])] : []),
+
+          h.div([h.Class('musicbox-accompaniment')], [
+            h.label([h.For('musicbox-accompaniment')], [t('musicBoxAccompaniment', language)]),
+            h.select([
+              h.Id('musicbox-accompaniment'),
+              h.Class('musicbox-select'),
+              h.Value(model.accompanimentStyle),
+              h.OnChange(value => SetAccompanimentStyle({ value: value as AccompanimentStyle })),
+            ], [
+              h.option([h.Value('off'), h.Selected(model.accompanimentStyle === 'off')], [t('musicBoxAccompanimentOff', language)]),
+              h.option([h.Value('chords'), h.Selected(model.accompanimentStyle === 'chords')], [t('musicBoxAccompanimentChords', language)]),
+              h.option([h.Value('arpeggio'), h.Selected(model.accompanimentStyle === 'arpeggio')], [t('musicBoxAccompanimentArpeggio', language)]),
+            ]),
+          ]),
+
           h.div(
             [h.Class('lyrics-box' + (model.lyricsExpanded ? '' : ' lyrics-box--compact')), h.OnClick(ToggleLyrics())],
             (SONGS[model.selectedSong]?.lyrics ?? []).map((line, idx) =>
@@ -909,6 +872,7 @@ export const view = (model: Model, language: string = 'en') => {
               h.Value(model.selectedInstrument.toString()),
               h.OnChange(v => SetInstrument({ value: parseInt(v) })),
               h.Class('musicbox-select instrument-inline'),
+              h.Attribute('aria-label', t('musicBoxInstrument', language)),
             ],
             [
               ...INSTRUMENTS.map((inst, i) =>

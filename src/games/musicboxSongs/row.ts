@@ -2,6 +2,7 @@ import { makeSixEightDrums, repeat, withDrums } from './helpers'
 
 export const song = withDrums({
   key: 'row',
+  tonality: { tonic: 'C', mode: 'major' },
   emoji: '🚣',
   lyrics: [
     'Row, row, row your boat,',

@@ -2,11 +2,12 @@ import { Effect, Match as M, Option, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { Document, html } from 'foldkit/html'
 
-import { ApplyImport, CancelResetSettings, ClickedAudioTest, ClickedBsl, ClickedBubbles, ClickedBubbles3d, ClickedHandwriting, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedGrowingNumbers, ClickedLanding, ClickedDraw, ClickedMagneticBlocks, ClickedMemory, ClickedMusicBox, ClickedPhonemeGarden, ClickedRps, ClickedShapeWorkshop, ClickedSpeakerCalculator, ClickedSettings, ClickedTalkingClock, ClickedTalkingKeyboard, ClickedWhackamole, ClickedPattern, ConfirmResetSettings, CopyExportData, DismissMessage, ExportSettings, ImportSettings, ImportedSettings, LandingDragEnded, LandingDragStarted, LandingDroppedOn, LandingSettingsDragEnded, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, ResetSettings, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsDragEnded, SettingsDragMoved, SettingsDragStarted, SettingsImportFailed, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
+import { ApplyImport, CancelResetSettings, ClickedAudioTest, ClickedBsl, ClickedBubbles, ClickedBubbles3d, ClickedHandwriting, ClickedDotShapes, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedGrowingNumbers, ClickedLanding, ClickedDraw, ClickedMagneticBlocks, ClickedMemory, ClickedMusicBox, ClickedPhonemeGarden, ClickedRps, ClickedShapeWorkshop, ClickedSpeakerCalculator, ClickedSettings, ClickedTalkingClock, ClickedTalkingKeyboard, ClickedWhackamole, ClickedPattern, ConfirmResetSettings, CopyExportData, DismissMessage, ExportSettings, ImportSettings, ImportedSettings, LandingDragEnded, LandingDragStarted, LandingDroppedOn, LandingSettingsDragEnded, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, ResetSettings, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsDragEnded, SettingsDragMoved, SettingsDragStarted, SettingsImportFailed, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
 
-import { Page, PageAudioTest, PageBsl, PageBubbles, PageBubbles3d, PageHandwriting, PageCounter, PageFindIt, PageGrowingNumbers, PageLanding, PageDraw, PageMagneticBlocks, PageMemory, PageMusicBox, PagePhonemeGarden, PageRps, PageShapeWorkshop, PageSpeakerCalculator, PageTalkingClock, PageTalkingKeyboard, PageWhackamole, PagePattern } from './route'
+import { Page, PageAudioTest, PageBsl, PageBubbles, PageBubbles3d, PageHandwriting, PageDotShapes, PageCounter, PageFindIt, PageGrowingNumbers, PageLanding, PageDraw, PageMagneticBlocks, PageMemory, PageMusicBox, PagePhonemeGarden, PageRps, PageShapeWorkshop, PageSpeakerCalculator, PageTalkingClock, PageTalkingKeyboard, PageWhackamole, PagePattern } from './route'
 
 import * as Handwriting from './games/handwriting'
+import * as DotShapes from './games/dotShapes'
 import * as FindIt from './games/findit'
 import * as MusicBox from './games/musicbox'
 import * as Counter from './games/counter'
@@ -81,6 +82,8 @@ const PersistedSettingsSchema = S.Struct({
   musicBoxSongOrder: S.optionalKey(S.Array(S.Number)),
   musicBoxHiddenSongs: S.optionalKey(S.Array(S.Boolean)),
   musicBoxDrumVolume: S.optionalKey(S.Number),
+  musicBoxAccompanimentStyle: S.optionalKey(S.Union([S.Literal('off'), S.Literal('chords'), S.Literal('arpeggio')])),
+  musicBoxAccompanimentVolume: S.optionalKey(S.Number),
   landingOrder: S.optionalKey(S.Array(S.Number)),
   landingHiddenGames: S.optionalKey(S.Array(S.Boolean)),
 })
@@ -123,7 +126,7 @@ const isLandingOrder = (value: readonly number[] | undefined): value is number[]
 
 const normalizeLandingHiddenGames = (value: readonly boolean[] | undefined): boolean[] => {
   if (!Array.isArray(value)) return [...DEFAULT_LANDING_HIDDEN_GAMES]
-  const hidden = DEFAULT_LANDING_HIDDEN_GAMES.map((_, index) => value?.[index] === true)
+  const hidden = DEFAULT_LANDING_HIDDEN_GAMES.map((defaultHidden, index) => value[index] ?? defaultHidden)
   return hidden.every(Boolean) ? [...DEFAULT_LANDING_HIDDEN_GAMES] : hidden
 }
 
@@ -141,11 +144,22 @@ const normalizeSongOrder = (value: readonly number[] | undefined, fallback: read
   return [...valid, ...missing]
 }
 
-const normalizeHiddenSongs = (value: readonly boolean[] | undefined): boolean[] =>
-  MusicBox.SONGS.map((_, index) => value?.[index] === true)
+const normalizeHiddenSongs = (value: readonly boolean[] | undefined): boolean[] => {
+  const hidden = MusicBox.SONGS.map((_, index) => value?.[index] === true)
+  return hidden.every(Boolean) ? MusicBox.SONGS.map(() => false) : hidden
+}
+
+const visibleSongSelection = (order: readonly number[], hidden: readonly boolean[], current?: number): number => {
+  const visible = (index: number): boolean => Number.isInteger(index) && index >= 0 && index < MusicBox.SONGS.length && hidden[index] !== true
+  if (current !== undefined && order.includes(current) && visible(current)) return current
+  return order.find(visible) ?? 0
+}
 
 const normalizeDrumVolume = (value: number | undefined, fallback: number): number =>
   value === undefined ? fallback : Math.min(1, Math.max(0, value))
+
+const normalizeAccompanimentVolume = (value: number | undefined, fallback: number): number =>
+  value !== undefined && Number.isFinite(value) ? Math.round(Math.min(1, Math.max(0, value)) * 100) / 100 : fallback
 
 const moveArrayItem = <A>(items: readonly A[], from: number, to: number): A[] => {
   const next = [...items]
@@ -183,6 +197,8 @@ const buildSettingsData = (model: Model): PersistedSettings => ({
   musicBoxSongOrder: model.musicBox.songOrder,
   musicBoxHiddenSongs: model.musicBox.hiddenSongs,
   musicBoxDrumVolume: model.musicBox.drumVolume,
+  musicBoxAccompanimentStyle: model.musicBox.accompanimentStyle,
+  musicBoxAccompanimentVolume: model.musicBox.accompanimentVolume,
   landingOrder: model.landingOrder,
   landingHiddenGames: model.landingHiddenGames,
 })
@@ -227,6 +243,7 @@ export const Model = S.Struct({
   bubbles: Bubbles.Model,
   bubbles3d: Bubbles3d.Model,
   handwriting: Handwriting.Model,
+  dotShapes: DotShapes.Model,
   draw: Draw.Model,
   memory: Memory.Model,
   phonemeGarden: PhonemeGarden.Model,
@@ -281,6 +298,15 @@ export const Message = S.Union([
   Bubbles3d.RendererFailed,
   Bubbles3d.SoundPlayed,
   ClickedHandwriting,
+  ClickedDotShapes,
+  DotShapes.ContactStarted,
+  DotShapes.ContactMoved,
+  DotShapes.ContactEnded,
+  DotShapes.ContactCancelled,
+  DotShapes.KeyboardPressed,
+  DotShapes.Undo,
+  DotShapes.Clear,
+  DotShapes.SoundPlayed,
   Handwriting.SetMode,
   Handwriting.SetCase,
   Handwriting.SetStyle,
@@ -462,6 +488,8 @@ export const Message = S.Union([
   MusicBox.TransposeDown,
   MusicBox.CycleRepeatMode,
   MusicBox.SetDrumVolume,
+  MusicBox.SetAccompanimentStyle,
+  MusicBox.SetAccompanimentVolume,
   MusicBox.DrumPadHit,
   MusicBox.ToggleSongVisibility,
   MusicBox.SongDragStarted,
@@ -502,6 +530,8 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
     cmds.push(speak(tf('whereIs', language, FindIt.emojiName(findItInit.target, language)), FindIt.SoundPlayed(), { rate: speechRate, pitch: speechPitch, lang: language }))
   }
   const musicBoxInit = MusicBox.init()
+  const musicBoxSongOrder = normalizeSongOrder(saved.musicBoxSongOrder, musicBoxInit.songOrder)
+  const musicBoxHiddenSongs = normalizeHiddenSongs(saved.musicBoxHiddenSongs)
   return [
     {
       page: PageLanding(),
@@ -513,9 +543,12 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
       speechPitch,
       musicBox: {
         ...musicBoxInit,
-        songOrder: normalizeSongOrder(saved.musicBoxSongOrder, musicBoxInit.songOrder),
-        hiddenSongs: normalizeHiddenSongs(saved.musicBoxHiddenSongs),
+        songOrder: musicBoxSongOrder,
+        hiddenSongs: musicBoxHiddenSongs,
+        selectedSong: visibleSongSelection(musicBoxSongOrder, musicBoxHiddenSongs),
         drumVolume: normalizeDrumVolume(saved.musicBoxDrumVolume, musicBoxInit.drumVolume),
+        accompanimentStyle: saved.musicBoxAccompanimentStyle ?? musicBoxInit.accompanimentStyle,
+        accompanimentVolume: normalizeAccompanimentVolume(saved.musicBoxAccompanimentVolume, musicBoxInit.accompanimentVolume),
       },
       counter: {
         ...Counter.init,
@@ -529,6 +562,7 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
       },
       bubbles3d: Bubbles3d.init(),
       handwriting: Handwriting.init(),
+      dotShapes: DotShapes.init(),
       draw: Draw.normalizeTargetForPool({
         ...Draw.init(),
         topN: Draw.normalizeTopN(saved.drawTopN),
@@ -596,7 +630,8 @@ const updateMusicBox = (
   message: MusicBox.Message,
 ): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
   const [next, cmds] = MusicBox.update(model.musicBox, message)
-  return [{ ...model, musicBox: next }, cmds]
+  const selectedSong = next.isPlaying ? next.selectedSong : visibleSongSelection(next.songOrder, next.hiddenSongs, next.selectedSong)
+  return [{ ...model, musicBox: { ...next, selectedSong } }, cmds]
 }
 
 const updateBubbles3d = (
@@ -614,6 +649,17 @@ const updateHandwriting = (
   if (model.page._tag !== 'PageHandwriting' && (message._tag.startsWith('HandwritingPen') || message._tag.startsWith('HandwritingKeyboard'))) return [model, []]
   const [next, commands] = Handwriting.update(model.handwriting, message, model.muted)
   return [{ ...model, handwriting: next }, commands]
+}
+
+const updateDotShapes = (
+  model: Model,
+  message: DotShapes.Message,
+): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
+  if (model.page._tag !== 'PageDotShapes') return [model, []]
+  const [next, commands] = DotShapes.update(model.dotShapes, message, model.language, model.muted, {
+    rate: model.speechRate, pitch: model.speechPitch, lang: model.language,
+  })
+  return [{ ...model, dotShapes: next }, commands]
 }
 
 const updateBubbles = (
@@ -735,6 +781,9 @@ const cycleDarkMode = (current: DarkMode): DarkMode => {
 }
 
 const applyImportData = (model: Model, s: PersistedSettings): Model => {
+  const songOrder = normalizeSongOrder(s.musicBoxSongOrder, model.musicBox.songOrder)
+  const hiddenSongs = normalizeHiddenSongs(s.musicBoxHiddenSongs ?? model.musicBox.hiddenSongs)
+  const selectedSong = model.musicBox.isPlaying ? model.musicBox.selectedSong : visibleSongSelection(songOrder, hiddenSongs, model.musicBox.selectedSong)
   const findItAnyWins = s.findItAnyWins ?? model.findIt.anyWins
   const findItVoiceMode = s.findItVoiceMode ?? model.findIt.voiceMode
   const findItPairsMode = s.findItPairsMode ?? model.findIt.pairsMode
@@ -802,9 +851,12 @@ const applyImportData = (model: Model, s: PersistedSettings): Model => {
       : TalkingKeyboard.init(s.talkingKeyboardEnabledPacks),
     musicBox: {
       ...model.musicBox,
-      songOrder: normalizeSongOrder(s.musicBoxSongOrder, model.musicBox.songOrder),
-      hiddenSongs: normalizeHiddenSongs(s.musicBoxHiddenSongs),
+      songOrder,
+      hiddenSongs,
+      selectedSong,
       drumVolume: normalizeDrumVolume(s.musicBoxDrumVolume, model.musicBox.drumVolume),
+      accompanimentStyle: s.musicBoxAccompanimentStyle ?? model.musicBox.accompanimentStyle,
+      accompanimentVolume: normalizeAccompanimentVolume(s.musicBoxAccompanimentVolume, model.musicBox.accompanimentVolume),
       dragIndex: -1,
     },
     landingOrder: isLandingOrder(s.landingOrder)
@@ -872,7 +924,10 @@ const _update = (
       readonly [Model, ReadonlyArray<Command.Command<Message>>]
     >(),
     M.tagsExhaustive({
-      ClickedLanding: () => [{ ...model, page: PageLanding() }, []],
+      ClickedLanding: () => {
+        const [next, commands] = model.page._tag === 'PageMusicBox' ? updateMusicBox(model, MusicBox.Stop()) : [model, []] as const
+        return [{ ...next, page: PageLanding() }, commands]
+      },
       ClickedDarkMode: () => [
         { ...model, darkMode: cycleDarkMode(model.darkMode) },
         [],
@@ -888,6 +943,15 @@ const _update = (
       ClickedBubbles: () => [{ ...model, page: PageBubbles() }, []],
       ClickedBubbles3d: () => [{ ...model, page: PageBubbles3d() }, []],
       ClickedHandwriting: () => [{ ...model, page: PageHandwriting() }, []],
+      ClickedDotShapes: () => [{ ...model, page: PageDotShapes() }, []],
+      DotShapesContactStarted: (msg) => updateDotShapes(model, msg),
+      DotShapesContactMoved: (msg) => updateDotShapes(model, msg),
+      DotShapesContactEnded: (msg) => updateDotShapes(model, msg),
+      DotShapesContactCancelled: (msg) => updateDotShapes(model, msg),
+      DotShapesKeyboardPressed: (msg) => updateDotShapes(model, msg),
+      DotShapesUndo: (msg) => updateDotShapes(model, msg),
+      DotShapesClear: (msg) => updateDotShapes(model, msg),
+      DotShapesSoundPlayed: (msg) => updateDotShapes(model, msg),
       HandwritingSetMode: (msg) => updateHandwriting(model, msg),
       HandwritingSetCase: (msg) => updateHandwriting(model, msg),
       HandwritingSetStyle: (msg) => updateHandwriting(model, msg),
@@ -1110,6 +1174,8 @@ const _update = (
       MusicBoxTransposeDown: (msg) => updateMusicBox(model, msg),
       MusicBoxCycleRepeatMode: (msg) => updateMusicBox(model, msg),
       MusicBoxSetDrumVolume: (msg) => updateMusicBox(model, msg),
+      MusicBoxSetAccompanimentStyle: (msg) => updateMusicBox(model, msg),
+      MusicBoxSetAccompanimentVolume: (msg) => updateMusicBox(model, msg),
       MusicBoxDrumPadHit: (msg) => updateMusicBox(model, msg),
       MusicBoxToggleSongVisibility: (msg) => updateMusicBox(model, msg),
       MusicBoxSongDragStarted: (msg) => updateMusicBox(model, msg),
@@ -1170,7 +1236,7 @@ export const PERSISTED_SETTINGS_MESSAGE_TAGS = [
   'MemorySetEmojiPackEnabled', 'RpsSetGigaChad',
   'MagneticBlocksSetBreakSpeed',
   'TalkingKeyboardSetWordPackEnabled',
-  'MusicBoxSetDrumVolume', 'MusicBoxToggleSongVisibility', 'MusicBoxSongDroppedOn',
+  'MusicBoxSetDrumVolume', 'MusicBoxSetAccompanimentStyle', 'MusicBoxSetAccompanimentVolume', 'MusicBoxToggleSongVisibility', 'MusicBoxSongDroppedOn',
   'LandingSettingsDroppedOn', 'LandingToggleGameVisibility',
 ] as const satisfies ReadonlyArray<Message['_tag']>
 
@@ -1197,10 +1263,13 @@ export const update = (
   const interruptedWriting = model.page._tag === 'PageHandwriting' && pausedClear.page._tag !== 'PageHandwriting'
     ? { ...pausedClear, handwriting: Handwriting.interrupt(pausedClear.handwriting) }
     : pausedClear
+  const interruptedDots = model.page._tag === 'PageDotShapes' && interruptedWriting.page._tag !== 'PageDotShapes'
+    ? { ...interruptedWriting, dotShapes: DotShapes.interrupt(interruptedWriting.dotShapes) }
+    : interruptedWriting
   const result = [
-    model.page._tag === 'PageCounter' && interruptedWriting.page._tag !== 'PageCounter'
-      ? { ...interruptedWriting, counter: { ...interruptedWriting.counter, presses: [], holding: false, pressedButton: null, pointerDownTime: 0 } }
-      : interruptedWriting,
+    model.page._tag === 'PageCounter' && interruptedDots.page._tag !== 'PageCounter'
+      ? { ...interruptedDots, counter: { ...interruptedDots.counter, presses: [], holding: false, pressedButton: null, pointerDownTime: 0 } }
+      : interruptedDots,
     commands,
   ] as const
   if (shouldPersistSettings(message)) {
@@ -1221,6 +1290,7 @@ const pageTitle = (model: Model): string =>
       PageBubbles: () => t('pageTitleBubbles', model.language),
       PageBubbles3d: () => t('pageTitleBubbles3d', model.language),
       PageHandwriting: () => t('pageTitleHandwriting', model.language),
+      PageDotShapes: () => t('pageTitleDotShapes', model.language),
       PageDraw: () => t('pageTitleDraw', model.language),
       PageMusicBox: () => t('pageTitleMusicBox', model.language),
       PageMemory: () => t('pageTitleMemoryCards', model.language),
@@ -1677,9 +1747,10 @@ export const view = (model: Model): Document => {
             ? h.div([h.Class('setting-section')], [
               h.h3([], [t('musicBoxTitle', model.language)]),
               h.div([h.Class('setting-row')], [
-                h.label([], [t('musicBoxDrumVolume', model.language)]),
+                h.label([h.For('musicbox-drum-volume')], [t('musicBoxDrumVolume', model.language)]),
                 h.div([h.Class('slider-row')], [
                   h.input([
+                    h.Id('musicbox-drum-volume'),
                     h.Type('range'),
                     h.Min('0'),
                     h.Max('1'),
@@ -1688,6 +1759,18 @@ export const view = (model: Model): Document => {
                     settingsOnInput((v) => MusicBox.SetDrumVolume({ value: parseFloat(v) })),
                   ]),
                   h.span([], [`${Math.round(model.musicBox.drumVolume * 100)}%`]),
+                ]),
+              ]),
+              h.div([h.Class('setting-row')], [
+                h.label([h.For('musicbox-accompaniment-volume')], [t('musicBoxAccompanimentVolume', model.language)]),
+                h.div([h.Class('slider-row')], [
+                  h.input([
+                    h.Id('musicbox-accompaniment-volume'),
+                    h.Type('range'), h.Min('0'), h.Max('1'), h.Step('0.05'),
+                    h.Value(model.musicBox.accompanimentVolume.toString()),
+                    settingsOnInput(value => MusicBox.SetAccompanimentVolume({ value: parseFloat(value) })),
+                  ]),
+                  h.span([], [new Intl.NumberFormat(model.language, { style: 'percent', maximumFractionDigits: 0 }).format(model.musicBox.accompanimentVolume)]),
                 ]),
               ]),
               h.div([
@@ -1822,6 +1905,7 @@ export const view = (model: Model): Document => {
               PageBubbles: () => Bubbles.view(model.bubbles, model.language),
               PageBubbles3d: () => Bubbles3d.view(model.bubbles3d, model.language),
               PageHandwriting: () => Handwriting.view(model.handwriting, model.language),
+              PageDotShapes: () => DotShapes.view(model.dotShapes, model.language),
               PageDraw: () => Draw.view(model.draw),
               PageMusicBox: () => MusicBox.view(model.musicBox, model.language),
               PageMemory: () => Memory.view(model.memory, model.language),

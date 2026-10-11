@@ -137,6 +137,13 @@ describe('styles.css invariants', () => {
     expect(particles).toContain('will-change: transform, opacity')
   })
 
+  it('keeps musicbox clear of navigation and gives phone song titles the full controls width', () => {
+    expect(cssRule('.musicbox-page')).toContain('padding-top: calc(6rem + env(safe-area-inset-top, 0px))')
+    expect(cssRule('.musicbox-controls > .musicbox-dropdown:first-child')).toContain('grid-column: 1 / -1')
+    expect(cssRule('.musicbox-controls > .musicbox-dropdown:first-child')).toContain('flex-basis: 100%')
+    expect(cssRule('.musicbox-controls > .playback-btns')).toContain('grid-column: 1 / -1')
+  })
+
   it('keeps musicbox drumpads in the same footprint as the piano keyboard', () => {
     const piano = cssRule('.piano-container')
     const drumPad = cssRule('.drum-pad-panel')
@@ -225,6 +232,27 @@ describe('styles.css invariants', () => {
     expect(strip).toContain('--growing-numbers-term-width: calc((100% - 3 * var(--growing-numbers-gap)) / 4)')
     expect(term).toContain('flex: 0 0 var(--growing-numbers-term-width, auto)')
     expect(term).toContain('content-visibility: auto')
+  })
+
+  it('keeps dot drawing touch input scoped, points round, and controls reachable', () => {
+    const board = cssRule('.dot-shapes-board')
+    const point = cssRule('.dot-shapes-point')
+    const lines = cssRule('.dot-shapes-lines')
+    const actions = cssRule('.dot-shapes-actions button')
+    const page = cssRule('.dot-shapes-page')
+
+    expect(board).toContain('touch-action: none')
+    expect(board).toContain('min-width: 0')
+    expect(point).toContain('width: 44px')
+    expect(point).toContain('height: 44px')
+    expect(point).toContain('border-radius: 50%')
+    expect(lines).toContain('pointer-events: none')
+    expect(actions).toContain('touch-action: manipulation')
+    expect(actions).toContain('min-height: 44px')
+    expect(page).toContain('safe-area-inset-top')
+    expect(page).toContain('safe-area-inset-bottom')
+    expect(styles).toContain('.dot-shapes-point:focus-visible')
+    expect(cssRule('.dot-shapes-card')).toContain('background: var(--card-bg)')
   })
 
   it('keeps handwriting tracing scoped to the board with reachable native controls', () => {

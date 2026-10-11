@@ -12,6 +12,7 @@ const baseModel = {
   selectedSong: 0, selectedInstrument: 0, isPlaying: false, isPaused: false,
   songTranspose: 0, whiteKeys: 8, bottomPanelMode: 'simple',
   octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1,
+  drumVolume: 1, accompanimentStyle: 'chords', accompanimentVolume: 0.45,
   lyricsExpanded: false, songOrder: defaultSongOrder(),
   hiddenSongs: defaultHiddenSongs(), dragIndex: -1,
 }

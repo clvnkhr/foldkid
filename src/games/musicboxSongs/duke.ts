@@ -2,6 +2,7 @@ import { withDrums } from './helpers'
 
 export const song = withDrums({
   key: 'duke',
+  tonality: { tonic: 'Eb', mode: 'major' },
   emoji: '🎖️',
   lyrics: [
     'Oh, the grand old Duke of York,',

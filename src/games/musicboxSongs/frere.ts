@@ -2,6 +2,7 @@ import { repeat, withDrums } from './helpers'
 
 export const song = withDrums({
   key: 'frere',
+  tonality: { tonic: 'C', mode: 'major' },
   emoji: '🔔',
   lyrics: [
     'Frere Jacques, Frere Jacques,',

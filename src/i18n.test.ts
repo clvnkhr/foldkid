@@ -60,6 +60,71 @@ describe('i18n completeness', () => {
     expect(i18n.tf('whereIs', 'xx', '⭐')).toBe(i18n.translations.en.whereIs('⭐'))
   })
 
+  it('formats musical keys in each language and names the audible instruments', () => {
+    const majorKeys = {
+      en: 'Key: E♭ major', zh: '调性：E♭ 大调', fr: 'Tonalité : E♭ majeur',
+      de: 'Tonart: E♭-Dur', fa: 'گام: E♭ ماژور', ms: 'Nada: E♭ major',
+      'zh-HK': '調性：E♭ 大調', ja: 'キー：E♭ メジャー',
+    }
+    for (const language of langKeys) {
+      expect(i18n.tf('musicBoxMajorKey', language, 'E♭')).toBe(majorKeys[language])
+      expect(i18n.tf('musicBoxMinorKey', language, 'A')).toContain('A')
+      expect(i18n.tf('musicBoxMinorKey', language, 'A')).not.toBe(i18n.tf('musicBoxMajorKey', language, 'A'))
+      expect(i18n.t('musicBoxBell', language)).not.toBe('')
+      expect(i18n.t('musicBoxSawtooth', language)).not.toBe('')
+    }
+    expect(i18n.t('musicBoxBell')).toBe('Bell')
+    expect(i18n.t('musicBoxSawtooth')).toBe('Synth')
+  })
+
+  it('names all ten additional nursery rhymes in every language', () => {
+    const titles = [
+      ['musicBoxBaaBaa', 'Baa Baa Black Sheep'], ['musicBoxHickory', 'Hickory Dickory Dock'],
+      ['musicBoxHotCross', 'Hot Cross Buns'], ['musicBoxBlindMice', 'Three Blind Mice'],
+      ['musicBoxPolly', 'Polly Put the Kettle On'], ['musicBoxHumpty', 'Humpty Dumpty'],
+      ['musicBoxJackJill', 'Jack and Jill'], ['musicBoxHeyDiddle', 'Hey Diddle Diddle'],
+      ['musicBoxThisOldMan', 'This Old Man'], ['musicBoxBoPeep', 'Little Bo Peep'],
+    ] as const
+    for (const [key, title] of titles) expect(i18n.t(key, 'en')).toBe(title)
+    for (const language of langKeys) {
+      const labels = titles.map(([key]) => i18n.t(key, language))
+      expect(labels.every(label => label.trim().length > 0)).toBe(true)
+      expect(new Set(labels).size).toBe(titles.length)
+    }
+  })
+
+  it('names accompaniment styles and volume in every language', () => {
+    const keys = ['musicBoxAccompaniment', 'musicBoxAccompanimentOff', 'musicBoxAccompanimentChords', 'musicBoxAccompanimentArpeggio', 'musicBoxAccompanimentVolume'] as const
+    for (const language of langKeys) {
+      for (const key of keys) expect(i18n.t(key, language).trim().length, `${language}.${key}`).toBeGreaterThan(0)
+      expect(new Set(keys.slice(1, 4).map(key => i18n.t(key, language))).size).toBe(3)
+    }
+    expect(keys.map(key => i18n.t(key, 'en'))).toEqual(['Accompaniment', 'Off', 'Chords', 'Arpeggio', 'Accompaniment volume'])
+  })
+
+  it('localizes dot shapes and formats dot counts using each locale grammar', () => {
+    const statuses = {
+      en: 'Triangle · 3 dots', zh: '三角形 · 3个点', fr: 'Triangle · 3 points',
+      de: 'Dreieck · 3 Punkte', fa: 'مثلث · ۳ نقطه', ms: 'Segi tiga · 3 titik',
+      'zh-HK': '三角形 · 3個點', ja: '三角形 · てん3こ',
+    }
+    const keys = [
+      'dotShapesTitle', 'pageTitleDotShapes', 'dotShapesBoard', 'dotShapesKeyboard',
+      'dotShapesEmpty', 'dotShapesUndo', 'dotShapesDot', 'dotShapesLine', 'dotShapesTriangle',
+      'dotShapesQuadrilateral', 'dotShapesPentagon', 'dotShapesHexagon', 'dotShapesHeptagon',
+      'dotShapesOctagon', 'dotShapesNonagon', 'dotShapesDecagon',
+    ] as const
+    for (const language of langKeys) {
+      for (const key of keys) expect(i18n.t(key, language), `${language}.${key}`).not.toBe('')
+      const number = new Intl.NumberFormat(language).format(3)
+      expect(i18n.tf('dotShapesStatus', language, i18n.t('dotShapesTriangle', language), number)).toBe(statuses[language])
+      expect(i18n.tf('dotShapesPolygon', language, new Intl.NumberFormat(language).format(32))).not.toBe('')
+      expect(i18n.tf('dotShapesDotLabel', language, number)).toContain(number)
+    }
+    expect(i18n.tf('dotShapesStatus', 'en', 'Dot', '1')).toBe('Dot · 1 dot')
+    expect(i18n.tf('dotShapesStatus', 'fr', 'Point', '1')).toBe('Point · 1 point')
+  })
+
   it('localizes 3D bubble statuses and formats scores with the supplied locale number', () => {
     const poppedLabels = {
       en: 'Popped: ', zh: '已戳破: ', fr: 'Éclatées : ', de: 'Geplatzt: ', fa: 'ترکیده: ', ms: 'Dipecahkan: ', 'zh-HK': '已戳破: ', ja: 'わったかず: ',

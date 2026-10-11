@@ -1,13 +1,26 @@
-import { describe, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { Scene } from 'foldkit/test'
-import { LANDING_GAME_COUNT, view } from './landing'
+import { LANDING_GAME_COUNT, LANDING_GAMES, view } from './landing'
 import * as Main from '../main'
+import * as DotShapes from '../games/dotShapes'
 import { LandingDragEnded } from '../message'
 
 describe('Landing', () => {
   const defaultOrder = Array.from({ length: LANDING_GAME_COUNT }, (_, i) => i)
   const visibleGames = Array.from({ length: LANDING_GAME_COUNT }, () => false)
   const acknowledgePointerReorder = Scene.Mount.resolve({ name: 'landingGamePointerReorder' }, LandingDragEnded())
+
+  it('appends Dot Shapes while retaining every existing catalogue index', () => {
+    expect(LANDING_GAMES.map(game => game.title)).toEqual([
+      'counterTitle', 'findItTitle', 'bubblesTitle', 'drawTitle', 'musicBoxTitle',
+      'memoryCardsTitle', 'phonemeGardenTitle', 'calculatorTitle', 'whackTitle',
+      'patternTitle', 'bslTitle', 'rpsTitle', 'magneticBlocksTitle', 'talkingKeyboardTitle',
+      'talkingClockTitle', 'growingNumbersTitle', 'shapeWorkshopTitle', 'bubbles3dTitle',
+      'handwritingTitle', 'dotShapesTitle',
+    ])
+    expect(LANDING_GAMES.at(-1)?.msg()).toEqual({ _tag: 'ClickedDotShapes' })
+    expect(LANDING_GAMES.at(-1)?.emoji).toBe('🔺')
+  })
 
   it('renders title and subtitle', () => {
     Scene.scene(
@@ -34,6 +47,7 @@ describe('Landing', () => {
       Scene.expect(Scene.text('Shape Workshop')).toExist(),
       Scene.expect(Scene.text('3D Bubbles')).toExist(),
       Scene.expect(Scene.text('Handwriting')).toExist(),
+      Scene.expect(Scene.text('Dot Shapes')).toExist(),
       acknowledgePointerReorder,
       Scene.Command.expectNone(),
     )
@@ -46,6 +60,20 @@ describe('Landing', () => {
       Scene.expect(Scene.selector('.game-card')).not.toHaveAttr('draggable', 'true'),
       Scene.expect(Scene.selector('.game-card-drag-handle')).toHaveAttr('draggable', 'true'),
       acknowledgePointerReorder,
+      Scene.Command.expectNone(),
+    )
+  })
+
+  it('opens Dot Shapes from its landing card', () => {
+    Scene.scene(
+      { update: Main.update, view: model => model.page._tag === 'PageDotShapes'
+        ? DotShapes.view(model.dotShapes, model.language) : view(defaultOrder, visibleGames, 'en', -1) },
+      Scene.with(Main.init()[0]),
+      acknowledgePointerReorder,
+      Scene.click(Scene.text('Dot Shapes')),
+      Scene.Mount.expectEnded({ name: 'landingGamePointerReorder' }),
+      Scene.expect(Scene.selector('.dot-shapes-board')).toExist(),
+      Scene.Mount.resolve({ name: 'dotShapesInput' }, DotShapes.SoundPlayed()),
       Scene.Command.expectNone(),
     )
   })

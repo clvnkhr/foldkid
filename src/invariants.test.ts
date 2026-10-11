@@ -3,12 +3,14 @@ import { afterEach, describe, expect, it } from 'vitest'
 import * as Bubbles from './games/bubbles'
 import * as Bubbles3d from './games/bubbles3d'
 import * as Handwriting from './games/handwriting'
+import * as DotShapes from './games/dotShapes'
 import { HANDWRITING_LETTERS, HANDWRITING_NUMBERS, HANDWRITING_WORDS } from './games/handwritingPaths'
 import { BUBBLE3D_SHAPES } from './games/bubbles3dShapes'
 import * as Counter from './games/counter'
 import * as FindIt from './games/findit'
 import * as Memory from './games/memory'
 import * as MusicBox from './games/musicbox'
+import { accompanimentChords, scalePitchClasses } from './games/musicboxTheory'
 import * as Main from './main'
 import * as GrowingNumbers from './games/growingNumbers'
 import * as ShapeWorkshop from './games/shapeWorkshop'
@@ -46,8 +48,12 @@ describe('codebase invariants', () => {
     expect(new Set(songKeys).size).toBe(songKeys.length)
     expect(init.songOrder).toEqual(MusicBox.SONGS.map((_, index) => index))
     expect(init.hiddenSongs).toHaveLength(MusicBox.SONGS.length)
+    expect(init.hiddenSongs.some(hidden => !hidden)).toBe(true)
 
     for (const song of MusicBox.SONGS) {
+      expect(['major', 'minor']).toContain(song.tonality.mode)
+      expect(scalePitchClasses(song.tonality)).toHaveLength(7)
+      expect(accompanimentChords(song.tonality), `${song.key} playable accompaniment chords`).toBeDefined()
       const titleKey = MusicBox.SONG_TKEYS[song.key]
       expect(titleKey, `${song.key} should have a title translation key`).toBeDefined()
       if (titleKey) expect(t(titleKey)).not.toBe('')
@@ -65,6 +71,28 @@ describe('codebase invariants', () => {
         expect(drum.at, `${song.key} drum at`).toBeLessThan(duration)
         if (drum.gain !== undefined) expect(drum.gain, `${song.key} drum gain`).toBeGreaterThan(0)
       }
+    }
+  })
+
+  it('Music Box catalogue additions preserve all historical preference indices', () => {
+    expect(MusicBox.SONGS.slice(0, 11).map(song => song.key)).toEqual([
+      'twinkle', 'mary', 'london', 'row', 'oldMac', 'incy', 'fish', 'duke', 'frere', 'happy', 'birthday',
+    ])
+    expect(MusicBox.SONGS.slice(11).map(song => song.key)).toEqual([
+      'baaBaa', 'hickory', 'hotCross', 'blindMice', 'polly', 'humpty', 'jackJill', 'heyDiddle', 'thisOldMan', 'boPeep',
+    ])
+  })
+
+  it('Music Box accompaniment preferences are explicit in child and root schemas', () => {
+    const initial = MusicBox.init()
+    const [root] = Main.init()
+    expect(initial.accompanimentStyle).toBe('chords')
+    expect(initial.accompanimentVolume).toBe(0.45)
+    expect(root.musicBox.accompanimentStyle).toBe('chords')
+    expect(root.musicBox.accompanimentVolume).toBe(0.45)
+    for (const invalid of [{ ...initial, accompanimentStyle: 'strum' }, { ...initial, accompanimentVolume: '45%' }]) {
+      expect(Option.isNone(S.decodeUnknownOption(MusicBox.Model)(invalid))).toBe(true)
+      expect(Option.isNone(S.decodeUnknownOption(Main.Model)({ ...root, musicBox: invalid }))).toBe(true)
     }
   })
 
@@ -93,6 +121,18 @@ describe('codebase invariants', () => {
     const [model] = Main.init()
     expect(model.landingOrder).toHaveLength(LANDING_GAME_COUNT)
     expect(model.landingOrder).toEqual(Array.from({ length: LANDING_GAME_COUNT }, (_, index) => index))
+    expect(model.landingHiddenGames).toHaveLength(LANDING_GAME_COUNT)
+    expect(model.landingHiddenGames.some(hidden => !hidden)).toBe(true)
+  })
+
+  it('Dot Shapes child state is explicit and rejects malformed nested models', () => {
+    const initial = DotShapes.init()
+    const [root] = Main.init()
+    expect(root.dotShapes).toEqual(initial)
+    for (const invalid of [{ ...initial, revision: '0' }, { ...initial, contacts: 'finger' }]) {
+      expect(Option.isNone(S.decodeUnknownOption(DotShapes.Model)(invalid))).toBe(true)
+      expect(Option.isNone(S.decodeUnknownOption(Main.Model)({ ...root, dotShapes: invalid }))).toBe(true)
+    }
   })
 
   it('all translation dictionaries remain key-compatible with English', () => {
@@ -145,6 +185,7 @@ describe('codebase invariants', () => {
       ['Bubbles', Bubbles.Model, Bubbles.init()],
       ['3D Bubbles', Bubbles3d.Model, Bubbles3d.init()],
       ['Handwriting', Handwriting.Model, Handwriting.init()],
+      ['Dot Shapes', DotShapes.Model, DotShapes.init()],
       ['Memory', Memory.Model, Memory.init()],
       ['MusicBox', MusicBox.Model, MusicBox.init()],
       ['GrowingNumbers', GrowingNumbers.Model, GrowingNumbers.init],
@@ -172,6 +213,13 @@ describe('codebase invariants', () => {
       ['Handwriting point', Main.Message, { _tag: 'HandwritingPenMoved', id: 0, points: [{ x: 10, y: '25' }], revision: 0 }],
       ['Handwriting release', Main.Message, { _tag: 'HandwritingPenEnded', id: 0, revision: '0' }],
       ['Handwriting keyboard', Main.Message, { _tag: 'HandwritingKeyboardPressed', key: 42, revision: 0 }],
+      ['Dot Shapes start', Main.Message, { _tag: 'DotShapesContactStarted', id: 0, x: '10', y: 25, dotId: null, revision: 0 }],
+      ['Dot Shapes moved', Main.Message, { _tag: 'DotShapesContactMoved', id: 0, x: 10, y: '25', revision: 0 }],
+      ['Dot Shapes end', Main.Message, { _tag: 'DotShapesContactEnded', id: 0, x: 10, y: 25, moved: 'yes', revision: 0 }],
+      ['Dot Shapes cancel', Main.Message, { _tag: 'DotShapesContactCancelled', id: 0, revision: '0' }],
+      ['Dot Shapes keyboard', Main.Message, { _tag: 'DotShapesKeyboardPressed', key: 'Enter', dotId: null, shift: 'yes', revision: 0 }],
+      ['Music Box accompaniment style', Main.Message, { _tag: 'MusicBoxSetAccompanimentStyle', value: 'strum' }],
+      ['Music Box accompaniment volume', Main.Message, { _tag: 'MusicBoxSetAccompanimentVolume', value: '45%' }],
       ['3D Bubbles clear ID', Main.Message, { _tag: 'Bubbles3dClearBubble', id: '0', revision: 0, token: 1 }],
       ['3D Bubbles clear revision', Main.Message, { _tag: 'Bubbles3dClearBubble', id: 0, revision: '0', token: 1 }],
       ['3D Bubbles clear token', Main.Message, { _tag: 'Bubbles3dClearBubble', id: 0, revision: 0, token: '1' }],

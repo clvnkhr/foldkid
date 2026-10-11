@@ -2,6 +2,7 @@ import { repeat, withDrums } from './helpers'
 
 export const song = withDrums({
   key: 'twinkle',
+  tonality: { tonic: 'C', mode: 'major' },
   emoji: '⭐',
   lyrics: [
     'Twinkle, twinkle, little star,',

@@ -2,8 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Scene, Story } from 'foldkit/test'
 import { Effect, Fiber } from 'effect'
 import { resetContext } from '../audio'
+import { t, tf } from '../i18n'
 import * as MusicBox from './musicbox'
 import { withDrums } from './musicboxSongs/helpers'
+import { tonicLabel } from './musicboxTheory'
 
 const resolvePianoTop = [{ name: 'piano-top' as const }, MusicBox.NoteOn({ pitch: 'C4' })] as const
 const resolvePianoBot = [{ name: 'piano-bot' as const }, MusicBox.NoteOn({ pitch: 'C3' })] as const
@@ -167,7 +169,7 @@ describe('MusicBox', () => {
   it('init state', () => {
     expect(MusicBox.init()).toStrictEqual({
       selectedSong: 0, selectedInstrument: 0, isPlaying: false, isPaused: false, songTranspose: 0,
-      whiteKeys: 8, bottomPanelMode: 'simple', octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, drumVolume: 1, repeatMode: 'off', lyricsExpanded: false,
+      whiteKeys: 8, bottomPanelMode: 'simple', octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, drumVolume: 1, accompanimentStyle: 'chords', accompanimentVolume: 0.45, repeatMode: 'off', lyricsExpanded: false,
       songOrder: defaultSongOrder(), hiddenSongs: defaultHiddenSongs(), dragIndex: -1,
     })
   })
@@ -316,6 +318,39 @@ describe('MusicBox', () => {
     await Effect.runPromise(Fiber.interrupt(newFiber))
 
     expect(startedFrequencies.filter(frequency => frequency === c4).length).toBe(c4CountAfterStart)
+  })
+
+  it('follows rendered accompaniment controls during playback and preserves held keyboard notes', async () => {
+    globalThis.AudioContext = MockAudioContext as unknown as typeof AudioContext
+    const controls = document.createElement('div')
+    controls.className = 'musicbox-card'
+    controls.dataset.accompanimentStyle = 'off'
+    controls.dataset.accompanimentVolume = '0.45'
+    document.body.append(controls)
+    const [playing, commands] = MusicBox.update(MusicBox.init(), MusicBox.Play())
+    const fiber = Effect.runFork(commands[0]!.effect)
+    try {
+      await new Promise(resolve => setTimeout(resolve, 0))
+      expect(startedFrequencies).not.toContain(MusicBox.FREQUENCIES.C2)
+      MusicBox.update(playing, MusicBox.NoteOn({ pitch: 'E6' }))
+      controls.dataset.accompanimentStyle = 'arpeggio'
+      await new Promise(resolve => setTimeout(resolve, 40))
+      expect(startedFrequencies).toContain(MusicBox.FREQUENCIES.C2)
+
+      controls.dataset.accompanimentVolume = '0'
+      await new Promise(resolve => setTimeout(resolve, 40))
+      expect(cancelAndHoldTimes.length).toBeGreaterThan(0)
+      controls.dataset.accompanimentStyle = 'off'
+      await new Promise(resolve => setTimeout(resolve, 40))
+      const releasedBeforeManualUp = cancelAndHoldTimes.length
+      MusicBox.update(playing, MusicBox.NoteOff({ pitch: 'E6' }))
+      expect(cancelAndHoldTimes).toHaveLength(releasedBeforeManualUp + 1)
+      expect(MusicBox.update(playing, MusicBox.Play())).toEqual([playing, []])
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(fiber))
+      controls.remove()
+      MusicBox.update(playing, MusicBox.Stop())
+    }
   })
 
   it('primes Safari audio once from the first trusted gesture', () => {
@@ -971,6 +1006,65 @@ describe('MusicBox', () => {
       )
     })
 
+    it('selects accompaniment styles without starting or restarting playback', () => {
+      Story.story(
+        MusicBox.update,
+        Story.with(MusicBox.init()),
+        Story.model(model => {
+          expect(model.accompanimentStyle).toBe('chords')
+          expect(model.accompanimentVolume).toBe(0.45)
+        }),
+        Story.message(MusicBox.SetAccompanimentStyle({ value: 'arpeggio' })),
+        Story.model(model => expect(model.accompanimentStyle).toBe('arpeggio')),
+        Story.message(MusicBox.SetAccompanimentStyle({ value: 'off' })),
+        Story.model(model => {
+          expect(model.accompanimentStyle).toBe('off')
+          expect(model.isPlaying).toBe(false)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('changes accompaniment during paused playback while keeping its position', () => {
+      Story.story(
+        MusicBox.update,
+        Story.with({ ...MusicBox.init(), isPlaying: true, isPaused: true }),
+        Story.message(MusicBox.SetAccompanimentStyle({ value: 'arpeggio' })),
+        Story.message(MusicBox.SetAccompanimentVolume({ value: 0.256 })),
+        Story.model(model => {
+          expect(model.accompanimentStyle).toBe('arpeggio')
+          expect(model.accompanimentVolume).toBe(0.26)
+          expect(model.isPlaying).toBe(true)
+          expect(model.isPaused).toBe(true)
+          expect(model.selectedSong).toBe(0)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
+    it('rejects unknown accompaniment styles and nonfinite volumes', () => {
+      const model = MusicBox.init()
+      expect(MusicBox.update(model, { _tag: 'MusicBoxSetAccompanimentStyle', value: 'invalid' } as unknown as MusicBox.Message)).toEqual([model, []])
+      for (const value of [NaN, Infinity, -Infinity]) expect(MusicBox.update(model, MusicBox.SetAccompanimentVolume({ value }))).toEqual([model, []])
+      expect(MusicBox.update(model, MusicBox.SetAccompanimentStyle({ value: 'chords' }))[0]).toBe(model)
+      expect(MusicBox.update(model, MusicBox.SetAccompanimentVolume({ value: 0.45 }))[0]).toBe(model)
+    })
+
+    it('clamps accompaniment volume without changing drum volume', () => {
+      Story.story(
+        MusicBox.update,
+        Story.with(MusicBox.init()),
+        Story.message(MusicBox.SetAccompanimentVolume({ value: -1 })),
+        Story.model(model => expect(model.accompanimentVolume).toBe(0)),
+        Story.message(MusicBox.SetAccompanimentVolume({ value: 2 })),
+        Story.model(model => {
+          expect(model.accompanimentVolume).toBe(1)
+          expect(model.drumVolume).toBe(1)
+        }),
+        Story.Command.expectNone(),
+      )
+    })
+
     it('SetBottomPanelMode selects lower panel content', () => {
       Story.story(
         MusicBox.update,
@@ -1144,12 +1238,42 @@ describe('MusicBox', () => {
   })
 
   describe('songs', () => {
+    const addedRhymes = [
+      ['baaBaa', 'musicBoxBaaBaa'], ['hickory', 'musicBoxHickory'],
+      ['hotCross', 'musicBoxHotCross'], ['blindMice', 'musicBoxBlindMice'],
+      ['polly', 'musicBoxPolly'], ['humpty', 'musicBoxHumpty'],
+      ['jackJill', 'musicBoxJackJill'], ['heyDiddle', 'musicBoxHeyDiddle'],
+      ['thisOldMan', 'musicBoxThisOldMan'], ['boPeep', 'musicBoxBoPeep'],
+    ] as const
+
+    it.each(addedRhymes)('selects the new %s rhyme and renders its title, lyrics and key', (id, titleKey) => {
+      const index = MusicBox.SONGS.findIndex(song => song.key === id)
+      const song = MusicBox.SONGS[index]!
+      expect(index).toBeGreaterThanOrEqual(11)
+      expect(MusicBox.SONG_TKEYS[id]).toBe(titleKey)
+      Story.story(MusicBox.update, Story.with(MusicBox.init()),
+        Story.message(MusicBox.SetSong({ value: index })),
+        Story.model(model => { expect(model.selectedSong).toBe(index); expect(model.isPlaying).toBe(false) }),
+        Story.Command.expectNone(),
+      )
+      Scene.scene(
+        { update: MusicBox.update, view: model => MusicBox.view(model, 'fr') },
+        Scene.with({ ...MusicBox.init(), selectedSong: index, lyricsExpanded: true }),
+        Scene.Mount.resolveAll(...resolveMount),
+        Scene.expect(Scene.role('option', { name: `${song.emoji} ${t(titleKey, 'fr')}` })).toExist(),
+        Scene.expect(Scene.selector('[data-lyric-index="0"]')).toHaveText(song.lyrics[0]!),
+        Scene.expect(Scene.role('status')).toHaveText(tf('musicBoxMajorKey', 'fr', tonicLabel(song.tonality))),
+        Scene.Command.expectNone(),
+      )
+    })
+
     for (const [i, song] of MusicBox.SONGS.entries()) {
       it(`song ${i} "${song.key}" notes all have valid pitches`, () => {
         expect(song.key).toBeTruthy()
         expect(song.emoji).toBeTruthy()
         expect(song.notes.length).toBeGreaterThan(0)
         for (const note of song.notes) {
+          expect(Number.isFinite(note.dur)).toBe(true)
           expect(note.dur).toBeGreaterThan(0)
           if (note.pitch) expect(MusicBox.FREQUENCIES[note.pitch]).toBeDefined()
         }
@@ -1197,6 +1321,16 @@ describe('MusicBox', () => {
       expect(timesFor('row', 'snare').slice(0, 4)).toEqual([1.5, 4.5, 7.5, 10.5])
       expect(timesFor('row', 'kick')).not.toContain(4)
 
+      for (const key of ['hickory', 'blindMice', 'humpty', 'jackJill', 'heyDiddle', 'boPeep']) {
+        expect(timesFor(key, 'kick').slice(0, 4)).toEqual([0, 3, 6, 9])
+        expect(timesFor(key, 'snare').slice(0, 4)).toEqual([1.5, 4.5, 7.5, 10.5])
+        expect(timesFor(key, 'kick')).not.toContain(4)
+      }
+      for (const key of ['baaBaa', 'polly']) {
+        expect(timesFor(key, 'kick').slice(0, 4)).toEqual([0, 2, 4, 6])
+        expect(timesFor(key, 'hatClosed').slice(0, 4)).toEqual([1, 3, 5, 7])
+      }
+
       expect(timesFor('birthday', 'kick').slice(0, 4)).toEqual([1, 4, 7, 10])
       expect(timesFor('birthday', 'snare').slice(0, 4)).toEqual([3, 6, 9, 12])
       expect(timesFor('birthday', 'kick')).not.toContain(0)
@@ -1219,6 +1353,7 @@ describe('MusicBox', () => {
     it('can offset generated drums and trims hits outside the song timeline', () => {
       const song = withDrums({
         key: 'offset-test',
+        tonality: { tonic: 'C', mode: 'major' },
         emoji: '🥁',
         lyrics: ['Offset test'],
         notes: [{ pitch: 'C4', dur: 4 }],
@@ -1233,6 +1368,7 @@ describe('MusicBox', () => {
     it('can derive drum offsets from pickup notes', () => {
       const song = withDrums({
         key: 'pickup-test',
+        tonality: { tonic: 'C', mode: 'major' },
         emoji: '🥁',
         lyrics: ['Pickup test'],
         notes: [
@@ -1254,6 +1390,7 @@ describe('MusicBox', () => {
     it('accepts drum options without passing a custom drum maker', () => {
       const song = withDrums({
         key: 'default-pickup-test',
+        tonality: { tonic: 'C', mode: 'major' },
         emoji: '🥁',
         lyrics: ['Default pickup test'],
         notes: [
@@ -1450,12 +1587,63 @@ describe('MusicBox', () => {
   })
 
   describe('view', () => {
+    it('keeps an ongoing hidden song displayed until playback finishes', () => {
+      const song = MusicBox.SONGS[0]!
+      Scene.scene(
+        { update: MusicBox.update, view: MusicBox.view },
+        Scene.with({ ...MusicBox.init(), selectedSong: 0, isPlaying: true, hiddenSongs: defaultHiddenSongs().map((_, index) => index === 0) }),
+        Scene.Mount.resolveAll(...resolveMount),
+        Scene.expect(Scene.role('option', { name: `${song.emoji} ${t('musicBoxTwinkle')}` })).toBeDisabled(),
+        Scene.expect(Scene.role('option', { name: `${song.emoji} ${t('musicBoxTwinkle')}` })).toHaveAttr('value', '0'),
+        Scene.Command.expectNone(),
+      )
+    })
+
+    it('shows the selected arrangement key', () => {
+      Scene.scene(
+        { update: MusicBox.update, view: MusicBox.view },
+        Scene.with({ ...MusicBox.init(), selectedSong: 10 }),
+        Scene.Mount.resolveAll(...resolveMount),
+        Scene.expect(Scene.role('status')).toHaveText('Key: F major'),
+        Scene.Command.expectNone(),
+      )
+    })
+
+    it('shows a transposed key with localized grammar', () => {
+      Scene.scene(
+        { update: MusicBox.update, view: model => MusicBox.view(model, 'fr') },
+        Scene.with({ ...MusicBox.init(), selectedSong: 10, songTranspose: 1 }),
+        Scene.Mount.resolveAll(...resolveMount),
+        Scene.expect(Scene.role('status')).toHaveText('Tonalité : G♭ majeur'),
+        Scene.Command.expectNone(),
+      )
+    })
+
     it('renders play button', () => {
       Scene.scene(
         { update: MusicBox.update, view: MusicBox.view },
         Scene.with(MusicBox.init()),
         Scene.Mount.resolveAll(...resolveMount),
         Scene.expect(Scene.selector('#musicbox-play svg')).toExist(),
+        Scene.Command.expectNone(),
+      )
+    })
+
+    it('renders a localized accompaniment picker and exposes current controls to playback', () => {
+      Scene.scene(
+        { update: MusicBox.update, view: model => MusicBox.view(model, 'fr') },
+        Scene.with(MusicBox.init()),
+        Scene.Mount.resolveAll(...resolveMount),
+        Scene.expect(Scene.label(t('musicBoxAccompaniment', 'fr'))).toHaveAttr('id', 'musicbox-accompaniment'),
+        Scene.expect(Scene.role('option', { name: t('musicBoxAccompanimentArpeggio', 'fr') })).toHaveAttr('value', 'arpeggio'),
+        Scene.expect(Scene.role('option', { name: t('musicBoxAccompanimentChords', 'fr') })).toHaveAttr('selected', 'true'),
+        Scene.expect(Scene.selector('.musicbox-card')).toHaveAttr('data-accompaniment-style', 'chords'),
+        Scene.expect(Scene.selector('.musicbox-card')).toHaveAttr('data-accompaniment-volume', '0.45'),
+        Scene.change(Scene.label(t('musicBoxAccompaniment', 'fr')), 'arpeggio'),
+        Scene.expect(Scene.selector('.musicbox-card')).toHaveAttr('data-accompaniment-style', 'arpeggio'),
+        Scene.expect(Scene.role('option', { name: t('musicBoxAccompanimentArpeggio', 'fr') })).toHaveAttr('selected', 'true'),
+        Scene.change(Scene.label(t('musicBoxAccompaniment', 'fr')), 'off'),
+        Scene.expect(Scene.selector('.musicbox-card')).toHaveAttr('data-accompaniment-style', 'off'),
         Scene.Command.expectNone(),
       )
     })
@@ -1485,7 +1673,7 @@ describe('MusicBox', () => {
     it('renders stop button when playing', () => {
       Scene.scene(
         { update: MusicBox.update, view: MusicBox.view },
-        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: true, whiteKeys: 12, bottomPanelMode: 'keyboard', tempo: 1, lyricsExpanded: false, songOrder: defaultSongOrder(), hiddenSongs: defaultHiddenSongs(), dragIndex: -1 }),
+        Scene.with({ ...MusicBox.init(), selectedSong: 0, selectedInstrument: 0, isPlaying: true, whiteKeys: 12, bottomPanelMode: 'keyboard', tempo: 1, lyricsExpanded: false, songOrder: defaultSongOrder(), hiddenSongs: defaultHiddenSongs(), dragIndex: -1 }),
         Scene.Mount.resolveAll(resolvePianoTop, resolvePianoBot),
         Scene.expect(Scene.selector('#musicbox-stop svg')).toExist(),
         Scene.Command.expectNone(),
@@ -1495,7 +1683,7 @@ describe('MusicBox', () => {
     it('play button disabled when playing', () => {
       Scene.scene(
         { update: MusicBox.update, view: MusicBox.view },
-        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: true, whiteKeys: 12, bottomPanelMode: 'keyboard', tempo: 1, lyricsExpanded: false, songOrder: defaultSongOrder(), hiddenSongs: defaultHiddenSongs(), dragIndex: -1 }),
+        Scene.with({ ...MusicBox.init(), selectedSong: 0, selectedInstrument: 0, isPlaying: true, whiteKeys: 12, bottomPanelMode: 'keyboard', tempo: 1, lyricsExpanded: false, songOrder: defaultSongOrder(), hiddenSongs: defaultHiddenSongs(), dragIndex: -1 }),
         Scene.Mount.resolveAll(resolvePianoTop, resolvePianoBot),
         Scene.expect(Scene.selector('#musicbox-play svg')).toExist(),
         Scene.Command.expectNone(),
@@ -1535,7 +1723,7 @@ describe('MusicBox', () => {
     it('- button exists at MIN_WHITE_KEYS', () => {
       Scene.scene(
         { update: MusicBox.update, view: MusicBox.view },
-        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MIN_WHITE_KEYS, bottomPanelMode: 'keyboard', tempo: 1, lyricsExpanded: false, songOrder: defaultSongOrder(), hiddenSongs: defaultHiddenSongs(), dragIndex: -1 }),
+        Scene.with({ ...MusicBox.init(), selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MIN_WHITE_KEYS, bottomPanelMode: 'keyboard', tempo: 1, lyricsExpanded: false, songOrder: defaultSongOrder(), hiddenSongs: defaultHiddenSongs(), dragIndex: -1 }),
         Scene.Mount.resolveAll(resolvePianoTop, resolvePianoBot),
         Scene.expect(Scene.text('−')).toExist(),
         Scene.Command.expectNone(),
@@ -1545,7 +1733,7 @@ describe('MusicBox', () => {
     it('+ button exists at MAX_WHITE_KEYS', () => {
       Scene.scene(
         { update: MusicBox.update, view: MusicBox.view },
-        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MAX_WHITE_KEYS, bottomPanelMode: 'keyboard', tempo: 1, lyricsExpanded: false, songOrder: defaultSongOrder(), hiddenSongs: defaultHiddenSongs(), dragIndex: -1 }),
+        Scene.with({ ...MusicBox.init(), selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: MusicBox.MAX_WHITE_KEYS, bottomPanelMode: 'keyboard', tempo: 1, lyricsExpanded: false, songOrder: defaultSongOrder(), hiddenSongs: defaultHiddenSongs(), dragIndex: -1 }),
         Scene.Mount.resolveAll(resolvePianoTop, resolvePianoBot),
         Scene.expect(Scene.text('+')).toExist(),
         Scene.Command.expectNone(),
@@ -1577,7 +1765,7 @@ describe('MusicBox', () => {
     it('does not render bottom keyboard in simple lower panel mode', () => {
       Scene.scene(
         { update: MusicBox.update, view: MusicBox.view },
-        Scene.with({ selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 12, bottomPanelMode: 'simple', octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, lyricsExpanded: false, songOrder: defaultSongOrder(), hiddenSongs: defaultHiddenSongs(), dragIndex: -1 }),
+        Scene.with({ ...MusicBox.init(), selectedSong: 0, selectedInstrument: 0, isPlaying: false, whiteKeys: 12, bottomPanelMode: 'simple', octaveOffset: 0, bottomShift: 0, topShift: 0, tempo: 1, lyricsExpanded: false, songOrder: defaultSongOrder(), hiddenSongs: defaultHiddenSongs(), dragIndex: -1 }),
         Scene.Mount.resolveAll(resolvePianoTop),
         Scene.expect(Scene.selector('[key="piano-bot"]')).not.toExist(),
         Scene.Command.expectNone(),
