@@ -1,7 +1,10 @@
 import { Effect, Fiber, Stream } from 'effect'
 import { describe, expect, it, vi } from 'vitest'
 import { Scene, Story } from 'foldkit/test'
+import * as Html from 'foldkit/html'
 import * as Bubbles from './bubbles'
+
+vi.mock('foldkit/html', { spy: true })
 
 const resolvePop = [{ name: 'PlayPop' }, Bubbles.SoundPlayed()] as const
 const resolveChime = [{ name: 'PlayChime' }, Bubbles.SoundPlayed()] as const
@@ -405,6 +408,129 @@ describe('Bubbles sweeping contacts', () => {
     try { await tick(); await run(bubbles, outside, messages, stop) }
     finally { await stop(); vi.restoreAllMocks(); root.remove(); outside.remove() }
   }
+
+  for (const input of ['pointer', 'touch'] as const) {
+    it(`pops and sweeps signed ${input} contact IDs after the starting bubble is detached`, async () => {
+      await fixture(async (bubbles, outside, messages) => {
+        const first = bubbles[0]!
+        const send = (target: EventTarget, phase: 'start' | 'move' | 'cancel', id: number, x = 20): void => {
+          if (input === 'touch') touch(target, `touch${phase}`, id, x)
+          else pointer(target, phase === 'start' ? 'pointerdown' : `pointer${phase}`, id, x)
+        }
+        send(first, 'start', -2147483648)
+        await tick()
+        expect(messages).toEqual([Bubbles.ClickedPop({ id: 1 })])
+        first.remove()
+        const continuationTarget = input === 'touch' ? first : document
+        send(continuationTarget, 'move', -2147483648, 80)
+        send(continuationTarget, 'cancel', -2147483648, 80)
+        send(continuationTarget, 'move', -2147483648, 120)
+        await tick()
+        expect(messages).toEqual([Bubbles.ClickedPop({ id: 1 }), Bubbles.ClickedPop({ id: 2 })])
+        send(outside, 'start', -7)
+        send(outside, 'move', -7, 120)
+        await tick()
+        expect(messages).toEqual([Bubbles.ClickedPop({ id: 1 }), Bubbles.ClickedPop({ id: 2 }), Bubbles.ClickedPop({ id: 3 })])
+      })
+    })
+  }
+
+  it('pairs signed mixed-stream contacts without duplicate pops or reviving cancelled fingers', async () => {
+    await fixture(async (bubbles, outside, messages) => {
+      const first = bubbles[0]!
+      pointer(first, 'pointerdown', -7, 20, 'touch', 0, 1, 100)
+      touch(first, 'touchstart', -11, 20, 105)
+      await tick()
+      expect(messages).toEqual([Bubbles.ClickedPop({ id: 1 })])
+      first.remove()
+      pointer(document, 'pointerup', -7)
+      touch(first, 'touchmove', -11, 80)
+      touch(first, 'touchcancel', -11, 80)
+      pointer(document, 'pointermove', -7, 120)
+      touch(first, 'touchmove', -11, 120)
+      touch(outside, 'touchstart', -12, 20, 200)
+      pointer(outside, 'pointerdown', -8, 20, 'touch', 0, 1, 205)
+      pointer(document, 'pointercancel', -8)
+      touch(outside, 'touchmove', -12, 120)
+      await tick()
+      expect(messages).toEqual([Bubbles.ClickedPop({ id: 1 }), Bubbles.ClickedPop({ id: 2 })])
+      pointer(outside, 'pointerdown', -8, 20, 'touch', 0, 1, 500)
+      pointer(document, 'pointermove', -8, 120)
+      await tick()
+      expect(messages).toEqual([Bubbles.ClickedPop({ id: 1 }), Bubbles.ClickedPop({ id: 2 }), Bubbles.ClickedPop({ id: 3 })])
+    })
+  })
+
+  it('rejects malformed contact numbers and semantic bubble IDs while accepting signed contacts', async () => {
+    await fixture(async (bubbles, _outside, messages) => {
+      const first = bubbles[0]!
+      for (const id of [Number.NaN, Number.POSITIVE_INFINITY, 0.5, Number.MAX_SAFE_INTEGER + 1]) {
+        pointer(first, 'pointerdown', id)
+        touch(first, 'touchstart', id)
+      }
+      for (const x of [Number.NaN, Number.POSITIVE_INFINITY]) {
+        pointer(first, 'pointerdown', -1, x)
+        touch(first, 'touchstart', -2, x)
+      }
+      for (const id of ['-1', 'NaN', 'Infinity', '1.5', '']) {
+        first.setAttribute('data-id', id)
+        pointer(first, 'pointerdown', -3)
+        pointer(document, 'pointerup', -3)
+        touch(first, 'touchstart', -4)
+        touch(first, 'touchend', -4)
+      }
+      await tick()
+      expect(messages).toEqual([])
+      first.setAttribute('data-id', '1')
+      touch(first, 'touchstart', -4)
+      await tick()
+      expect(messages).toEqual([Bubbles.ClickedPop({ id: 1 })])
+    })
+  })
+
+  it('keeps popping active alongside animation in the view mount and releases both on unmount', async () => {
+    const htmlFactory = (await vi.importActual<typeof import('foldkit/html')>('foldkit/html')).html
+    const mount: { current?: (element: Element) => Stream.Stream<unknown, unknown> } = {}
+    vi.spyOn(Html, 'html').mockImplementation(<Message>() => {
+      const h = htmlFactory<Message>()
+      return {
+        ...h,
+        OnMount: (action: Parameters<typeof h.OnMount>[0]) => {
+          if (action.name === 'bubblesAnim') mount.current = action.f
+          return h.OnMount(action)
+        },
+      }
+    })
+    const requested = vi.spyOn(globalThis, 'requestAnimationFrame').mockReturnValue(7)
+    const cancelled = vi.spyOn(globalThis, 'cancelAnimationFrame')
+    const root = document.createElement('div')
+    root.innerHTML = '<div class="bubble" data-id="1" data-size="40"></div>'
+    document.body.append(root)
+    const messages: unknown[] = []
+    let fiber: ReturnType<typeof Effect.runFork> | undefined
+    try {
+      Bubbles.view(Bubbles.init())
+      if (!mount.current) throw new Error('missing bubblesAnim view mount')
+      fiber = Effect.runFork(Stream.runForEach(mount.current(root), message => Effect.sync(() => { messages.push(message) })))
+      await vi.waitFor(() => expect(requested).toHaveBeenCalled())
+      const bubble = root.firstElementChild!
+      pointer(bubble, 'pointerdown', -1)
+      touch(bubble, 'touchstart', -2)
+      await tick()
+      expect(messages).toEqual([Bubbles.ClickedPop({ id: 1 })])
+      await Effect.runPromise(Fiber.interrupt(fiber))
+      expect(cancelled).toHaveBeenCalledWith(7)
+      bubble.setAttribute('data-id', '2')
+      pointer(bubble, 'pointerdown', -3)
+      touch(bubble, 'touchstart', -4)
+      await tick()
+      expect(messages).toEqual([Bubbles.ClickedPop({ id: 1 })])
+    } finally {
+      if (fiber) await Effect.runPromise(Fiber.interrupt(fiber))
+      vi.restoreAllMocks()
+      root.remove()
+    }
+  })
 
   it('does not let another held finger enable hover or secondary-button popping', async () => {
     await fixture(async (bubbles, outside, messages) => {

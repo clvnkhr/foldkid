@@ -23,6 +23,8 @@ export const PageGrowingNumbers = ts('PageGrowingNumbers')
 export const PageShapeWorkshop = ts('PageShapeWorkshop')
 export const PageHandwriting = ts('PageHandwriting')
 export const PageDotShapes = ts('PageDotShapes')
+export const PageShapeMatch = ts('PageShapeMatch')
+export const PagePicnicBasket = ts('PagePicnicBasket')
 
 export const Page = S.Union([
   PageLanding,
@@ -47,5 +49,7 @@ export const Page = S.Union([
   PageBubbles3d,
   PageHandwriting,
   PageDotShapes,
+  PageShapeMatch,
+  PagePicnicBasket,
 ])
 export type Page = typeof Page.Type

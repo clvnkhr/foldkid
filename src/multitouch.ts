@@ -20,7 +20,7 @@ export const withMultitouchClicks = (node: Html): Html => {
   }
 }
 
-type Press = { target: HTMLElement; x: number; y: number; lastX: number; lastY: number; moved: boolean; timeStamp: number; pointerId: string | null }
+type Press = { target: HTMLElement; x: number; y: number; lastX: number; lastY: number; moved: boolean; timeStamp: number; pointerId: string | null; revision: string | null }
 
 export const multitouchClickStream = (element: Element): Stream.Stream<never> =>
   Stream.callback<never>(() => Effect.gen(function* () {
@@ -49,7 +49,7 @@ export const multitouchClickStream = (element: Element): Stream.Stream<never> =>
           const control = targetFrom(target)
           if (control && available(control) && !presses.has(id)) {
             mouseTargets.delete(control)
-            presses.set(id, { target: control, x, y, lastX: x, lastY: y, moved: false, timeStamp, pointerId: null })
+            presses.set(id, { target: control, x, y, lastX: x, lastY: y, moved: false, timeStamp, pointerId: null, revision: control.getAttribute('data-multitouch-revision') })
           }
         }
         const matchesContact = (press: Press, target: EventTarget | null, x: number, y: number, timeStamp: number): boolean =>
@@ -72,7 +72,9 @@ export const multitouchClickStream = (element: Element): Stream.Stream<never> =>
           move(id, x, y)
           remove(id, press)
           recentReleases.set(press.target, Date.now())
-          if (cancelled || press.moved || !available(press.target)) return
+          // Recycled game cards must not accept a touch from their old contents.
+          if (cancelled || press.moved || !available(press.target) ||
+            press.target.getAttribute('data-multitouch-revision') !== press.revision) return
           const hit = doc.elementFromPoint(x, y)
           if (!hit || targetFrom(hit) !== press.target) return
           // Prevent the browser's primary-finger click; deliver one activation
@@ -92,10 +94,14 @@ export const multitouchClickStream = (element: Element): Stream.Stream<never> =>
           }
         }
         const touchStart = (event: TouchEvent): void => {
+          // Claim button contacts before WebKit can turn a second finger into
+          // a page gesture and cancel it. Background contacts still scroll.
+          let buttonContact = false
           // Pair the two event streams per contact; their relative order is not
           // guaranteed. Unmatched and later pointers continue working normally.
           eachTouch(event, touch => {
-            if (!Number.isSafeInteger(touch.identifier) || touch.identifier < 0) return
+            // Browser contact IDs are signed identifiers, not catalogue indices.
+            if (!Number.isSafeInteger(touch.identifier)) return
             const id = `touch:${touch.identifier}`
             if (presses.has(id)) return
             const pointer = [...presses].find(([key, press]) => key.startsWith('pointer:') && matchesContact(press, touch.target, touch.clientX, touch.clientY, event.timeStamp))
@@ -105,7 +111,9 @@ export const multitouchClickStream = (element: Element): Stream.Stream<never> =>
               presses.set(id, pointer[1])
               pointerTouches.set(pointer[0], id)
             } else start(id, touch.target, touch.clientX, touch.clientY, event.timeStamp)
+            if (presses.has(id)) buttonContact = true
           })
+          if (buttonContact) event.preventDefault()
         }
         const touchMove = (event: TouchEvent): void => {
           eachTouch(event, touch => move(`touch:${touch.identifier}`, touch.clientX, touch.clientY))
@@ -126,7 +134,7 @@ export const multitouchClickStream = (element: Element): Stream.Stream<never> =>
             return
           }
           if (event.pointerType !== 'touch' || event.button !== 0) return
-          if (!Number.isSafeInteger(event.pointerId) || event.pointerId < 0) return
+          if (!Number.isSafeInteger(event.pointerId)) return
           const id = `pointer:${event.pointerId}`
           if (presses.has(id) || pointerTouches.has(id)) return
           const native = [...presses].find(([key, press]) => key.startsWith('touch:') && press.pointerId === null && matchesContact(press, event.target, event.clientX, event.clientY, event.timeStamp))
@@ -184,7 +192,7 @@ export const multitouchClickStream = (element: Element): Stream.Stream<never> =>
           }
         }
         const visibility = (): void => { if (doc.hidden) clear() }
-        doc.addEventListener('touchstart', touchStart, { capture: true, passive: true })
+        doc.addEventListener('touchstart', touchStart, { capture: true, passive: false })
         doc.addEventListener('touchmove', touchMove, { capture: true, passive: true })
         doc.addEventListener('touchend', touchEnd, { capture: true, passive: false })
         doc.addEventListener('touchcancel', touchCancel, { capture: true, passive: true })

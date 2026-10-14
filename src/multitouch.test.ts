@@ -59,6 +59,68 @@ describe('multitouch activation', () => {
     })
   })
 
+  it.each([-1, -2147483648])('accepts signed native touch ID %s while another finger stays held', async identifier => {
+    await fixture(async (a, b, clicks) => {
+      const held = contact(5, a.parentElement!, 120)
+      const finger = contact(identifier, b, 80)
+      touch('touchstart', [held])
+      expect(touch('touchstart', [finger]).defaultPrevented).toBe(true)
+      touch('touchend', [finger])
+      b.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }))
+      touch('touchend', [held])
+      expect(clicks).toEqual(['B'])
+    })
+  })
+
+  it.each(['pointer first', 'touch first'])('pairs signed pointer and touch IDs once with %s', async order => {
+    await fixture(async (a, b, clicks) => {
+      const finger = contact(-2, a)
+      if (order === 'pointer first') {
+        pointer('pointerdown', a, -7, 20, 100)
+        expect(touch('touchstart', [finger], true, 101).defaultPrevented).toBe(true)
+      } else {
+        expect(touch('touchstart', [finger], true, 100).defaultPrevented).toBe(true)
+        pointer('pointerdown', a, -7, 20, 101)
+      }
+      pointer('pointerup', a, -7)
+      expect(clicks).toEqual([])
+      touch('touchend', [finger])
+      expect(clicks).toEqual(['A'])
+      a.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }))
+      pointer('pointerdown', b, -8, 80)
+      pointer('pointercancel', b, -8, 80)
+      pointer('pointerup', b, -8, 80)
+      expect(clicks).toEqual(['A'])
+    })
+  })
+
+  it('claims button touches while a background finger stays held, preserving background scrolling', async () => {
+    await fixture(async (a, b, clicks) => {
+      const background = a.parentElement!
+      const held = contact(1, background, 120)
+      expect(touch('touchstart', [held]).defaultPrevented).toBe(false)
+      for (let id = 2; id < 5; id++) {
+        const finger = contact(id, b, 80)
+        expect(touch('touchstart', [finger]).defaultPrevented).toBe(true)
+        touch('touchend', [finger])
+        b.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }))
+      }
+      touch('touchend', [held])
+      expect(clicks).toEqual(['B', 'B', 'B'])
+    })
+  })
+
+  it('does not claim gestures on disabled or independently owned controls', async () => {
+    await fixture(async (a, _b, clicks) => {
+      a.disabled = true
+      expect(touch('touchstart', [contact(1, a)]).defaultPrevented).toBe(false)
+      a.disabled = false
+      a.setAttribute('data-multitouch-owned', 'true')
+      expect(touch('touchstart', [contact(2, a)]).defaultPrevented).toBe(false)
+      expect(clicks).toEqual([])
+    })
+  })
+
   it('handles two fingers lifting from the same button in one native event', async () => {
     await fixture(async (a, _b, clicks) => {
       const fingers = [contact(3, a), contact(4, a)]
@@ -354,6 +416,29 @@ describe('multitouch activation', () => {
         touch('touchstart', [contact(3, a)])
         touch('touchend', [contact(3, a)])
         expect(clicks).toEqual(['B', 'A'])
+      })
+    })
+  }
+
+  for (const input of ['touch', 'pointer'] as const) {
+    it(`expires a held ${input} on a revised card while preserving fresh taps and keyboard activation`, async () => {
+      await fixture(async (a, b, clicks) => {
+        a.setAttribute('data-multitouch-revision', 'pairs-0')
+        if (input === 'touch') touch('touchstart', [contact(1, a)])
+        else pointer('pointerdown', a, 1)
+        // Another finger completes a match while the first stays resting.
+        touch('touchstart', [contact(2, b, 80)])
+        touch('touchend', [contact(2, b, 80)])
+        a.setAttribute('data-multitouch-revision', 'pairs-1')
+        if (input === 'touch') touch('touchend', [contact(1, a)])
+        else pointer('pointerup', a, 1)
+        a.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }))
+        expect(clicks).toEqual(['B'])
+        // Native keyboard activation is a fresh action even after cancellation.
+        a.click()
+        touch('touchstart', [contact(3, a)])
+        touch('touchend', [contact(3, a)])
+        expect(clicks).toEqual(['B', 'A', 'A'])
       })
     })
   }

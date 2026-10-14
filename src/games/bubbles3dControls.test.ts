@@ -180,7 +180,7 @@ describe('3D creation controls', () => {
     const addListener = vi.spyOn(document, 'addEventListener')
     const fiber = Effect.runFork(Stream.runDrain(multitouchClickStream(document.body)))
     try {
-      await vi.waitFor(() => expect(addListener).toHaveBeenCalledWith('touchstart', expect.any(Function), { capture: true, passive: true }))
+      await vi.waitFor(() => expect(addListener).toHaveBeenCalledWith('touchstart', expect.any(Function), { capture: true, passive: false }))
       const first = contact(11, red)
       pointer(red, 'pointerdown', 1, 10, 10, 'touch', 100)
       touch(red, 'touchstart', [first], 120)

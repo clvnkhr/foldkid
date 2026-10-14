@@ -3,6 +3,8 @@ import { Scene } from 'foldkit/test'
 import { LANDING_GAME_COUNT, LANDING_GAMES, view } from './landing'
 import * as Main from '../main'
 import * as DotShapes from '../games/dotShapes'
+import * as ShapeMatch from '../games/shapeMatch'
+import * as PicnicBasket from '../games/picnicBasket'
 import { LandingDragEnded } from '../message'
 
 describe('Landing', () => {
@@ -10,16 +12,18 @@ describe('Landing', () => {
   const visibleGames = Array.from({ length: LANDING_GAME_COUNT }, () => false)
   const acknowledgePointerReorder = Scene.Mount.resolve({ name: 'landingGamePointerReorder' }, LandingDragEnded())
 
-  it('appends Dot Shapes while retaining every existing catalogue index', () => {
+  it('appends Picnic Basket while retaining every existing catalogue index', () => {
     expect(LANDING_GAMES.map(game => game.title)).toEqual([
       'counterTitle', 'findItTitle', 'bubblesTitle', 'drawTitle', 'musicBoxTitle',
       'memoryCardsTitle', 'phonemeGardenTitle', 'calculatorTitle', 'whackTitle',
       'patternTitle', 'bslTitle', 'rpsTitle', 'magneticBlocksTitle', 'talkingKeyboardTitle',
       'talkingClockTitle', 'growingNumbersTitle', 'shapeWorkshopTitle', 'bubbles3dTitle',
-      'handwritingTitle', 'dotShapesTitle',
+      'handwritingTitle', 'dotShapesTitle', 'shapeMatchTitle', 'picnicBasketTitle',
     ])
-    expect(LANDING_GAMES.at(-1)?.msg()).toEqual({ _tag: 'ClickedDotShapes' })
-    expect(LANDING_GAMES.at(-1)?.emoji).toBe('🔺')
+    expect(LANDING_GAMES[19]?.msg()).toEqual({ _tag: 'ClickedDotShapes' })
+    expect(LANDING_GAMES[19]?.emoji).toBe('🔺')
+    expect(LANDING_GAMES[20]?.msg()).toEqual({ _tag: 'ClickedShapeMatch' })
+    expect(LANDING_GAMES.at(-1)?.msg()).toEqual({ _tag: 'ClickedPicnicBasket' })
   })
 
   it('renders title and subtitle', () => {
@@ -48,6 +52,8 @@ describe('Landing', () => {
       Scene.expect(Scene.text('3D Bubbles')).toExist(),
       Scene.expect(Scene.text('Handwriting')).toExist(),
       Scene.expect(Scene.text('Dot Shapes')).toExist(),
+      Scene.expect(Scene.text('Shape Match')).toExist(),
+      Scene.expect(Scene.text('Picnic Basket')).toExist(),
       acknowledgePointerReorder,
       Scene.Command.expectNone(),
     )
@@ -74,6 +80,41 @@ describe('Landing', () => {
       Scene.Mount.expectEnded({ name: 'landingGamePointerReorder' }),
       Scene.expect(Scene.selector('.dot-shapes-board')).toExist(),
       Scene.Mount.resolve({ name: 'dotShapesInput' }, DotShapes.SoundPlayed()),
+      Scene.Command.expectNone(),
+    )
+  })
+
+  it('opens Shape Match from its landing card', () => {
+    Scene.scene(
+      { update: Main.update, view: model => model.page._tag === 'PageShapeMatch'
+        ? ShapeMatch.view(model.shapeMatch, model.language) : view(defaultOrder, visibleGames, 'en', -1) },
+      Scene.with({ ...Main.init()[0], muted: true }),
+      acknowledgePointerReorder,
+      Scene.click(Scene.text('Shape Match')),
+      Scene.Mount.expectEnded({ name: 'landingGamePointerReorder' }),
+      Scene.expect(Scene.selector('.shape-match-homes')).toExist(),
+      Scene.expectAll(Scene.all.selector('.shape-match-home')).toHaveCount(4),
+      Scene.expect(Scene.text('Hear the shape')).not.toExist(),
+      Scene.expect(Scene.text('Next')).not.toExist(),
+      Scene.Command.expectNone(),
+    )
+  })
+
+  it('opens Picnic Basket from its landing card and acknowledges the spoken order', () => {
+    Scene.scene(
+      { update: Main.update, view: model => model.page._tag === 'PagePicnicBasket'
+        ? PicnicBasket.view(model.picnicBasket, model.language) : view(defaultOrder, visibleGames, 'en', -1) },
+      Scene.with({ ...Main.init()[0], muted: false }),
+      acknowledgePointerReorder,
+      Scene.click(Scene.text('Picnic Basket')),
+      Scene.Mount.expectEnded({ name: 'landingGamePointerReorder' }),
+      Scene.Command.resolveAll([{ name: 'PicnicBasketFeedback' }, PicnicBasket.FeedbackFinished({ round: 0, token: 1 })]),
+      Scene.expect(Scene.selector('.picnic-basket-basket')).toExist(),
+      Scene.expectAll(Scene.all.selector('.picnic-basket-food')).toHaveCount(6),
+      Scene.expect(Scene.role('button', { name: '3 things' })).toHaveAttr('aria-pressed', 'true'),
+      Scene.expect(Scene.role('button', { name: 'Remember' })).toHaveAttr('aria-pressed', 'true'),
+      Scene.expect(Scene.role('button', { name: 'Hear the remaining order again' })).not.toBeDisabled(),
+      Scene.expect(Scene.role('status')).toHaveAttr('aria-live', 'polite'),
       Scene.Command.expectNone(),
     )
   })

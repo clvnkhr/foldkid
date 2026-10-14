@@ -124,6 +124,36 @@ describe('styles.css invariants', () => {
     }
   })
 
+  it('keeps Shape Match touch targets roomy and clear of the fixed navigation', () => {
+    expect(cssRule('.shape-match-page')).toContain('env(safe-area-inset-top');
+    expect(cssRule('.shape-match-page')).toContain('100dvh');
+    expect(cssRule('.shape-match-home')).toContain('min-height: 112px');
+    expect(cssRule('.shape-match-homes')).toContain('minmax(0, 1fr)');
+    expect(cssRule('.shape-match-home svg')).toContain('pointer-events: none');
+    expect(styles).toContain('.shape-match-home:focus-visible');
+    expect(styles).toContain('.shape-match-home { transition: none; }');
+  })
+
+  it('gives Picnic Basket reachable food buttons and a nonblocking flight overlay', () => {
+    expect(cssRule('.picnic-basket-page')).toContain('100dvh')
+    expect(cssRule('.picnic-basket-page')).toContain('env(safe-area-inset-top')
+    expect(cssRule('.picnic-basket-food')).toContain('min-height: 110px')
+    expect(cssRule('.picnic-basket-choices')).toContain('minmax(0, 1fr)')
+    expect(cssRule('.picnic-basket-food-icon')).toContain('pointer-events: none')
+    expect(cssRule('.picnic-basket-flight')).toContain('pointer-events: none')
+    expect(cssRule('.picnic-basket-basket-items')).toContain('pointer-events: none')
+    expect(styles).toContain('.picnic-basket-food:focus-visible')
+    expect(styles).toContain('.picnic-basket-food { transition: none; }')
+  })
+
+  it('keeps Picnic Basket celebrations contained, pointerless and optional under reduced motion', () => {
+    expect(cssRule('.picnic-basket-card')).toContain('overflow: hidden')
+    for (const selector of ['.picnic-basket-celebration', '.picnic-basket-confetti', '.picnic-basket-glow']) {
+      expect(cssRule(selector)).toContain('pointer-events: none')
+    }
+    expect(styles).toMatch(/@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*\.picnic-basket-card\[data-picnic-status\] \.picnic-basket-basket\s*\{\s*animation:\s*none/)
+  })
+
   it('keeps mole hit effects local to the board and clear of touch targets', () => {
     const board = cssRule('.whack-grid')
     const layer = cssRule('.whack-fx-layer')

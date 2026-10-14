@@ -4,6 +4,8 @@ import * as Bubbles from './games/bubbles'
 import * as Bubbles3d from './games/bubbles3d'
 import * as Handwriting from './games/handwriting'
 import * as DotShapes from './games/dotShapes'
+import * as ShapeMatch from './games/shapeMatch'
+import * as PicnicBasket from './games/picnicBasket'
 import { HANDWRITING_LETTERS, HANDWRITING_NUMBERS, HANDWRITING_WORDS } from './games/handwritingPaths'
 import { BUBBLE3D_SHAPES } from './games/bubbles3dShapes'
 import * as Counter from './games/counter'
@@ -135,6 +137,82 @@ describe('codebase invariants', () => {
     }
   })
 
+  it('Shape Match child state is explicit and rejects malformed nested models', () => {
+    const initial = ShapeMatch.init()
+    const [root] = Main.init()
+    expect(root.shapeMatch).toEqual(initial)
+    expect(initial.homes).toHaveLength(4)
+    expect(new Set(initial.homes.map(home => home.join(','))).size).toBe(4)
+    expect(ShapeMatch.getPuzzle(initial).target).toEqual(initial.homes[initial.targetIndex])
+    expect(Option.isSome(S.decodeUnknownOption(Main.Model)({ ...root, shapeMatch: { ...initial, round: 150 } }))).toBe(true)
+    for (const invalid of [
+      { ...initial, round: '0' }, { ...initial, token: '0' }, { ...initial, status: 'failed' },
+      { ...initial, mode: 'expert' }, { ...initial, targetIndex: '1' }, { ...initial, rngSeed: '123' },
+      { ...initial, homes: 'circle' }, { ...initial, homes: [['unknown']] }, { ...initial, homes: ['circle'] },
+      { ...initial, hint: 'yes' }, { ...initial, feedbackPending: 'yes' },
+    ]) {
+      expect(Option.isNone(S.decodeUnknownOption(ShapeMatch.Model)(invalid))).toBe(true)
+      expect(Option.isNone(S.decodeUnknownOption(Main.Model)({ ...root, shapeMatch: invalid }))).toBe(true)
+    }
+  })
+
+  it('accepts all 34 Shape Match silhouettes through the nested app model schema', () => {
+    const initial = ShapeMatch.init()
+    const [root] = Main.init()
+    expect(ShapeMatch.Shape.literals).toHaveLength(34)
+    for (const shape of ['crescent', 'rightTriangle', 'sixPointStar', 'eightPointStar']) {
+      expect(ShapeMatch.Shape.literals).toContain(shape)
+    }
+    for (const shape of ShapeMatch.Shape.literals) {
+      const homes = [[shape], ...ShapeMatch.Shape.literals.filter(other => other !== shape).slice(0, 3).map(other => [other])]
+      const child = { ...initial, mode: 'simple' as const, homes, targetIndex: 0 }
+      expect(Option.isSome(S.decodeUnknownOption(ShapeMatch.Model)(child)), shape).toBe(true)
+      expect(Option.isSome(S.decodeUnknownOption(Main.Model)({ ...root, shapeMatch: child })), shape).toBe(true)
+    }
+    const unknown = { ...initial, homes: [['unknown-shape'], ['circle'], ['triangle'], ['star']] }
+    expect(Option.isNone(S.decodeUnknownOption(ShapeMatch.Model)(unknown))).toBe(true)
+    expect(Option.isNone(S.decodeUnknownOption(Main.Model)({ ...root, shapeMatch: unknown }))).toBe(true)
+  })
+
+  it('Picnic Basket foods, localized names, menu and requested order stay aligned', () => {
+    const initial = PicnicBasket.init()
+    const [root] = Main.init()
+    expect(root.picnicBasket).toEqual(initial)
+    expect(PicnicBasket.FOODS).toHaveLength(16)
+    expect(new Set(PicnicBasket.FOODS.map(food => food.id)).size).toBe(PicnicBasket.FOODS.length)
+    expect(PicnicBasket.FOODS.map(food => food.id)).toEqual(PicnicBasket.Food.literals)
+    expect(initial).toMatchObject({ length: 3, remember: true, status: 'packing', step: 0, round: 0 })
+    expect(Option.isSome(S.decodeUnknownOption(Main.Model)({ ...root, picnicBasket: { ...initial, status: 'arriving' } }))).toBe(true)
+    expect(initial.choices).toHaveLength(6)
+    expect(new Set(initial.choices).size).toBe(6)
+    expect(initial.order).toHaveLength(3)
+    expect(new Set(initial.order).size).toBe(3)
+    expect(initial.order.every(food => initial.choices.includes(food))).toBe(true)
+    for (const food of PicnicBasket.FOODS) {
+      expect(S.is(PicnicBasket.Food)(food.id)).toBe(true)
+      expect(food.emoji).not.toBe('')
+      for (const language of Object.keys(translations)) expect(t(food.labelKey, language), `${food.id}.${language}`).not.toBe('')
+      const child = { ...initial, choices: [food.id], order: [food.id] }
+      expect(Option.isSome(S.decodeUnknownOption(PicnicBasket.Model)(child)), food.id).toBe(true)
+      expect(Option.isSome(S.decodeUnknownOption(Main.Model)({ ...root, picnicBasket: child })), food.id).toBe(true)
+    }
+  })
+
+  it('Picnic Basket rejects malformed child fields and unknown food identities at schema boundaries', () => {
+    const initial = PicnicBasket.init()
+    const [root] = Main.init()
+    for (const invalid of [
+      { ...initial, choices: ['unknown'] }, { ...initial, choices: 'apple' }, { ...initial, order: ['unknown'] },
+      { ...initial, order: 'apple' }, { ...initial, length: 4 }, { ...initial, remember: 'yes' },
+      { ...initial, status: 'landed' }, { ...initial, step: '0' }, { ...initial, clue: 'yes' },
+      { ...initial, hint: 'yes' }, { ...initial, feedbackPending: 'yes' }, { ...initial, round: '0' },
+      { ...initial, token: '0' }, { ...initial, rngSeed: '123' },
+    ]) {
+      expect(Option.isNone(S.decodeUnknownOption(PicnicBasket.Model)(invalid))).toBe(true)
+      expect(Option.isNone(S.decodeUnknownOption(Main.Model)({ ...root, picnicBasket: invalid }))).toBe(true)
+    }
+  })
+
   it('all translation dictionaries remain key-compatible with English', () => {
     const englishKeys = Object.keys(translations.en).sort()
     for (const [language, dict] of Object.entries(translations)) {
@@ -186,6 +264,8 @@ describe('codebase invariants', () => {
       ['3D Bubbles', Bubbles3d.Model, Bubbles3d.init()],
       ['Handwriting', Handwriting.Model, Handwriting.init()],
       ['Dot Shapes', DotShapes.Model, DotShapes.init()],
+      ['Shape Match', ShapeMatch.Model, ShapeMatch.init()],
+      ['Picnic Basket', PicnicBasket.Model, PicnicBasket.init()],
       ['Memory', Memory.Model, Memory.init()],
       ['MusicBox', MusicBox.Model, MusicBox.init()],
       ['GrowingNumbers', GrowingNumbers.Model, GrowingNumbers.init],
@@ -218,6 +298,23 @@ describe('codebase invariants', () => {
       ['Dot Shapes end', Main.Message, { _tag: 'DotShapesContactEnded', id: 0, x: 10, y: 25, moved: 'yes', revision: 0 }],
       ['Dot Shapes cancel', Main.Message, { _tag: 'DotShapesContactCancelled', id: 0, revision: '0' }],
       ['Dot Shapes keyboard', Main.Message, { _tag: 'DotShapesKeyboardPressed', key: 'Enter', dotId: null, shift: 'yes', revision: 0 }],
+      ['Picnic Basket food', Main.Message, { _tag: 'PicnicBasketPickFood', food: 'unknown', round: 0, token: 0 }],
+      ['Picnic Basket round', Main.Message, { _tag: 'PicnicBasketPickFood', food: 'apple', round: '0', token: 0 }],
+      ['Picnic Basket move token', Main.Message, { _tag: 'PicnicBasketFoodLanded', round: 0, token: '1' }],
+      ['Picnic Basket refresh round', Main.Message, { _tag: 'PicnicBasketOrderRefreshReady', round: '0', token: 1 }],
+      ['Picnic Basket arrival round', Main.Message, { _tag: 'PicnicBasketBasketArrived', round: '1', token: 1 }],
+      ['Picnic Basket arrival token', Main.Message, { _tag: 'PicnicBasketBasketArrived', round: 1, token: '1' }],
+      ['Picnic Basket length', Main.Message, { _tag: 'PicnicBasketSetLength', length: 4 }],
+      ['Picnic Basket memory', Main.Message, { _tag: 'PicnicBasketSetRemember', remember: 'yes' }],
+      ['Picnic Basket repeat token', Main.Message, { _tag: 'PicnicBasketRepeatOrder', round: 0, token: '1' }],
+      ['Picnic Basket feedback round', Main.Message, { _tag: 'PicnicBasketFeedbackFinished', round: '0', token: 1 }],
+      ['Shape Match index', Main.Message, { _tag: 'ShapeMatchPickHome', index: '0', round: 0, token: 0 }],
+      ['Shape Match round', Main.Message, { _tag: 'ShapeMatchPickHome', index: 0, round: '0', token: 0 }],
+      ['Shape Match mode', Main.Message, { _tag: 'ShapeMatchSetMode', mode: 'expert' }],
+      ['Shape Match move token', Main.Message, { _tag: 'ShapeMatchMoveFinished', round: 0, token: '1' }],
+      ['Shape Match replacement token', Main.Message, { _tag: 'ShapeMatchReplacementReady', round: 0, token: '1' }],
+      ['Shape Match replacement round', Main.Message, { _tag: 'ShapeMatchReplacementReady', round: '0', token: 1 }],
+      ['Shape Match completion token', Main.Message, { _tag: 'ShapeMatchFeedbackFinished', round: 0, token: '1' }],
       ['Music Box accompaniment style', Main.Message, { _tag: 'MusicBoxSetAccompanimentStyle', value: 'strum' }],
       ['Music Box accompaniment volume', Main.Message, { _tag: 'MusicBoxSetAccompanimentVolume', value: '45%' }],
       ['3D Bubbles clear ID', Main.Message, { _tag: 'Bubbles3dClearBubble', id: '0', revision: 0, token: 1 }],

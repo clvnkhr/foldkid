@@ -102,6 +102,191 @@ describe('i18n completeness', () => {
     expect(keys.map(key => i18n.t(key, 'en'))).toEqual(['Accompaniment', 'Off', 'Chords', 'Arpeggio', 'Accompaniment volume'])
   })
 
+  it('names Picnic Basket controls and sixteen distinct foods in every language', () => {
+    const controls = [
+      'picnicBasketTitle', 'pageTitlePicnicBasket', 'picnicBasketTwo', 'picnicBasketThree',
+      'picnicBasketLength', 'picnicBasketShow', 'picnicBasketRemember', 'picnicBasketMemory',
+      'picnicBasketRepeat', 'picnicBasketChoices', 'picnicBasketHidden', 'picnicBasketTryAgain',
+      'picnicBasketPacked', 'picnicBasketBasket',
+    ] as const
+    const foods = [
+      ['picnicBasketApple', 'Apple'], ['picnicBasketBanana', 'Banana'], ['picnicBasketStrawberry', 'Strawberry'],
+      ['picnicBasketGrapes', 'Grapes'], ['picnicBasketWatermelon', 'Watermelon'], ['picnicBasketPear', 'Pear'],
+      ['picnicBasketPeach', 'Peach'], ['picnicBasketOrange', 'Orange'], ['picnicBasketCarrot', 'Carrot'],
+      ['picnicBasketCorn', 'Corn'], ['picnicBasketBroccoli', 'Broccoli'], ['picnicBasketBread', 'Bread'],
+      ['picnicBasketCheese', 'Cheese'], ['picnicBasketEgg', 'Egg'], ['picnicBasketCookie', 'Cookie'],
+      ['picnicBasketMilk', 'Milk'],
+    ] as const
+    for (const [key, english] of foods) expect(i18n.t(key, 'en')).toBe(english)
+    for (const language of langKeys) {
+      for (const key of controls) expect(i18n.t(key, language).trim().length, `${language}.${key}`).toBeGreaterThan(0)
+      const names = foods.map(([key]) => i18n.t(key, language))
+      expect(names.every(name => name.trim().length > 0), language).toBe(true)
+      expect(new Set(names).size, language).toBe(foods.length)
+      expect(i18n.t('picnicBasketTwo', language)).not.toBe(i18n.t('picnicBasketThree', language))
+      expect(i18n.t('picnicBasketShow', language)).not.toBe(i18n.t('picnicBasketRemember', language))
+      expect(i18n.t('pageTitlePicnicBasket', language)).toContain(i18n.t('appName', language))
+      for (const name of names) {
+        expect(i18n.tf('picnicBasketFoodLabel', language, name, false)).toBe(name)
+        expect(i18n.tf('picnicBasketFoodLabel', language, name, true)).toContain(name)
+        expect(i18n.tf('picnicBasketFoodLabel', language, name, true)).not.toBe(name)
+        expect(i18n.tf('picnicBasketPicked', language, name)).toContain(name)
+        expect(i18n.tf('picnicBasketOrder', language, name, '', '').toLocaleLowerCase(language)).toContain(name.toLocaleLowerCase(language))
+      }
+    }
+    expect(i18n.t('picnicBasketPacked', 'en')).toBe('Picnic ready!')
+    expect(i18n.tf('picnicBasketPicked', 'en', 'Apple')).toBe('Apple packed')
+  })
+
+  it('speaks complete Picnic Basket instructions for one, two or three remaining foods using locale grammar', () => {
+    const orders = {
+      en: [
+        'Put the apple in the basket.', 'Put the apple, then the banana in the basket.',
+        'Put the apple, then the banana, then the cookie in the basket.',
+      ],
+      zh: ['把苹果放进篮子里。', '先把苹果放进篮子，再放香蕉。', '先把苹果放进篮子，再放香蕉，最后放饼干。'],
+      fr: [
+        'Mets dans le panier : pomme.', 'Mets dans le panier : pomme, puis banane.',
+        'Mets dans le panier : pomme, puis banane, puis biscuit.',
+      ],
+      de: [
+        'Packe in den Korb: Apfel.', 'Packe in den Korb: Apfel, dann Banane.',
+        'Packe in den Korb: Apfel, dann Banane, dann Keks.',
+      ],
+      fa: ['سیب را در سبد بگذار.', 'اول سیب، بعد موز را در سبد بگذار.', 'اول سیب، بعد موز و بعد بیسکویت را در سبد بگذار.'],
+      ms: [
+        'Masukkan epal ke dalam bakul.', 'Masukkan epal, kemudian pisang ke dalam bakul.',
+        'Masukkan epal, kemudian pisang, kemudian biskut ke dalam bakul.',
+      ],
+      'zh-HK': ['放蘋果入籃啦。', '先放蘋果入籃，跟住放香蕉。', '先放蘋果入籃，跟住放香蕉，最後放餅乾。'],
+      ja: ['かごにりんごをいれよう。', 'かごにりんご、つぎにバナナをいれよう。', 'かごにりんご、つぎにバナナ、つぎにクッキーをいれよう。'],
+    } as const
+    for (const language of langKeys) {
+      const first = i18n.t('picnicBasketApple', language)
+      const second = i18n.t('picnicBasketBanana', language)
+      const third = i18n.t('picnicBasketCookie', language)
+      expect(i18n.tf('picnicBasketOrder', language, first, '', '')).toBe(orders[language][0])
+      expect(i18n.tf('picnicBasketOrder', language, first, second, '')).toBe(orders[language][1])
+      expect(i18n.tf('picnicBasketOrder', language, first, second, third)).toBe(orders[language][2])
+    }
+    expect(i18n.tf('picnicBasketOrder', 'en', 'Banana', 'Cookie', '')).toBe('Put the banana, then the cookie in the basket.')
+    expect(i18n.tf('picnicBasketOrder', 'xx', 'Cookie', '', '')).toBe('Put the cookie in the basket.')
+  })
+
+  it('labels Picnic Basket places, ordered clues and hidden clues with caller-formatted position numbers', () => {
+    for (const language of langKeys) {
+      const position = new Intl.NumberFormat(language).format(1234)
+      const food = i18n.t('picnicBasketApple', language)
+      expect(i18n.tf('picnicBasketSlot', language, position)).toContain(position)
+      expect(i18n.tf('picnicBasketHiddenItem', language, position)).toContain(position)
+      for (const key of ['picnicBasketBasketItem', 'picnicBasketOrderItem'] as const) {
+        const label = i18n.tf(key, language, position, food)
+        expect(label).toContain(position)
+        expect(label).toContain(food)
+      }
+      expect(i18n.tf('picnicBasketHiddenItem', language, position)).not.toContain(food)
+    }
+    expect(i18n.tf('picnicBasketBasketItem', 'en', '2', 'Apple')).toBe('Basket place 2: Apple, packed')
+    expect(i18n.tf('picnicBasketOrderItem', 'en', '2', 'Banana')).toBe('Food 2: Banana')
+    expect(i18n.tf('picnicBasketHiddenItem', 'en', '2')).toBe('Food 2: remember this food')
+  })
+
+  it('names all additional matching silhouettes and speaks their paired captions in every language', () => {
+    const entries = [
+      ['shapeCrescent', 'Crescent'], ['shapeCross', 'Cross'], ['shapeArrow', 'Arrow'],
+      ['shapeLightning', 'Lightning bolt'], ['shapeKite', 'Kite'], ['shapeParallelogram', 'Parallelogram'],
+      ['shapeRightTriangle', 'Right triangle'], ['shapeCapsule', 'Capsule'], ['shapeTeardrop', 'Teardrop'],
+      ['shapeEgg', 'Egg'], ['shapeClover', 'Clover'], ['shapeFlower', 'Flower'], ['shapeCloud', 'Cloud'],
+      ['shapeArch', 'Arch'], ['shapeChevron', 'Chevron'], ['shapeSixPointStar', 'Six-point star'],
+      ['shapeEightPointStar', 'Eight-point star'],
+    ] as const
+    for (const [key, name] of entries) expect(i18n.t(key, 'en')).toBe(name)
+    for (const language of langKeys) {
+      const names = entries.map(([key]) => i18n.t(key, language))
+      expect(names.every(name => name.trim().length > 0), language).toBe(true)
+      expect(new Set(names).size, language).toBe(entries.length)
+      const circle = i18n.t('shapeCircle', language)
+      for (const name of names) {
+        const pair = i18n.tf('shapeMatchPair', language, name, circle)
+        expect(pair.indexOf(name)).toBeLessThan(pair.indexOf(circle))
+        expect(i18n.tf('shapeMatchPairPrompt', language, pair)).toContain(pair)
+        expect(i18n.tf('shapeMatchPairSuccess', language, pair)).toContain(pair)
+        expect(i18n.tf('shapeMatchHome', language, name).toLocaleLowerCase(language)).toContain(name.toLocaleLowerCase(language))
+        expect(i18n.tf('shapeMatchPrompt', language, name).toLocaleLowerCase(language)).toContain(name.toLocaleLowerCase(language))
+      }
+    }
+    expect(i18n.t('shapeRightTriangle', 'fr')).toBe('Triangle rectangle')
+    expect(i18n.t('shapeParallelogram', 'ms')).toBe('Segi empat selari')
+    expect(i18n.t('shapeClover', 'zh')).toBe('四叶草')
+    expect(i18n.t('shapeSixPointStar', 'ja')).not.toBe(i18n.t('shapeEightPointStar', 'ja'))
+  })
+
+  it('names nine- and ten-sided shapes in each language for matching labels and speech', () => {
+    const names = {
+      en: ['Nonagon', 'Decagon'], zh: ['九边形', '十边形'], fr: ['Ennéagone', 'Décagone'],
+      de: ['Neuneck', 'Zehneck'], fa: ['نه‌ضلعی', 'ده‌ضلعی'], ms: ['Nonagon', 'Dekagon'],
+      'zh-HK': ['九邊形', '十邊形'], ja: ['きゅうかくけい', 'じゅっかくけい'],
+    } as const
+    for (const language of langKeys) {
+      const shapes = [i18n.t('shapeNonagon', language), i18n.t('shapeDecagon', language)]
+      expect(shapes, language).toEqual(names[language])
+      expect(new Set(shapes).size).toBe(2)
+      const pair = i18n.tf('shapeMatchPair', language, shapes[0]!, shapes[1]!)
+      expect(i18n.tf('shapeMatchPairPrompt', language, pair)).toContain(pair)
+      expect(i18n.tf('shapeMatchPairSuccess', language, pair)).toContain(pair)
+      for (const shape of shapes) expect(i18n.tf('shapeMatchHome', language, shape).toLocaleLowerCase(language)).toContain(shape.toLocaleLowerCase(language))
+    }
+  })
+
+  it('names shape matching modes and ordered pairs without changing their visual order', () => {
+    const labels = {
+      en: 'Circle, then Triangle', zh: '先圓形，再三角形', fr: 'Cercle, puis Triangle',
+      de: 'Kreis, dann Dreieck', fa: 'دایره، بعد مثلث', ms: 'Bulat, kemudian Segi tiga',
+      'zh-HK': '先圓形，再三角形', ja: 'まる、つぎにさんかく',
+    } as const
+    for (const language of langKeys) {
+      const modes = ['shapeMatchSimple', 'shapeMatchPairs', 'shapeMatchMode'] as const
+      for (const key of modes) expect(i18n.t(key, language).trim().length, `${language}.${key}`).toBeGreaterThan(0)
+      expect(i18n.t('shapeMatchSimple', language)).not.toBe(i18n.t('shapeMatchPairs', language))
+      const first = i18n.t('shapeCircle', language)
+      const second = i18n.t('shapeTriangle', language)
+      const pair = i18n.tf('shapeMatchPair', language, first, second)
+      expect(pair).toBe(labels[language])
+      expect(pair.indexOf(first)).toBeLessThan(pair.indexOf(second))
+      expect(i18n.tf('shapeMatchPair', language, second, first)).not.toBe(pair)
+      expect(i18n.tf('shapeMatchPairPrompt', language, pair)).toContain(pair)
+      expect(i18n.tf('shapeMatchPairSuccess', language, pair)).toContain(pair)
+    }
+    expect(i18n.tf('shapeMatchPairPrompt', 'en', labels.en)).toBe('Find the matching pair: Circle, then Triangle.')
+    expect(i18n.tf('shapeMatchPairSuccess', 'en', labels.en)).toBe('A match! Circle, then Triangle.')
+  })
+
+  it('localizes shape matching prompts and homes using each locale grammar', () => {
+    const prompts = {
+      en: 'Find the circle.', zh: '找一找圓形。', fr: 'Trouve cette forme : cercle.',
+      de: 'Finde diese Form: Kreis.', fa: 'دایره را پیدا کن.', ms: 'Cari bulat.',
+      'zh-HK': '搵下圓形喺邊。', ja: 'まるをさがそう。',
+    } as const
+    const homes = {
+      en: 'Circle home', zh: '圓形的家', fr: 'Maison : cercle',
+      de: 'Platz für Kreis', fa: 'خانهٔ دایره', ms: 'Rumah bulat',
+      'zh-HK': '圓形嘅屋企', ja: 'まるのおうち',
+    } as const
+    const keys = [
+      'shapeMatchTitle', 'pageTitleShapeMatch', 'shapeMatchTryAgain',
+    ] as const
+    for (const language of langKeys) {
+      for (const key of keys) expect(i18n.t(key, language).trim().length, `${language}.${key}`).toBeGreaterThan(0)
+      const shape = i18n.t('shapeCircle', language)
+      expect(i18n.tf('shapeMatchPrompt', language, shape)).toBe(prompts[language])
+      expect(i18n.tf('shapeMatchHome', language, shape)).toBe(homes[language])
+      expect(i18n.tf('shapeMatchSuccess', language, shape)).toContain(shape)
+      expect(i18n.t('pageTitleShapeMatch', language)).toContain(i18n.t('appName', language))
+    }
+    expect(i18n.tf('shapeMatchSuccess', 'en', 'Circle')).toBe('A match! Circle.')
+    expect(i18n.tf('shapeMatchPrompt', 'xx', 'Square')).toBe('Find the square.')
+  })
+
   it('localizes dot shapes and formats dot counts using each locale grammar', () => {
     const statuses = {
       en: 'Triangle · 3 dots', zh: '三角形 · 3个点', fr: 'Triangle · 3 points',

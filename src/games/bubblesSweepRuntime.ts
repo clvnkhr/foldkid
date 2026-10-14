@@ -10,7 +10,8 @@ export const bubbleSweepStream = <Message>(element: Element, poppedMessage: (id:
         const pointerTouches = new Map<string, string>()
         const touchTargets = new Set<EventTarget>()
         const popped = new WeakSet<Element>()
-        const valid = (id: number, x: number, y: number): boolean => Number.isSafeInteger(id) && id >= 0 && Number.isFinite(x) && Number.isFinite(y)
+        // Browser contact IDs are signed values; only our bubble IDs are nonnegative.
+        const valid = (id: number, x: number, y: number): boolean => Number.isSafeInteger(id) && Number.isFinite(x) && Number.isFinite(y)
         const popTarget = (target: EventTarget | null): void => {
           const bubble = target instanceof Element ? target.closest('.bubble') : null
           if (!bubble || !element.contains(bubble) || popped.has(bubble)) return

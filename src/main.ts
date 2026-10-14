@@ -2,12 +2,14 @@ import { Effect, Match as M, Option, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { Document, html } from 'foldkit/html'
 
-import { ApplyImport, CancelResetSettings, ClickedAudioTest, ClickedBsl, ClickedBubbles, ClickedBubbles3d, ClickedHandwriting, ClickedDotShapes, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedGrowingNumbers, ClickedLanding, ClickedDraw, ClickedMagneticBlocks, ClickedMemory, ClickedMusicBox, ClickedPhonemeGarden, ClickedRps, ClickedShapeWorkshop, ClickedSpeakerCalculator, ClickedSettings, ClickedTalkingClock, ClickedTalkingKeyboard, ClickedWhackamole, ClickedPattern, ConfirmResetSettings, CopyExportData, DismissMessage, ExportSettings, ImportSettings, ImportedSettings, LandingDragEnded, LandingDragStarted, LandingDroppedOn, LandingSettingsDragEnded, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, ResetSettings, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsDragEnded, SettingsDragMoved, SettingsDragStarted, SettingsImportFailed, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
+import { ApplyImport, CancelResetSettings, ClickedAudioTest, ClickedBsl, ClickedBubbles, ClickedBubbles3d, ClickedHandwriting, ClickedDotShapes, ClickedShapeMatch, ClickedPicnicBasket, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedGrowingNumbers, ClickedLanding, ClickedDraw, ClickedMagneticBlocks, ClickedMemory, ClickedMusicBox, ClickedPhonemeGarden, ClickedRps, ClickedShapeWorkshop, ClickedSpeakerCalculator, ClickedSettings, ClickedTalkingClock, ClickedTalkingKeyboard, ClickedWhackamole, ClickedPattern, ConfirmResetSettings, CopyExportData, DismissMessage, ExportSettings, ImportSettings, ImportedSettings, LandingDragEnded, LandingDragStarted, LandingDroppedOn, LandingSettingsDragEnded, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, ResetSettings, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsDragEnded, SettingsDragMoved, SettingsDragStarted, SettingsImportFailed, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
 
-import { Page, PageAudioTest, PageBsl, PageBubbles, PageBubbles3d, PageHandwriting, PageDotShapes, PageCounter, PageFindIt, PageGrowingNumbers, PageLanding, PageDraw, PageMagneticBlocks, PageMemory, PageMusicBox, PagePhonemeGarden, PageRps, PageShapeWorkshop, PageSpeakerCalculator, PageTalkingClock, PageTalkingKeyboard, PageWhackamole, PagePattern } from './route'
+import { Page, PageAudioTest, PageBsl, PageBubbles, PageBubbles3d, PageHandwriting, PageDotShapes, PageShapeMatch, PagePicnicBasket, PageCounter, PageFindIt, PageGrowingNumbers, PageLanding, PageDraw, PageMagneticBlocks, PageMemory, PageMusicBox, PagePhonemeGarden, PageRps, PageShapeWorkshop, PageSpeakerCalculator, PageTalkingClock, PageTalkingKeyboard, PageWhackamole, PagePattern } from './route'
 
 import * as Handwriting from './games/handwriting'
 import * as DotShapes from './games/dotShapes'
+import * as ShapeMatch from './games/shapeMatch'
+import * as PicnicBasket from './games/picnicBasket'
 import * as FindIt from './games/findit'
 import * as MusicBox from './games/musicbox'
 import * as Counter from './games/counter'
@@ -244,6 +246,8 @@ export const Model = S.Struct({
   bubbles3d: Bubbles3d.Model,
   handwriting: Handwriting.Model,
   dotShapes: DotShapes.Model,
+  shapeMatch: ShapeMatch.Model,
+  picnicBasket: PicnicBasket.Model,
   draw: Draw.Model,
   memory: Memory.Model,
   phonemeGarden: PhonemeGarden.Model,
@@ -299,6 +303,23 @@ export const Message = S.Union([
   Bubbles3d.SoundPlayed,
   ClickedHandwriting,
   ClickedDotShapes,
+  ClickedShapeMatch,
+  ClickedPicnicBasket,
+  PicnicBasket.PickFood,
+  PicnicBasket.FoodLanded,
+  PicnicBasket.OrderRefreshReady,
+  PicnicBasket.BasketArrived,
+  PicnicBasket.Entered,
+  PicnicBasket.SetLength,
+  PicnicBasket.SetRemember,
+  PicnicBasket.RepeatOrder,
+  PicnicBasket.FeedbackFinished,
+  ShapeMatch.PickHome,
+  ShapeMatch.SetMode,
+  ShapeMatch.MoveFinished,
+  ShapeMatch.ReplacementReady,
+  ShapeMatch.Entered,
+  ShapeMatch.FeedbackFinished,
   DotShapes.ContactStarted,
   DotShapes.ContactMoved,
   DotShapes.ContactEnded,
@@ -563,6 +584,8 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
       bubbles3d: Bubbles3d.init(),
       handwriting: Handwriting.init(),
       dotShapes: DotShapes.init(),
+      shapeMatch: ShapeMatch.init(),
+      picnicBasket: PicnicBasket.init(),
       draw: Draw.normalizeTargetForPool({
         ...Draw.init(),
         topN: Draw.normalizeTopN(saved.drawTopN),
@@ -649,6 +672,28 @@ const updateHandwriting = (
   if (model.page._tag !== 'PageHandwriting' && (message._tag.startsWith('HandwritingPen') || message._tag.startsWith('HandwritingKeyboard'))) return [model, []]
   const [next, commands] = Handwriting.update(model.handwriting, message, model.muted)
   return [{ ...model, handwriting: next }, commands]
+}
+
+const updatePicnicBasket = (
+  model: Model,
+  message: PicnicBasket.Message,
+): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
+  if (model.page._tag !== 'PagePicnicBasket') return [model, []]
+  const [next, commands] = PicnicBasket.update(model.picnicBasket, message, model.language, model.muted, {
+    rate: model.speechRate, pitch: model.speechPitch, lang: model.language,
+  })
+  return [{ ...model, picnicBasket: next }, commands]
+}
+
+const updateShapeMatch = (
+  model: Model,
+  message: ShapeMatch.Message,
+): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
+  if (model.page._tag !== 'PageShapeMatch') return [model, []]
+  const [next, commands] = ShapeMatch.update(model.shapeMatch, message, model.language, model.muted, {
+    rate: model.speechRate, pitch: model.speechPitch, lang: model.language,
+  })
+  return [{ ...model, shapeMatch: next }, commands]
 }
 
 const updateDotShapes = (
@@ -944,6 +989,25 @@ const _update = (
       ClickedBubbles3d: () => [{ ...model, page: PageBubbles3d() }, []],
       ClickedHandwriting: () => [{ ...model, page: PageHandwriting() }, []],
       ClickedDotShapes: () => [{ ...model, page: PageDotShapes() }, []],
+      ClickedShapeMatch: () => model.page._tag === 'PageShapeMatch'
+        ? [model, []] : updateShapeMatch({ ...model, page: PageShapeMatch() }, ShapeMatch.Entered()),
+      ClickedPicnicBasket: () => model.page._tag === 'PagePicnicBasket'
+        ? [model, []] : updatePicnicBasket({ ...model, page: PagePicnicBasket() }, PicnicBasket.Entered()),
+      PicnicBasketPickFood: msg => updatePicnicBasket(model, msg),
+      PicnicBasketFoodLanded: msg => updatePicnicBasket(model, msg),
+      PicnicBasketOrderRefreshReady: msg => updatePicnicBasket(model, msg),
+      PicnicBasketBasketArrived: msg => updatePicnicBasket(model, msg),
+      PicnicBasketEntered: msg => updatePicnicBasket(model, msg),
+      PicnicBasketSetLength: msg => updatePicnicBasket(model, msg),
+      PicnicBasketSetRemember: msg => updatePicnicBasket(model, msg),
+      PicnicBasketRepeatOrder: msg => updatePicnicBasket(model, msg),
+      PicnicBasketFeedbackFinished: msg => updatePicnicBasket(model, msg),
+      ShapeMatchPickHome: msg => updateShapeMatch(model, msg),
+      ShapeMatchSetMode: msg => updateShapeMatch(model, msg),
+      ShapeMatchMoveFinished: msg => updateShapeMatch(model, msg),
+      ShapeMatchReplacementReady: msg => updateShapeMatch(model, msg),
+      ShapeMatchEntered: msg => updateShapeMatch(model, msg),
+      ShapeMatchFeedbackFinished: msg => updateShapeMatch(model, msg),
       DotShapesContactStarted: (msg) => updateDotShapes(model, msg),
       DotShapesContactMoved: (msg) => updateDotShapes(model, msg),
       DotShapesContactEnded: (msg) => updateDotShapes(model, msg),
@@ -1266,10 +1330,18 @@ export const update = (
   const interruptedDots = model.page._tag === 'PageDotShapes' && interruptedWriting.page._tag !== 'PageDotShapes'
     ? { ...interruptedWriting, dotShapes: DotShapes.interrupt(interruptedWriting.dotShapes) }
     : interruptedWriting
+  const matchingContextChanged = model.muted !== interruptedDots.muted || model.language !== interruptedDots.language ||
+    model.speechRate !== interruptedDots.speechRate || model.speechPitch !== interruptedDots.speechPitch
+  const interruptedMatching = model.page._tag === 'PageShapeMatch' && (interruptedDots.page._tag !== 'PageShapeMatch' || matchingContextChanged)
+    ? { ...interruptedDots, shapeMatch: ShapeMatch.interrupt(interruptedDots.shapeMatch) }
+    : interruptedDots
+  const interruptedPicnic = model.page._tag === 'PagePicnicBasket' && (interruptedMatching.page._tag !== 'PagePicnicBasket' || matchingContextChanged)
+    ? { ...interruptedMatching, picnicBasket: PicnicBasket.interrupt(interruptedMatching.picnicBasket) }
+    : interruptedMatching
   const result = [
-    model.page._tag === 'PageCounter' && interruptedDots.page._tag !== 'PageCounter'
-      ? { ...interruptedDots, counter: { ...interruptedDots.counter, presses: [], holding: false, pressedButton: null, pointerDownTime: 0 } }
-      : interruptedDots,
+    model.page._tag === 'PageCounter' && interruptedPicnic.page._tag !== 'PageCounter'
+      ? { ...interruptedPicnic, counter: { ...interruptedPicnic.counter, presses: [], holding: false, pressedButton: null, pointerDownTime: 0 } }
+      : interruptedPicnic,
     commands,
   ] as const
   if (shouldPersistSettings(message)) {
@@ -1291,6 +1363,8 @@ const pageTitle = (model: Model): string =>
       PageBubbles3d: () => t('pageTitleBubbles3d', model.language),
       PageHandwriting: () => t('pageTitleHandwriting', model.language),
       PageDotShapes: () => t('pageTitleDotShapes', model.language),
+      PageShapeMatch: () => t('pageTitleShapeMatch', model.language),
+      PagePicnicBasket: () => t('pageTitlePicnicBasket', model.language),
       PageDraw: () => t('pageTitleDraw', model.language),
       PageMusicBox: () => t('pageTitleMusicBox', model.language),
       PageMemory: () => t('pageTitleMemoryCards', model.language),
@@ -1906,6 +1980,8 @@ export const view = (model: Model): Document => {
               PageBubbles3d: () => Bubbles3d.view(model.bubbles3d, model.language),
               PageHandwriting: () => Handwriting.view(model.handwriting, model.language),
               PageDotShapes: () => DotShapes.view(model.dotShapes, model.language),
+              PageShapeMatch: () => ShapeMatch.view(model.shapeMatch, model.language),
+              PagePicnicBasket: () => PicnicBasket.view(model.picnicBasket, model.language),
               PageDraw: () => Draw.view(model.draw),
               PageMusicBox: () => MusicBox.view(model.musicBox, model.language),
               PageMemory: () => Memory.view(model.memory, model.language),

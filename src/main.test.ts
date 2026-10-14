@@ -9,8 +9,10 @@ import * as Bubbles from './games/bubbles'
 import * as Bubbles3d from './games/bubbles3d'
 import * as Handwriting from './games/handwriting'
 import * as DotShapes from './games/dotShapes'
-import { ClickedHandwriting, ClickedDotShapes } from './message'
-import { t, translations } from './i18n'
+import * as ShapeMatch from './games/shapeMatch'
+import * as PicnicBasket from './games/picnicBasket'
+import { ClickedHandwriting, ClickedDotShapes, ClickedShapeMatch, ClickedPicnicBasket } from './message'
+import { t, tf, translations } from './i18n'
 import * as Draw from './games/draw'
 import * as Memory from './games/memory'
 import * as MusicBox from './games/musicbox'
@@ -28,6 +30,7 @@ const resolveBubblesSpeak = [{ name: 'Speak' }, Bubbles.SoundPlayed()] as const
 const resolveBubbles3dChime = [{ name: 'Bubbles3dPlayChime' }, Bubbles3d.SoundPlayed()] as const
 const resolveBubbles3dSpeak = [{ name: 'Bubbles3dSpeakCreation' }, Bubbles3d.SoundPlayed()] as const
 const STORAGE_KEY = 'foldkid-settings'
+const initialShapeMatchHome = ShapeMatch.init().targetIndex
 const segmentEmoji = (emoji: string): string[] =>
   [...new Intl.Segmenter().segment(emoji)].map(segment => segment.segment)
 
@@ -142,12 +145,14 @@ describe('landing catalogue migration', () => {
     expect(loaded.landingHiddenGames).toEqual(migratedHidden)
     expect(loaded.landingHiddenGames[previousCount]).toBe(false)
     expect(LANDING_GAMES[2]?.title).toBe('bubblesTitle')
-    expect(LANDING_GAMES[previousCount - 1]?.title).toBe('handwritingTitle')
-    expect(LANDING_GAMES[previousCount]?.title).toBe('dotShapesTitle')
+    expect(LANDING_GAMES[18]?.title).toBe('handwritingTitle')
+    expect(LANDING_GAMES[19]?.title).toBe('dotShapesTitle')
+    expect(LANDING_GAMES[20]?.title).toBe('shapeMatchTitle')
+    expect(LANDING_GAMES[previousCount]?.title).toBe('picnicBasketTitle')
     expect(commands).toHaveLength(0)
   })
 
-  it.each([17, 18, 19])('appends all missing games to a complete historical catalogue of %s games', count => {
+  it.each([17, 18, 19, 20, 21])('appends all missing games to a complete historical catalogue of %s games', count => {
     const order = Array.from({ length: count }, (_, index) => index).reverse()
     const hidden = Array.from({ length: count }, (_, index) => index === 2)
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ landingOrder: order, landingHiddenGames: hidden }))
@@ -711,6 +716,23 @@ describe('settings persistence', () => {
     { label: 'Bubbles3dSoundPlayed', msg: Bubbles3d.SoundPlayed() },
     { label: 'ClickedHandwriting', msg: ClickedHandwriting() },
     { label: 'ClickedDotShapes', msg: ClickedDotShapes() },
+    { label: 'ClickedPicnicBasket', msg: ClickedPicnicBasket(), resolves: [[{ name: 'PicnicBasketFeedback' }, PicnicBasket.FeedbackFinished({ round: 0, token: 1 })]] },
+    { label: 'PicnicBasketEntered', msg: PicnicBasket.Entered() },
+    { label: 'PicnicBasketPickFood', msg: PicnicBasket.PickFood({ food: 'apple', round: 0, token: 0 }) },
+    { label: 'PicnicBasketFoodLanded', msg: PicnicBasket.FoodLanded({ round: 0, token: 0 }) },
+    { label: 'PicnicBasketOrderRefreshReady', msg: PicnicBasket.OrderRefreshReady({ round: 0, token: 0 }) },
+    { label: 'PicnicBasketBasketArrived', msg: PicnicBasket.BasketArrived({ round: 0, token: 0 }) },
+    { label: 'PicnicBasketSetLength', msg: PicnicBasket.SetLength({ length: 2 }) },
+    { label: 'PicnicBasketSetRemember', msg: PicnicBasket.SetRemember({ remember: false }) },
+    { label: 'PicnicBasketRepeatOrder', msg: PicnicBasket.RepeatOrder({ round: 0, token: 0 }) },
+    { label: 'PicnicBasketFeedbackFinished', msg: PicnicBasket.FeedbackFinished({ round: 0, token: 0 }) },
+    { label: 'ClickedShapeMatch', msg: ClickedShapeMatch(), resolves: [[{ name: 'ShapeMatchFeedback' }, ShapeMatch.FeedbackFinished({ round: 0, token: 1 })]] },
+    { label: 'ShapeMatchPickHome', msg: ShapeMatch.PickHome({ index: initialShapeMatchHome, round: 0, token: 0 }) },
+    { label: 'ShapeMatchSetMode', msg: ShapeMatch.SetMode({ mode: 'simple' }) },
+    { label: 'ShapeMatchMoveFinished', msg: ShapeMatch.MoveFinished({ round: 0, token: 0 }) },
+    { label: 'ShapeMatchReplacementReady', msg: ShapeMatch.ReplacementReady({ round: 0, token: 0 }) },
+    { label: 'ShapeMatchEntered', msg: ShapeMatch.Entered() },
+    { label: 'ShapeMatchFeedbackFinished', msg: ShapeMatch.FeedbackFinished({ round: 0, token: 0 }) },
     { label: 'DotShapesContactStarted', msg: DotShapes.ContactStarted({ id: 0, x: 20, y: 30, dotId: null, revision: 0 }) },
     { label: 'DotShapesContactMoved', msg: DotShapes.ContactMoved({ id: 0, x: 25, y: 35, revision: 0 }) },
     { label: 'DotShapesContactEnded', msg: DotShapes.ContactEnded({ id: 0, x: 25, y: 35, moved: false, revision: 0 }) },
@@ -814,7 +836,551 @@ describe('settings persistence', () => {
   }
 })
 
+describe('Picnic Basket integration', () => {
+  // User input and navigation can arrive while an animation command is pending.
+  const whilePending = (message: Main.Message) => (simulation: Story.StorySimulation<Main.Model, Main.Message>) => {
+    expect(simulation.commands.length).toBeGreaterThan(0)
+    const [model, commands] = Main.update(simulation.model, message)
+    return { ...simulation, model, commands: [...simulation.commands, ...commands] }
+  }
+
+  it('opens with localized titles, three foods and memory clues while retaining its initialized menu', () => {
+    for (const language of Object.keys(translations) as Array<keyof typeof translations>) {
+      const initial = { ...createModel(), language, muted: true }
+      const [opened, commands] = Main.update(initial, ClickedPicnicBasket())
+      expect(opened.page._tag).toBe('PagePicnicBasket')
+      expect(opened.picnicBasket).toEqual({ ...PicnicBasket.init(), token: 1 })
+      expect(opened.picnicBasket.choices).toBe(initial.picnicBasket.choices)
+      expect(opened.picnicBasket.order).toBe(initial.picnicBasket.order)
+      expect(Main.view(opened).title).toBe(t('pageTitlePicnicBasket', language))
+      expect(commands).toEqual([])
+      expect(Main.update(opened, ClickedPicnicBasket())).toEqual([opened, []])
+    }
+  })
+
+  it.each([2, 3] as const)('continues through forty %s-food orders and resolves every move, celebration, arrival and announcement', length => {
+    let current = { ...createModel(), muted: false }
+    Story.story(
+      Main.update, Story.with(current), Story.message(ClickedPicnicBasket()),
+      Story.Command.resolveAll([{ name: 'PicnicBasketFeedback' }, PicnicBasket.FeedbackFinished({ round: 0, token: 1 })]),
+      ...(length === 2 ? [
+        Story.message(PicnicBasket.SetLength({ length: 2 })),
+        Story.Command.resolveAll([{ name: 'PicnicBasketFeedback' }, PicnicBasket.FeedbackFinished({ round: 1, token: 2 })]),
+      ] : []),
+      Story.model(model => { current = model }), Story.Command.expectNone(),
+    )
+    const startingRound = current.picnicBasket.round
+    for (let turn = 0; turn < 40; turn++) {
+      for (let step = 0; step < length; step++) {
+        const before = current.picnicBasket
+        const receipt = { round: before.round, token: before.token + 1 }
+        const finalFood = step === length - 1
+        Story.story(
+          Main.update, Story.with(current),
+          Story.message(PicnicBasket.PickFood({ food: before.order[step]!, round: before.round, token: before.token })),
+          Story.model(model => {
+            expect(model.picnicBasket).toMatchObject({ status: 'moving', step, token: receipt.token })
+            expect(model.picnicBasket.order).toEqual(before.order)
+          }),
+          Story.Command.expectExact({ name: 'PicnicBasketMoveFood' }),
+          Story.Command.resolveAll([{ name: 'PicnicBasketMoveFood' }, PicnicBasket.FoodLanded(receipt)]),
+          ...(finalFood ? [
+            Story.model((model: Main.Model) => { expect(model.picnicBasket).toMatchObject({ status: 'complete', step: length }) }),
+            Story.Command.expectExact({ name: 'PicnicBasketRefreshAfterOrder' }),
+            Story.Command.resolveAll([{ name: 'PicnicBasketRefreshAfterOrder' }, PicnicBasket.OrderRefreshReady(receipt)]),
+            Story.model((model: Main.Model) => {
+              expect(model.picnicBasket).toMatchObject({ status: 'arriving', step: 0, round: before.round + 1, token: receipt.token + 1, clue: true, feedbackPending: false })
+              expect(model.picnicBasket.rngSeed).not.toBe(before.rngSeed)
+            }),
+            Story.Command.expectExact({ name: 'PicnicBasketArrive' }),
+            Story.Command.resolveAll([{ name: 'PicnicBasketArrive' }, PicnicBasket.BasketArrived({ round: before.round + 1, token: receipt.token + 1 })]),
+            Story.model((model: Main.Model) => { expect(model.picnicBasket).toMatchObject({ status: 'packing', step: 0, feedbackPending: true }) }),
+            Story.Command.resolveAll([{ name: 'PicnicBasketFeedback' }, PicnicBasket.FeedbackFinished({ round: before.round + 1, token: receipt.token + 1 })]),
+          ] : [
+            Story.model((model: Main.Model) => { expect(model.picnicBasket).toMatchObject({ status: 'packing', step: step + 1, clue: false }) }),
+            Story.Command.resolveAll([{ name: 'PicnicBasketFeedback' }, PicnicBasket.FeedbackFinished(receipt)]),
+          ]),
+          Story.model(model => {
+            expect(model.picnicBasket.feedbackPending).toBe(false)
+            expect(model.picnicBasket.choices).toHaveLength(6)
+            expect(new Set(model.picnicBasket.choices).size).toBe(6)
+            expect(model.picnicBasket.order).toHaveLength(length)
+            expect(new Set(model.picnicBasket.order).size).toBe(length)
+            expect(model.picnicBasket.order.every(food => model.picnicBasket.choices.includes(food))).toBe(true)
+            current = model
+          }), Story.Command.expectNone(),
+        )
+      }
+    }
+    expect(current.picnicBasket.round).toBe(startingRound + 40)
+    expect(current.picnicBasket).toMatchObject({ step: 0, status: 'packing' })
+  })
+
+  it.each([false, true])('forwards root mute to entry and per-food feedback without delaying packing: %s', muted => {
+    const food = PicnicBasket.init().order[0]!
+    Story.story(
+      Main.update, Story.with({ ...createModel(), muted }), Story.message(ClickedPicnicBasket()),
+      Story.model(model => { expect(model.picnicBasket.feedbackPending).toBe(!muted) }),
+      muted ? Story.Command.expectNone() : Story.Command.resolveAll([{ name: 'PicnicBasketFeedback' }, PicnicBasket.FeedbackFinished({ round: 0, token: 1 })]),
+      Story.message(PicnicBasket.PickFood({ food, round: 0, token: 1 })),
+      Story.Command.resolveAll([{ name: 'PicnicBasketMoveFood' }, PicnicBasket.FoodLanded({ round: 0, token: 2 })]),
+      Story.model(model => { expect(model.picnicBasket).toMatchObject({ step: 1, status: 'packing', feedbackPending: !muted }) }),
+      muted ? Story.Command.expectNone() : Story.Command.resolveAll([{ name: 'PicnicBasketFeedback' }, PicnicBasket.FeedbackFinished({ round: 0, token: 2 })]),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('passes root language, mute, rate and pitch to entry and food selection', () => {
+    const base = { ...createModel(), language: 'fr' as const, muted: true, speechRate: 1.4, speechPitch: 1.8 }
+    const delegated = vi.spyOn(PicnicBasket, 'update')
+    try {
+      const [opened] = Main.update(base, ClickedPicnicBasket())
+      expect(delegated).toHaveBeenCalledWith(base.picnicBasket, PicnicBasket.Entered(), 'fr', true, { rate: 1.4, pitch: 1.8, lang: 'fr' })
+      const message = PicnicBasket.PickFood({ food: opened.picnicBasket.order[0]!, round: 0, token: 1 })
+      const [moving, commands] = Main.update(opened, message)
+      expect(delegated).toHaveBeenLastCalledWith(opened.picnicBasket, message, 'fr', true, { rate: 1.4, pitch: 1.8, lang: 'fr' })
+      expect(moving.picnicBasket.status).toBe('moving')
+      expect(commands.map(command => command.name)).toEqual(['PicnicBasketMoveFood'])
+    } finally {
+      delegated.mockRestore()
+    }
+  })
+
+  it('announces the full localized order on entry with the root speech preferences', async () => {
+    await withSpeechMock(async spoken => {
+      const [opened, commands] = Main.update({ ...createModel(), language: 'fr', speechRate: 1.4, speechPitch: 1.8 }, ClickedPicnicBasket())
+      const card = document.createElement('div')
+      card.className = 'picnic-basket-card'
+      card.dataset.picnicRound = String(opened.picnicBasket.round)
+      card.dataset.picnicToken = String(opened.picnicBasket.token)
+      document.body.append(card)
+      try {
+        const command = commands[0]
+        if (!command) throw new Error('missing PicnicBasketFeedback command')
+        expect(command.name).toBe('PicnicBasketFeedback')
+        const result = await Effect.runPromise(command.effect)
+        expect(result).toEqual(PicnicBasket.FeedbackFinished({ round: 0, token: 1 }))
+        expect(Main.update(opened, result)[0].picnicBasket.feedbackPending).toBe(false)
+        expect(spoken).toEqual([{ text: PicnicBasket.remainingOrderText(opened.picnicBasket, 'fr'), rate: 1.4, pitch: 1.8, lang: 'fr' }])
+      } finally {
+        card.remove()
+      }
+    })
+  })
+
+  it('keeps packed foods and their order when picture clues change, and repeats only the remainder', () => {
+    const food = PicnicBasket.init().order[0]!
+    let current = { ...createModel(), muted: true }
+    Story.story(
+      Main.update, Story.with(current), Story.message(ClickedPicnicBasket()),
+      Story.message(PicnicBasket.PickFood({ food, round: 0, token: 1 })),
+      Story.Command.resolveAll([{ name: 'PicnicBasketMoveFood' }, PicnicBasket.FoodLanded({ round: 0, token: 2 })]),
+      Story.model(model => { expect(model.picnicBasket).toMatchObject({ step: 1, clue: false }); current = model }),
+      Story.message(PicnicBasket.SetRemember({ remember: false })),
+      Story.model(model => { expect(model.picnicBasket).toMatchObject({ step: 1, remember: false, clue: true }) }),
+      Story.message(PicnicBasket.SetRemember({ remember: true })),
+      Story.model(model => { expect(model.picnicBasket).toMatchObject({ step: 1, remember: true, clue: false }) }),
+      Story.message(PicnicBasket.RepeatOrder({ round: 0, token: 4 })),
+      Story.model(model => {
+        expect(model.picnicBasket).toMatchObject({ step: 1, clue: true, token: 5 })
+        expect(model.picnicBasket.order).toEqual(current.picnicBasket.order)
+        const names = model.picnicBasket.order.slice(1).map(id => t(PicnicBasket.FOODS.find(item => item.id === id)!.labelKey, 'en'))
+        expect(PicnicBasket.remainingOrderText(model.picnicBasket, 'en')).toBe(tf('picnicBasketOrder', 'en', names[0]!, names[1]!, ''))
+      }), Story.Command.expectNone(),
+    )
+  })
+
+  it.each(['moving', 'complete'] as const)('settles %s packing on navigation and rejects late or off-page results', phase => {
+    const [opened] = Main.update({ ...createModel(), muted: true }, ClickedPicnicBasket())
+    const child = { ...opened.picnicBasket, step: phase === 'complete' ? 2 : 0 }
+    const initial = { ...opened, picnicBasket: child }
+    let departed = child
+    Story.story(
+      Main.update, Story.with(initial),
+      Story.message(PicnicBasket.PickFood({ food: child.order[child.step]!, round: 0, token: 1 })),
+      ...(phase === 'complete' ? [Story.Command.resolveAll([{ name: 'PicnicBasketMoveFood' }, PicnicBasket.FoodLanded({ round: 0, token: 2 })])] : []),
+      whilePending(ClickedLanding()),
+      Story.model(model => {
+        expect(model.page._tag).toBe('PageLanding')
+        expect(model.picnicBasket).toMatchObject({ status: 'packing', step: phase === 'complete' ? 0 : 1, round: phase === 'complete' ? 1 : 0, token: 3, feedbackPending: false })
+        departed = model.picnicBasket
+      }),
+      phase === 'complete'
+        ? Story.Command.resolveAll([{ name: 'PicnicBasketRefreshAfterOrder' }, PicnicBasket.OrderRefreshReady({ round: 0, token: 2 })])
+        : Story.Command.resolveAll([{ name: 'PicnicBasketMoveFood' }, PicnicBasket.FoodLanded({ round: 0, token: 2 })]),
+      ...[
+        PicnicBasket.Entered(), PicnicBasket.PickFood({ food: child.order[0]!, round: 0, token: 3 }),
+        PicnicBasket.FoodLanded({ round: 0, token: 3 }), PicnicBasket.OrderRefreshReady({ round: 0, token: 3 }),
+        PicnicBasket.BasketArrived({ round: 0, token: 3 }),
+        PicnicBasket.SetLength({ length: 2 }), PicnicBasket.SetRemember({ remember: false }),
+        PicnicBasket.RepeatOrder({ round: 0, token: 3 }), PicnicBasket.FeedbackFinished({ round: 0, token: 3 }),
+      ].map(message => Story.message(message)),
+      Story.model(model => { expect(model.picnicBasket).toEqual(departed) }),
+      Story.message(ClickedPicnicBasket()),
+      Story.model(model => { expect(model.picnicBasket).toEqual({ ...departed, token: 4 }) }),
+      Story.message(PicnicBasket.FoodLanded({ round: 0, token: 2 })),
+      Story.message(PicnicBasket.OrderRefreshReady({ round: 0, token: 2 })),
+      Story.message(PicnicBasket.BasketArrived({ round: 0, token: 2 })),
+      Story.message(PicnicBasket.FeedbackFinished({ round: 0, token: 2 })),
+      Story.model(model => { expect(model.picnicBasket).toEqual({ ...departed, token: 4 }) }), Story.Command.expectNone(),
+    )
+  })
+
+  it('invalidates pending entry feedback when the root sound or language settings change', () => {
+    for (const message of [ToggleMute(), SetLanguage({ value: 'fr' }), SetSpeechRate({ value: 1.4 }), SetSpeechPitch({ value: 1.8 })]) {
+      Story.story(
+        Main.update, Story.with(createModel()), Story.message(ClickedPicnicBasket()),
+        Story.model(model => { expect(model.picnicBasket.feedbackPending).toBe(true) }),
+        whilePending(message),
+        Story.model(model => { expect(model.picnicBasket).toMatchObject({ token: 2, feedbackPending: false }) }),
+        Story.Command.resolveAll(
+          [{ name: 'PicnicBasketFeedback' }, PicnicBasket.FeedbackFinished({ round: 0, token: 1 })], resolveSettings,
+        ),
+        Story.model(model => { expect(model.picnicBasket).toMatchObject({ token: 2, feedbackPending: false, step: 0 }) }),
+        Story.Command.expectNone(),
+      )
+    }
+  })
+
+  it('keeps the fresh basket locked until arrival finishes and ignores stale or duplicate arrival receipts', () => {
+    const [opened] = Main.update({ ...createModel(), muted: true }, ClickedPicnicBasket())
+    const ready = { ...opened, picnicBasket: { ...opened.picnicBasket, step: 2 } }
+    let arriving = ready.picnicBasket
+    Story.story(
+      Main.update, Story.with(ready),
+      Story.message(PicnicBasket.PickFood({ food: ready.picnicBasket.order[2]!, round: 0, token: 1 })),
+      Story.Command.resolveAll([{ name: 'PicnicBasketMoveFood' }, PicnicBasket.FoodLanded({ round: 0, token: 2 })]),
+      Story.Command.resolveAll([{ name: 'PicnicBasketRefreshAfterOrder' }, PicnicBasket.OrderRefreshReady({ round: 0, token: 2 })]),
+      Story.model(model => {
+        arriving = model.picnicBasket
+        expect(arriving).toMatchObject({ status: 'arriving', round: 1, token: 3, step: 0, feedbackPending: false })
+      }),
+      (simulation: Story.StorySimulation<Main.Model, Main.Message>) => whilePending(PicnicBasket.PickFood({ food: simulation.model.picnicBasket.order[0]!, round: 1, token: 3 }))(simulation),
+      whilePending(PicnicBasket.RepeatOrder({ round: 1, token: 3 })),
+      whilePending(PicnicBasket.Entered()),
+      whilePending(PicnicBasket.FoodLanded({ round: 1, token: 3 })),
+      whilePending(PicnicBasket.OrderRefreshReady({ round: 1, token: 3 })),
+      whilePending(PicnicBasket.BasketArrived({ round: 0, token: 2 })),
+      whilePending(PicnicBasket.BasketArrived({ round: 1, token: 2 })),
+      Story.model(model => { expect(model.picnicBasket).toEqual(arriving) }),
+      Story.Command.expectExact({ name: 'PicnicBasketArrive' }),
+      Story.Command.resolveAll([{ name: 'PicnicBasketArrive' }, PicnicBasket.BasketArrived({ round: 1, token: 3 })]),
+      Story.model(model => { expect(model.picnicBasket).toEqual({ ...arriving, status: 'packing' }) }),
+      Story.message(PicnicBasket.BasketArrived({ round: 1, token: 3 })),
+      Story.model(model => { expect(model.picnicBasket).toEqual({ ...arriving, status: 'packing' }) }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('settles an arriving basket on navigation without generating another order or accepting its late receipt', () => {
+    const [opened] = Main.update({ ...createModel(), muted: true }, ClickedPicnicBasket())
+    const ready = { ...opened, picnicBasket: { ...opened.picnicBasket, step: 2 } }
+    let arriving = ready.picnicBasket
+    let departed = ready.picnicBasket
+    Story.story(
+      Main.update, Story.with(ready),
+      Story.message(PicnicBasket.PickFood({ food: ready.picnicBasket.order[2]!, round: 0, token: 1 })),
+      Story.Command.resolveAll([{ name: 'PicnicBasketMoveFood' }, PicnicBasket.FoodLanded({ round: 0, token: 2 })]),
+      Story.Command.resolveAll([{ name: 'PicnicBasketRefreshAfterOrder' }, PicnicBasket.OrderRefreshReady({ round: 0, token: 2 })]),
+      Story.model(model => { arriving = model.picnicBasket }),
+      whilePending(ClickedLanding()),
+      Story.model(model => {
+        expect(model.page._tag).toBe('PageLanding')
+        departed = model.picnicBasket
+        expect(departed).toEqual({ ...arriving, status: 'packing', token: 4 })
+        expect(departed.order).toBe(arriving.order)
+        expect(departed.choices).toBe(arriving.choices)
+      }),
+      Story.Command.resolveAll([{ name: 'PicnicBasketArrive' }, PicnicBasket.BasketArrived({ round: 1, token: 3 })]),
+      Story.message(PicnicBasket.BasketArrived({ round: 1, token: 4 })),
+      Story.model(model => { expect(model.picnicBasket).toEqual(departed) }),
+      Story.message(ClickedPicnicBasket()),
+      Story.message(PicnicBasket.BasketArrived({ round: 1, token: 3 })),
+      Story.model(model => { expect(model.picnicBasket).toEqual({ ...departed, token: 5 }) }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('invalidates basket arrival when the root sound or language settings change while preserving the fresh order', () => {
+    for (const message of [ToggleMute(), SetLanguage({ value: 'fr' }), SetSpeechRate({ value: 1.4 }), SetSpeechPitch({ value: 1.8 })]) {
+      const [opened] = Main.update({ ...createModel(), muted: true }, ClickedPicnicBasket())
+      const ready = { ...opened, muted: false, picnicBasket: { ...opened.picnicBasket, step: 2 } }
+      let arriving = ready.picnicBasket
+      Story.story(
+        Main.update, Story.with(ready),
+        Story.message(PicnicBasket.PickFood({ food: ready.picnicBasket.order[2]!, round: 0, token: 1 })),
+        Story.Command.resolveAll([{ name: 'PicnicBasketMoveFood' }, PicnicBasket.FoodLanded({ round: 0, token: 2 })]),
+        Story.Command.resolveAll([{ name: 'PicnicBasketRefreshAfterOrder' }, PicnicBasket.OrderRefreshReady({ round: 0, token: 2 })]),
+        Story.model(model => { arriving = model.picnicBasket }),
+        whilePending(message),
+        Story.model(model => {
+          expect(model.picnicBasket).toEqual({ ...arriving, status: 'packing', token: 4, feedbackPending: false })
+          expect(model.picnicBasket.order).toBe(arriving.order)
+          expect(model.picnicBasket.choices).toBe(arriving.choices)
+        }),
+        Story.Command.resolveAll(
+          [{ name: 'PicnicBasketArrive' }, PicnicBasket.BasketArrived({ round: 1, token: 3 })], resolveSettings,
+        ),
+        Story.model(model => { expect(model.picnicBasket).toEqual({ ...arriving, status: 'packing', token: 4, feedbackPending: false }) }),
+        Story.Command.expectNone(),
+      )
+    }
+  })
+
+  it('rejects stale, duplicate and malformed food inputs and invalidates a flight when order size changes', () => {
+    const [opened] = Main.update({ ...createModel(), muted: true }, ClickedPicnicBasket())
+    const before = opened.picnicBasket
+    const malformed = [
+      { _tag: 'PicnicBasketPickFood', food: 'unknown', round: 0, token: 1 },
+      { _tag: 'PicnicBasketPickFood', food: PicnicBasket.FOODS.find(food => !before.choices.includes(food.id))!.id, round: 0, token: 1 },
+      { _tag: 'PicnicBasketPickFood', food: before.order[0]!, round: NaN, token: 1 },
+      { _tag: 'PicnicBasketPickFood', food: before.order[0]!, round: 0, token: -1 },
+      { _tag: 'PicnicBasketPickFood', food: before.order[0]!, round: 1, token: 1 },
+      { _tag: 'PicnicBasketSetLength', length: 4 }, { _tag: 'PicnicBasketSetRemember', remember: 'yes' },
+    ]
+    for (const message of malformed) expect(Main.update(opened, message as Main.Message)).toEqual([opened, []])
+    Story.story(
+      Main.update, Story.with(opened),
+      Story.message(PicnicBasket.PickFood({ food: before.order[0]!, round: 0, token: 1 })),
+      whilePending(PicnicBasket.PickFood({ food: before.order[0]!, round: 0, token: 1 })),
+      whilePending(PicnicBasket.RepeatOrder({ round: 0, token: 2 })),
+      Story.Command.expectExact({ name: 'PicnicBasketMoveFood' }),
+      whilePending(PicnicBasket.SetLength({ length: 2 })),
+      Story.model(model => { expect(model.picnicBasket).toMatchObject({ status: 'packing', length: 2, step: 0, round: 1, token: 3 }) }),
+      Story.Command.resolveAll([{ name: 'PicnicBasketMoveFood' }, PicnicBasket.FoodLanded({ round: 0, token: 2 })]),
+      Story.model(model => { expect(model.picnicBasket).toMatchObject({ status: 'packing', length: 2, step: 0, round: 1, token: 3 }) }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('keeps Picnic Basket play and clue settings transient through export, persistence and reload', async () => {
+    const [opened] = Main.update({ ...createModel(), muted: true }, ClickedPicnicBasket())
+    let played = opened
+    Story.story(
+      Main.update, Story.with(opened),
+      Story.message(PicnicBasket.SetLength({ length: 2 })),
+      Story.message(PicnicBasket.SetRemember({ remember: false })),
+      (simulation: Story.StorySimulation<Main.Model, Main.Message>) => {
+        const child = simulation.model.picnicBasket
+        return Story.message(PicnicBasket.PickFood({ food: child.order[0]!, round: child.round, token: child.token }))(simulation)
+      },
+      Story.Command.resolveAll([{ name: 'PicnicBasketMoveFood' }, PicnicBasket.FoodLanded({ round: 1, token: 4 })]),
+      Story.model(model => { played = model }), Story.Command.expectNone(),
+    )
+    const [exported, exportCommands] = Main.update(played, ExportSettings())
+    expect(JSON.parse(exported.exportData).settings).not.toHaveProperty('picnicBasket')
+    expect(exportCommands).toEqual([])
+    const [customized, commands] = Main.update(played, SetLanguage({ value: 'ja' }))
+    expect(customized.picnicBasket).toMatchObject({ step: 1, remember: false, length: 2 })
+    expect(commands.map(command => command.name)).toEqual(['PersistSettings'])
+    const command = commands[0]
+    if (!command) throw new Error('missing PersistSettings command')
+    expect(await Effect.runPromise(command.effect)).toEqual(SettingsPersisted())
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') as Record<string, unknown>
+    expect(Object.keys(stored).some(key => key.startsWith('picnicBasket'))).toBe(false)
+    const [loaded] = Main.init()
+    expect(loaded.language).toBe('ja')
+    expect(loaded.picnicBasket).toEqual(PicnicBasket.init())
+  })
+})
+
 describe('Main', () => {
+  it('opens Shape Match with a localized title and retains its initialized cards', () => {
+    for (const language of Object.keys(translations) as Array<keyof typeof translations>) {
+      const initial = { ...createModel(), language, muted: true }
+      const [opened, commands] = Main.update(initial, ClickedShapeMatch())
+      expect(opened.page._tag).toBe('PageShapeMatch')
+      expect(opened.shapeMatch).toEqual({ ...ShapeMatch.init(), token: 1 })
+      expect(opened.shapeMatch.homes).toBe(initial.shapeMatch.homes)
+      expect(Main.view(opened).title).toBe(t('pageTitleShapeMatch', language))
+      expect(commands).toEqual([])
+      const [reopened, repeatedCommands] = Main.update(opened, ClickedShapeMatch())
+      expect(reopened).toEqual(opened)
+      expect(repeatedCommands).toEqual([])
+    }
+  })
+
+  it.each(['simple', 'pairs'] as const)('continues through 120 %s matches, replacing only the matched card', mode => {
+    const initial = createModel()
+    let current = Main.update({ ...initial, muted: true }, ClickedShapeMatch())[0]
+    if (mode === 'simple') {
+      const [simple, commands] = Main.update(current, ShapeMatch.SetMode({ mode: 'simple' }))
+      expect(commands).toEqual([])
+      current = simple
+    }
+    for (let turn = 0; turn < 120; turn++) {
+      const before = current.shapeMatch
+      const result = { round: before.round, token: before.token + 1 }
+      Story.story(
+        Main.update, Story.with(current),
+        Story.message(ShapeMatch.PickHome({ index: before.targetIndex, round: before.round, token: before.token })),
+        Story.model(model => {
+          expect(model.shapeMatch).toMatchObject({ status: 'moving', round: before.round, token: result.token })
+          expect(model.shapeMatch.homes).toEqual(before.homes)
+        }),
+        Story.Command.expectExact({ name: 'ShapeMatchMovePiece' }),
+        Story.Command.resolveAll([{ name: 'ShapeMatchMovePiece' }, ShapeMatch.MoveFinished(result)]),
+        Story.model(model => { expect(model.shapeMatch.status).toBe('landed') }),
+        Story.Command.expectExact({ name: 'ShapeMatchReplaceAfterMatch' }),
+        Story.Command.resolveAll([{ name: 'ShapeMatchReplaceAfterMatch' }, ShapeMatch.ReplacementReady(result)]),
+        Story.model(model => {
+          const next = model.shapeMatch
+          expect(next).toMatchObject({ status: 'matching', round: before.round + 1, token: before.token + 2, feedbackPending: false })
+          expect(next.homes).toHaveLength(4)
+          expect(new Set(next.homes.map(home => home.join(','))).size).toBe(4)
+          expect(next.homes.map((home, index) => home.join(',') === before.homes[index]!.join(',') ? -1 : index).filter(index => index >= 0))
+            .toEqual([before.targetIndex])
+          expect(next.targetIndex).toBeGreaterThanOrEqual(0)
+          expect(next.targetIndex).toBeLessThan(4)
+          expect(next.targetIndex).not.toBe(before.targetIndex)
+          expect(ShapeMatch.getPuzzle(next).target).toEqual(next.homes[next.targetIndex])
+          expect(next.homes.every(home => home.length === (mode === 'pairs' ? 2 : 1) && home.every(shape => S.is(ShapeMatch.Shape)(shape)))).toBe(true)
+          current = model
+        }),
+        Story.Command.expectNone(),
+      )
+    }
+    expect(current.shapeMatch.round).toBe(120)
+    const [exported, commands] = Main.update(current, ExportSettings())
+    expect(JSON.parse(exported.exportData).settings).not.toHaveProperty('shapeMatch')
+    expect(commands).toEqual([])
+  })
+
+  it.each([false, true])('forwards root mute to automatic entry and replacement announcements: %s', muted => {
+    Story.story(
+      Main.update, Story.with({ ...createModel(), muted }),
+      Story.message(ClickedShapeMatch()),
+      Story.model(model => { expect(model.shapeMatch).toMatchObject({ status: 'matching', token: 1, feedbackPending: !muted }) }),
+      muted ? Story.Command.expectNone() : Story.Command.resolveAll(
+        [{ name: 'ShapeMatchFeedback' }, ShapeMatch.FeedbackFinished({ round: 0, token: 1 })],
+      ),
+      Story.message(ShapeMatch.PickHome({ index: initialShapeMatchHome, round: 0, token: 1 })),
+      Story.model(model => { expect(model.shapeMatch).toMatchObject({ status: 'moving', feedbackPending: false }) }),
+      Story.Command.expectExact({ name: 'ShapeMatchMovePiece' }),
+      Story.Command.resolveAll([{ name: 'ShapeMatchMovePiece' }, ShapeMatch.MoveFinished({ round: 0, token: 2 })]),
+      Story.model(model => { expect(model.shapeMatch.status).toBe('landed') }),
+      Story.Command.expectExact({ name: 'ShapeMatchReplaceAfterMatch' }),
+      Story.Command.resolveAll([{ name: 'ShapeMatchReplaceAfterMatch' }, ShapeMatch.ReplacementReady({ round: 0, token: 2 })]),
+      Story.model(model => { expect(model.shapeMatch).toMatchObject({ status: 'matching', round: 1, token: 3, feedbackPending: !muted }) }),
+      muted ? Story.Command.expectNone() : Story.Command.resolveAll(
+        [{ name: 'ShapeMatchFeedback' }, ShapeMatch.FeedbackFinished({ round: 1, token: 3 })],
+      ),
+      Story.model(model => { expect(model.shapeMatch.feedbackPending).toBe(false) }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('explicitly forwards root language and speech preferences to entry and matching', () => {
+    const base = { ...createModel(), language: 'fr' as const, muted: true, speechRate: 1.4, speechPitch: 1.8 }
+    const delegated = vi.spyOn(ShapeMatch, 'update')
+    try {
+      const [opened] = Main.update(base, ClickedShapeMatch())
+      expect(delegated).toHaveBeenCalledWith(base.shapeMatch, ShapeMatch.Entered(), 'fr', true, { rate: 1.4, pitch: 1.8, lang: 'fr' })
+      const message = ShapeMatch.PickHome({ index: opened.shapeMatch.targetIndex, round: opened.shapeMatch.round, token: opened.shapeMatch.token })
+      const [next, commands] = Main.update(opened, message)
+      expect(delegated).toHaveBeenLastCalledWith(opened.shapeMatch, message, 'fr', true, { rate: 1.4, pitch: 1.8, lang: 'fr' })
+      expect(next.shapeMatch.status).toBe('moving')
+      expect(commands.map(command => command.name)).toEqual(['ShapeMatchMovePiece'])
+    } finally {
+      delegated.mockRestore()
+    }
+  })
+
+  it('announces the actual shape pair on entry with root speech settings', async () => {
+    await withSpeechMock(async spoken => {
+      const [opened, commands] = Main.update({ ...createModel(), language: 'fr', speechRate: 1.4, speechPitch: 1.8 }, ClickedShapeMatch())
+      const card = document.createElement('div')
+      card.className = 'shape-match-card'
+      card.dataset.shapeMatchRound = String(opened.shapeMatch.round)
+      card.dataset.shapeMatchToken = String(opened.shapeMatch.token)
+      document.body.append(card)
+      try {
+        const command = commands[0]
+        if (!command) throw new Error('missing ShapeMatchFeedback command')
+        expect(command.name).toBe('ShapeMatchFeedback')
+        expect(await Effect.runPromise(command.effect)).toEqual(ShapeMatch.FeedbackFinished({ round: 0, token: 1 }))
+        expect(spoken).toEqual([{ text: tf('shapeMatchPair', 'fr', t('shapeCircle', 'fr'), t('shapeSquare', 'fr')), rate: 1.4, pitch: 1.8, lang: 'fr' }])
+      } finally {
+        card.remove()
+      }
+    })
+  })
+
+  it.each(['moving', 'landed'] as const)('settles a %s match on navigation and rejects late or off-page results', phase => {
+    const [opened] = Main.update({ ...createModel(), muted: true }, ClickedShapeMatch())
+    const before = opened.shapeMatch
+    const [moving, moveCommands] = Main.update(opened, ShapeMatch.PickHome({ index: before.targetIndex, round: 0, token: 1 }))
+    const [active, pendingCommands] = phase === 'landed'
+      ? Main.update(moving, ShapeMatch.MoveFinished({ round: 0, token: 2 })) : [moving, moveCommands]
+    expect(pendingCommands.map(command => command.name)).toEqual([phase === 'landed' ? 'ShapeMatchReplaceAfterMatch' : 'ShapeMatchMovePiece'])
+    const [landing, exitCommands] = Main.update(active, ClickedLanding())
+    const departed = landing.shapeMatch
+    expect(exitCommands).toEqual([])
+    expect(departed).toMatchObject({ round: 1, status: 'matching', token: 3, feedbackPending: false })
+    expect(departed.homes.map((home, index) => home.join(',') === before.homes[index]!.join(',') ? -1 : index).filter(index => index >= 0)).toEqual([before.targetIndex])
+    Story.story(
+      Main.update, Story.with(landing),
+      // Carry the command launched before navigation into the departed page.
+      (simulation: Story.StorySimulation<Main.Model, Main.Message>) => ({ ...simulation, commands: pendingCommands }),
+      phase === 'landed'
+        ? Story.Command.resolveAll([{ name: 'ShapeMatchReplaceAfterMatch' }, ShapeMatch.ReplacementReady({ round: 0, token: 2 })])
+        : Story.Command.resolveAll([{ name: 'ShapeMatchMovePiece' }, ShapeMatch.MoveFinished({ round: 0, token: 2 })]),
+      ...[
+        ShapeMatch.PickHome({ index: 0, round: 1, token: 3 }), ShapeMatch.SetMode({ mode: 'simple' }), ShapeMatch.Entered(),
+        ShapeMatch.MoveFinished({ round: 1, token: 3 }), ShapeMatch.ReplacementReady({ round: 1, token: 3 }),
+        ShapeMatch.FeedbackFinished({ round: 1, token: 3 }),
+      ].map(message => Story.message(message)),
+      Story.model(model => { expect(model.shapeMatch).toEqual(departed) }),
+      Story.message(ClickedShapeMatch()),
+      Story.model(model => { expect(model.shapeMatch).toEqual({ ...departed, token: 4 }) }),
+      Story.message(ShapeMatch.FeedbackFinished({ round: 0, token: 2 })),
+      Story.message(ShapeMatch.MoveFinished({ round: 0, token: 2 })),
+      Story.message(ShapeMatch.ReplacementReady({ round: 0, token: 2 })),
+      Story.model(model => { expect(model.shapeMatch).toEqual({ ...departed, token: 4 }) }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('excludes continuous Shape Match cards and state from saved preferences', async () => {
+    const [opened] = Main.update({ ...createModel(), muted: true }, ClickedShapeMatch())
+    const [moving] = Main.update(opened, ShapeMatch.PickHome({ index: initialShapeMatchHome, round: 0, token: 1 }))
+    const [customized, commands] = Main.update(moving, SetLanguage({ value: 'ja' }))
+    expect(customized.shapeMatch).toMatchObject({ round: 1, status: 'matching' })
+    expect(commands.map(command => command.name)).toEqual(['PersistSettings'])
+    const command = commands[0]
+    if (!command) throw new Error('missing PersistSettings command')
+    expect(await Effect.runPromise(command.effect)).toEqual(SettingsPersisted())
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') as Record<string, unknown>
+    expect(stored).not.toHaveProperty('shapeMatch')
+    expect(Object.keys(stored).some(key => key.startsWith('shapeMatch'))).toBe(false)
+    const [loaded] = Main.init()
+    expect(loaded.language).toBe('ja')
+    expect(loaded.shapeMatch).toEqual(ShapeMatch.init())
+  })
+
+  it('invalidates pending entry audio when root sound or language context changes', () => {
+    const [pending] = Main.update(createModel(), ClickedShapeMatch())
+    expect(pending.shapeMatch.feedbackPending).toBe(true)
+    for (const message of [ToggleMute(), SetLanguage({ value: 'fr' }), SetSpeechRate({ value: 1.4 }), SetSpeechPitch({ value: 1.8 })]) {
+      const [changed] = Main.update(pending, message)
+      expect(changed.shapeMatch).toMatchObject({ token: 2, feedbackPending: false })
+      const [ignored, commands] = Main.update(changed, ShapeMatch.FeedbackFinished({ round: 0, token: 1 }))
+      expect(ignored).toEqual(changed)
+      expect(commands).toEqual([])
+    }
+  })
+
+  it('preserves the continuous board when settings import fails decoding', () => {
+    const initial = createModel()
+    const current: Main.Model = { ...initial, shapeMatch: { ...initial.shapeMatch, round: 150, token: 301, hint: true } }
+    const [rejected, commands] = Main.update(current, ImportedSettings({ data: JSON.stringify({
+      version: 1, settings: { language: 'xx', shapeMatch: { homes: [['unknown']] } },
+    }) }))
+    expect(rejected.shapeMatch).toEqual(current.shapeMatch)
+    expect(rejected.language).toBe(current.language)
+    expect(commands).toEqual([])
+  })
+
   it('opens Dot Shapes with a localized page title and keeps its drawing transient', () => {
     for (const language of Object.keys(translations) as Array<keyof typeof translations>) {
       const [opened, commands] = Main.update({ ...createModel(), language }, ClickedDotShapes())
@@ -1138,6 +1704,51 @@ describe('Main', () => {
       expect(Option.isNone(decodeModel({
         ...createModel(), dotShapes: { ...DotShapes.init(), revision: '0' },
       }))).toBe(true)
+      expect(Option.isNone(decodeModel({
+        ...createModel(), shapeMatch: { ...ShapeMatch.init(), round: '0' },
+      }))).toBe(true)
+    })
+
+    it('decodes every Shape Match event through the root message schema', () => {
+      const messages = [
+        ClickedShapeMatch(),
+        ShapeMatch.PickHome({ index: initialShapeMatchHome, round: 0, token: 0 }),
+        ShapeMatch.SetMode({ mode: 'simple' }),
+        ShapeMatch.MoveFinished({ round: 0, token: 1 }),
+        ShapeMatch.ReplacementReady({ round: 0, token: 1 }),
+        ShapeMatch.Entered(),
+        ShapeMatch.FeedbackFinished({ round: 0, token: 1 }),
+      ]
+      for (const message of messages) {
+        const decoded = decodeMessage(message)
+        expect(Option.isSome(decoded), message._tag).toBe(true)
+        if (Option.isSome(decoded)) expect(decoded.value).toEqual(message)
+      }
+    })
+
+    it('rejects removed finite-round Shape Match actions at the root boundary', () => {
+      for (const tag of ['ShapeMatchNext', 'ShapeMatchAgain', 'ShapeMatchReplay']) {
+        expect(Option.isNone(decodeMessage({ _tag: tag, round: 0, token: 1 }))).toBe(true)
+      }
+    })
+
+    it('decodes every Picnic Basket event through the root message schema', () => {
+      const messages = [
+        ClickedPicnicBasket(), PicnicBasket.Entered(),
+        PicnicBasket.PickFood({ food: 'apple', round: 0, token: 1 }),
+        PicnicBasket.FoodLanded({ round: 0, token: 2 }),
+        PicnicBasket.OrderRefreshReady({ round: 0, token: 4 }),
+        PicnicBasket.BasketArrived({ round: 1, token: 5 }),
+        PicnicBasket.SetLength({ length: 2 }), PicnicBasket.SetRemember({ remember: false }),
+        PicnicBasket.RepeatOrder({ round: 0, token: 2 }),
+        PicnicBasket.FeedbackFinished({ round: 0, token: 1 }),
+      ]
+      for (const message of messages) {
+        const decoded = decodeMessage(message)
+        expect(Option.isSome(decoded), message._tag).toBe(true)
+        if (Option.isSome(decoded)) expect(decoded.value).toEqual(message)
+      }
+      expect(Option.isNone(decodeModel({ ...createModel(), picnicBasket: { ...PicnicBasket.init(), choices: ['unknown'] } }))).toBe(true)
     })
 
     it('decodes every Dot Shapes event through the root message schema', () => {
@@ -2049,15 +2660,14 @@ describe('Main', () => {
         return originalRemove(type, listener, options)
       }) as Document['removeEventListener']
 
+      const fiber = Effect.runFork(Stream.runDrain(multitouchClickStream(document.body)))
       try {
-        const fiber = Effect.runFork(Stream.runDrain(multitouchClickStream(document.body)))
-        await new Promise(resolve => setTimeout(resolve, 0))
-
-        expect(added).toHaveLength(1)
+        await vi.waitFor(() => expect(added).toHaveLength(1))
         await Effect.runPromise(Fiber.interrupt(fiber))
 
         expect(removed).toStrictEqual(added)
       } finally {
+        await Effect.runPromise(Fiber.interrupt(fiber))
         document.addEventListener = originalAdd as Document['addEventListener']
         document.removeEventListener = originalRemove as Document['removeEventListener']
       }
