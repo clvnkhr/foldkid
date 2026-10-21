@@ -698,7 +698,7 @@ export const view = (model: Model, language: string = 'en') => {
           h.h1([h.Class('title')], [t('musicBoxTitle', language)]),
 
           h.div([h.Class('musicbox-controls')], [
-            h.div([h.Class('musicbox-dropdown')], [
+            h.div([h.Class('musicbox-dropdown musicbox-song-picker')], [
               h.div([h.Class('musicbox-song-nav')], [
                 h.button(
                   [
@@ -807,6 +807,7 @@ export const view = (model: Model, language: string = 'en') => {
             ]),
           ]),
 
+          h.div([h.Class('musicbox-backing-controls')], [
           ...(musicalKey ? [h.p([h.Class('musicbox-key'), h.Role('status'), h.Attribute('aria-live', 'polite')], [
             tf(musicalKey.mode === 'major' ? 'musicBoxMajorKey' : 'musicBoxMinorKey', language, tonicLabel(musicalKey)),
           ])] : []),
@@ -823,6 +824,8 @@ export const view = (model: Model, language: string = 'en') => {
               h.option([h.Value('chords'), h.Selected(model.accompanimentStyle === 'chords')], [t('musicBoxAccompanimentChords', language)]),
               h.option([h.Value('arpeggio'), h.Selected(model.accompanimentStyle === 'arpeggio')], [t('musicBoxAccompanimentArpeggio', language)]),
             ]),
+          ]),
+
           ]),
 
           h.div(

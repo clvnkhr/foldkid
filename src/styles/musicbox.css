@@ -1,17 +1,16 @@
 .musicbox-page {
   min-height: 100dvh;
-  padding-top: calc(6rem + env(safe-area-inset-top, 0px));
+  padding: calc(5rem + env(safe-area-inset-top, 0px)) 0.75rem 0;
+  justify-content: flex-start;
   padding-bottom: max(2rem, env(safe-area-inset-bottom, 0px));
 }
 
 .musicbox-controls {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-bottom: 0.5rem;
-  align-items: flex-end;
-  overflow: hidden;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.4rem;
+  margin-bottom: 0.35rem;
+  align-items: center;
 }
 
 .musicbox-inline-btn {
@@ -50,9 +49,15 @@
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
-  flex: 1;
+  flex: 0 0 auto;
+  min-width: 0;
 }
-.musicbox-controls > .musicbox-dropdown:first-child { flex-basis: 100%; grid-column: 1 / -1; }
+.musicbox-song-picker { flex-direction: row; align-items: center; }
+.musicbox-controls > .musicbox-dropdown:not(.musicbox-song-picker) { flex-direction: row; align-items: center; justify-content: center; }
+.musicbox-controls .tempo-controls { margin: 0; }
+.musicbox-song-picker .musicbox-select { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.musicbox-card .title { font-size: 1.1rem; margin: 0 0 0.4rem; }
+.musicbox-backing-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0.25rem 0.75rem; }
 
 .musicbox-dropdown-label {
   font-size: 0.7rem;
@@ -70,7 +75,7 @@
 
 .musicbox-accompaniment {
   display: flex; flex-wrap: wrap; align-items: center; justify-content: center;
-  gap: 0.5rem; margin: 0.4rem 0 0.6rem;
+  gap: 0.35rem; margin: 0;
   font-size: 0.8rem; color: var(--text-secondary);
 }
 
@@ -185,7 +190,7 @@
 }
 
 .musicbox-card {
-  padding: 1rem 0;
+  padding: 0.65rem 0;
   position: relative;
 }
 
@@ -242,23 +247,12 @@
 .musicbox-card-inner {
   width: 100%;
   min-width: 0;
-  padding: 0 1.5rem;
+  padding: 0 0.75rem;
 }
 
-@media (max-width: 480px) {
-  .musicbox-controls {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+@media (max-width: 560px) {
+  .musicbox-song-picker .musicbox-select { width: 2.8rem; flex: 1; }
 
-  .musicbox-dropdown {
-    min-width: 0;
-  }
-
-  .musicbox-controls > .playback-btns {
-    grid-column: 1 / -1;
-    justify-content: center;
-  }
 
   .musicbox-controls > .musicbox-dropdown:nth-child(3) .tempo-label,
   .musicbox-controls > .musicbox-dropdown:nth-child(4) .tempo-label,
@@ -267,12 +261,6 @@
     display: none;
   }
 
-  .musicbox-dropdown:first-child .musicbox-select {
-    width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
 }
 
 .piano-controls {

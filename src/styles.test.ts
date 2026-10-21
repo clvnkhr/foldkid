@@ -167,11 +167,14 @@ describe('styles.css invariants', () => {
     expect(particles).toContain('will-change: transform, opacity')
   })
 
-  it('keeps musicbox clear of navigation and gives phone song titles the full controls width', () => {
-    expect(cssRule('.musicbox-page')).toContain('padding-top: calc(6rem + env(safe-area-inset-top, 0px))')
-    expect(cssRule('.musicbox-controls > .musicbox-dropdown:first-child')).toContain('grid-column: 1 / -1')
-    expect(cssRule('.musicbox-controls > .musicbox-dropdown:first-child')).toContain('flex-basis: 100%')
-    expect(cssRule('.musicbox-controls > .playback-btns')).toContain('grid-column: 1 / -1')
+  it('keeps musicbox clear of navigation and makes the phone song picker compact', () => {
+    expect(cssRule('.musicbox-page')).toContain('calc(5rem + env(safe-area-inset-top, 0px))')
+    expect(cssRule('.musicbox-dropdown')).toContain('min-width: 0')
+    expect(cssRule('.musicbox-dropdown')).toContain('flex: 0 0 auto')
+    expect(cssRule('.musicbox-controls')).toContain('grid-template-columns: minmax(0, 1fr) auto')
+    expect(cssRule('.musicbox-controls')).not.toContain('overflow: hidden')
+    expect(cssRule('.musicbox-card .title')).toContain('font-size: 1.1rem')
+    expect(cssRule('.musicbox-song-picker .musicbox-select')).toContain('text-overflow: ellipsis')
   })
 
   it('keeps musicbox drumpads in the same footprint as the piano keyboard', () => {

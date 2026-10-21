@@ -69,9 +69,11 @@ const ARRANGEMENTS: Readonly<Record<string, Arrangement>> = {
   birthday: { length: 25, cycle: 25, meter: 3, pickup: 1, quiet: [[19, 20]], meterResets: [20], changes: [
     [0, 'I'], [4, 'V'], [10, 'I'], [16, 'V'], [17, 'IV'], [20, 'I'], [22, 'V'], [23, 'I'],
   ] },
-  baaBaa: { length: 32, cycle: 32, meter: 2, changes: [
+  baaBaa: { length: 48, cycle: 48, meter: 2, changes: [
     [0, 'I'], [4, 'IV'], [6, 'I'], [8, 'IV'], [10, 'I'], [12, 'V'], [14, 'I'],
-    [20, 'IV'], [22, 'I'], [24, 'IV'], [26, 'I'], [28, 'V'], [30, 'I'],
+    [16, 'I'], [18, 'IV'], [20, 'I'], [22, 'V'], [24, 'I'], [26, 'IV'],
+    [28, 'I'], [29, 'V'], [30, 'I'], [32, 'I'], [36, 'IV'], [38, 'I'],
+    [40, 'IV'], [42, 'I'], [44, 'V'], [46, 'I'],
   ] },
   hickory: { length: 24, cycle: 24, meter: 3, compound: true, changes: [
     [0, 'I'], [13.5, 'V'], [15, 'IV'], [16.5, 'V'], [21, 'I'],
@@ -80,11 +82,12 @@ const ARRANGEMENTS: Readonly<Record<string, Arrangement>> = {
     [0, 'I'], [2, 'V'], [4, 'I'], [10, 'V'], [12, 'I'], [20, 'V'],
     [24, 'I'], [26, 'V'], [28, 'I'],
   ] },
-  blindMice: { length: 36, cycle: 36, meter: 3, compound: true, changes: [
-    [0, 'I'], [1.5, 'V'], [3, 'I'], [6, 'V'], [7.5, 'IV'], [9, 'I'],
-    [13.5, 'V'], [15, 'I'], [16.5, 'V'], [18, 'I'], [19.5, 'V'], [21, 'I'],
-    [22.5, 'V'], [24, 'I'], [25.5, 'V'], [27, 'I'], [27.5, 'V'],
-    [30, 'I'], [31.5, 'V'], [33, 'I'],
+  blindMice: { length: 48, cycle: 48, meter: 3, compound: true, changes: [
+    [0, 'I'], [1.5, 'V'], [3, 'I'], [6, 'I'], [7.5, 'V'], [9, 'I'],
+    [12, 'V'], [13.5, 'IV'], [15, 'I'], [18, 'V'], [19.5, 'IV'], [21, 'I'],
+    [25.5, 'V'], [27, 'I'], [28.5, 'V'], [30, 'I'], [31.5, 'V'], [33, 'I'],
+    [34.5, 'V'], [36, 'I'], [37.5, 'V'], [39, 'I'], [39.5, 'V'],
+    [42, 'I'], [43.5, 'V'], [45, 'I'],
   ] },
   polly: { length: 32, cycle: 32, meter: 2, changes: [
     [0, 'I'], [4, 'V'], [8, 'I'], [12, 'IV'], [13, 'V'], [14, 'I'],
@@ -96,18 +99,19 @@ const ARRANGEMENTS: Readonly<Record<string, Arrangement>> = {
     [9, 'I'], [10.5, 'V'], [12, 'I'], [13.5, 'IV'], [15, 'V'], [16.5, 'I'],
     [19.5, 'IV'], [21, 'V'], [22.5, 'I'],
   ] },
-  jackJill: { length: 24, cycle: 24, meter: 3, compound: true, changes: [
-    [0, 'I'], [6, 'V'], [9, 'I'], [15, 'IV'], [18, 'V'], [21, 'I'],
+  jackJill: { length: 48, cycle: 24, meter: 3, compound: true, changes: [
+    [0, 'I'], [7.5, 'V'], [12, 'IV'], [13.5, 'V'], [15, 'I'], [18, 'V'], [22.5, 'I'],
   ] },
   heyDiddle: { length: 24, cycle: 24, meter: 3, compound: true, changes: [
-    [0, 'I'], [9, 'V'], [12, 'IV'], [18, 'I'],
+    [0, 'I'], [1.5, 'V'], [3, 'I'], [4.5, 'V'], [6, 'I'], [9, 'V'],
+    [12, 'IV'], [15, 'I'], [19.5, 'V'], [21, 'I'],
   ] },
-  thisOldMan: { length: 32, cycle: 32, meter: 4, changes: [
+  thisOldMan: { length: 320, cycle: 32, meter: 4, changes: [
     [0, 'I'], [8, 'IV'], [12, 'V'], [16, 'I'], [24, 'V'], [28, 'I'],
   ] },
   boPeep: { length: 24, cycle: 24, meter: 3, compound: true, changes: [
-    [0, 'I'], [3, 'V'], [6, 'I'], [6.5, 'IV'], [7, 'V'], [8.5, 'I'],
-    [10.5, 'V'], [12, 'I'], [15, 'IV'], [15.5, 'V'], [18, 'I'], [19.5, 'V'], [21, 'I'],
+    [0, 'I'], [3, 'V'], [4.5, 'I'], [5.5, 'V'], [9, 'I'],
+    [12, 'IV'], [16.5, 'V'], [18, 'I'], [21, 'V'], [22.5, 'I'],
   ] },
 }
 
