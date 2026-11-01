@@ -1,3 +1,8 @@
+import { ClickedRandomGame, LandingRandomChosen } from './message'
+import { ClickedColorMixing, ClickedSequenceWords, ClickedTarot } from './message'
+import * as ColorMixing from './games/colorMixing'
+import * as SequenceWords from './games/sequenceWords'
+import * as Tarot from './games/tarot'
 import { Effect, Fiber, Option, Schema as S, Stream } from 'effect'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Scene, Story } from 'foldkit/test'
@@ -116,11 +121,11 @@ beforeEach(() => {
 })
 
 describe('landing catalogue migration', () => {
-  const previousCount = LANDING_GAME_COUNT - 1
+  const previousCount = 21
   const previousOrder = Array.from({ length: previousCount }, (_, index) => index).reverse()
   const previousHidden = Array.from({ length: previousCount }, (_, index) => index === 2 || index === 6)
-  const migratedOrder = [...previousOrder, previousCount]
-  const migratedHidden = [...previousHidden, false]
+  const migratedOrder = [...previousOrder, ...Array.from({ length: LANDING_GAME_COUNT - previousCount }, (_, index) => previousCount + index)]
+  const migratedHidden = [...previousHidden, ...Array.from({ length: LANDING_GAME_COUNT - previousCount }, () => false)]
   const malformedOrders = [
     { label: 'empty', order: [] },
     { label: 'duplicate', order: previousOrder.map((index, position) => position === 0 ? 0 : index) },
@@ -152,7 +157,7 @@ describe('landing catalogue migration', () => {
     expect(commands).toHaveLength(0)
   })
 
-  it.each([17, 18, 19, 20, 21])('appends all missing games to a complete historical catalogue of %s games', count => {
+  it.each([17, 18, 19, 20, 21, 22, 23, 24])('appends all missing games to a complete historical catalogue of %s games', count => {
     const order = Array.from({ length: count }, (_, index) => index).reverse()
     const hidden = Array.from({ length: count }, (_, index) => index === 2)
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ landingOrder: order, landingHiddenGames: hidden }))
@@ -224,7 +229,7 @@ describe('landing catalogue migration', () => {
     const oldHidden = previousOrder.map(() => true)
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ landingOrder: previousOrder, landingHiddenGames: oldHidden }))
     const [loaded] = Main.init()
-    expect(loaded.landingHiddenGames).toEqual([...oldHidden, false])
+    expect(loaded.landingHiddenGames).toEqual([...oldHidden, ...Array.from({ length: LANDING_GAME_COUNT - previousCount }, () => false)])
     expect(loaded.landingHiddenGames.some(hidden => !hidden)).toBe(true)
   })
 
@@ -244,7 +249,7 @@ describe('landing catalogue migration', () => {
       } }) })),
       Story.model(model => {
         expect(model.landingOrder).toEqual(migratedOrder)
-        expect(model.landingHiddenGames).toEqual([...previousOrder.map(() => true), false])
+        expect(model.landingHiddenGames).toEqual([...previousOrder.map(() => true), ...Array.from({ length: LANDING_GAME_COUNT - previousCount }, () => false)])
       }),
       Story.Command.resolveAll(resolveSettings),
       Story.Command.expectNone(),
@@ -2682,3 +2687,153 @@ const createModel = (): Main.Model => {
     findIt: { grid: [], target: '🎈', count: 0, shaking: -1, shakeTick: 0, won: false, found: [], anyWins: false, voiceMode: false, pairsMode: false, enabledPacks: FindIt.DEFAULT_EMOJI_PACK_KEYS, tooltipEmoji: null, wrongCount: 0, hintId: null, dragIndex: null, gridDragIndex: null },
   }
 }
+
+describe('new matching games integration', () => {
+  it('opens Color Mixing, seeds a fresh session and forwards its two/three-ink setting', () => {
+    Story.story(Main.update, Story.with({ ...createModel(), muted: true }),
+      Story.message(ClickedColorMixing()),
+      Story.Command.resolveAll([{ name: 'ColorMixingSeed' }, ColorMixing.Seeded({ seed: 12345, token: 1 })]),
+      Story.message(ColorMixing.SetLength({ length: 3 })),
+      Story.model(model => {
+        expect(model.page._tag).toBe('PageColorMixing')
+        expect(model.colorMixing.length).toBe(3)
+        expect(model.colorMixing.seeded).toBe(true)
+      }),
+      Story.message(ClickedLanding()),
+      Story.message(ColorMixing.SetLength({ length: 2 })),
+      Story.model(model => { expect(model.colorMixing.length).toBe(3) }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('opens Sequence Words and forwards its word pack and pair count', () => {
+    Story.story(Main.update, Story.with({ ...createModel(), muted: true }),
+      Story.message(ClickedSequenceWords()),
+      Story.Command.resolveAll([{ name: 'SequenceWordsSeed' }, SequenceWords.SeedReady({ seed: 12345, token: 1 })]),
+      Story.message(SequenceWords.SetGroup({ group: 'months' })),
+      Story.message(SequenceWords.SetCount({ count: 5 })),
+      Story.model(model => {
+        expect(model.page._tag).toBe('PageSequenceWords')
+        expect(model.sequenceWords).toMatchObject({ group: 'months', count: 5, status: 'matching' })
+      }),
+      Story.message(ClickedLanding()),
+      Story.message(SequenceWords.SetGroup({ group: 'weekdays' })),
+      Story.model(model => { expect(model.sequenceWords.group).toBe('months') }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('opens Tarot and delegates the guided spread and draw while rejecting off-page draws', () => {
+    Story.story(Main.update, Story.with({ ...createModel(), muted: true }),
+      Story.message(ClickedTarot()),
+      Story.Command.resolveAll([{ name: 'TarotRandomSeed' }, Tarot.SeedReady({ seed: 12345, token: 1 })]),
+      Story.message(Tarot.SetMode({ mode: 'story' })),
+      Story.message(Tarot.DrawRequested({ token: 2 })),
+      Story.model(model => {
+        expect(model.page._tag).toBe('PageTarot')
+        expect(model.tarot.spread).toHaveLength(1)
+      }),
+      Story.Command.resolveAll([{ name: 'TarotMoveCardToSlot' }, Tarot.CardArrived({ token: 3, slot: 0 })]),
+      Story.message(ClickedLanding()),
+      Story.message(Tarot.DrawRequested({ token: 4 })),
+      Story.model(model => { expect(model.tarot.spread).toHaveLength(1) }),
+      Story.Command.expectNone(),
+    )
+  })
+
+  it('invalidates all delayed child events after navigating away and back', () => {
+    for (const [navigate, property] of [
+      [ClickedColorMixing(), 'colorMixing'], [ClickedSequenceWords(), 'sequenceWords'], [ClickedTarot(), 'tarot'],
+    ] as const) {
+      const [opened] = Main.update({ ...createModel(), muted: true }, navigate)
+      const previousToken = opened[property].token
+      const [left] = Main.update(opened, ClickedLanding())
+      expect(left[property].token).toBeGreaterThan(previousToken)
+      const invalidChild = { ...left[property], token: 'stale' }
+      expect(Option.isNone(S.decodeUnknownOption(Main.Model)({ ...left, [property]: invalidChild }))).toBe(true)
+    }
+  })
+})
+
+describe('matching game speech context interruption', () => {
+  it('restarts initial seed requests after mute changes instead of leaving an empty loading screen', async () => {
+    for (const [navigate, property, seedCommand] of [
+      [ClickedColorMixing(), 'colorMixing', 'ColorMixingSeed'],
+      [ClickedSequenceWords(), 'sequenceWords', 'SequenceWordsSeed'],
+      [ClickedTarot(), 'tarot', 'TarotRandomSeed'],
+    ] as const) {
+      const [opened, oldCommands] = Main.update({ ...createModel(), muted: false }, navigate)
+      const [changed, commands] = Main.update(opened, ToggleMute())
+      const pending = commands.find(command => command.name === seedCommand)
+      expect(pending, property).toBeDefined()
+      const old = oldCommands.find(command => command.name === seedCommand)!
+      const stale = await Effect.runPromise(old.effect)
+      expect(Main.update(changed, stale)[0][property]).toEqual(changed[property])
+      const fresh = await Effect.runPromise(pending!.effect)
+      const [ready] = Main.update(changed, fresh)
+      expect(ready.muted).toBe(true)
+      if (property === 'sequenceWords') expect(ready.sequenceWords.status).toBe('matching')
+      if (property === 'colorMixing') expect(ready.colorMixing).toMatchObject({ seeded: true, seeding: false })
+      if (property === 'tarot') expect(ready.tarot.remaining).toHaveLength(78)
+    }
+  })
+})
+
+
+describe('home screen random game', () => {
+  it.each([[0, 'PageFindIt'], [0.999999, 'PageCounter']] as const)('selects a visible game from the current custom order (sample %s)', (sample, page) => {
+    const base = createModel()
+    const landingOrder = [1, 0, ...base.landingOrder.filter(index => index > 1)]
+    const landingHiddenGames = base.landingHiddenGames.map((_, index) => index > 1)
+    Story.story(Main.update, Story.with({ ...base, landingOrder, landingHiddenGames }),
+      Story.message(ClickedRandomGame()),
+      Story.Command.resolveAll([{ name: 'LandingPickRandomGame' }, LandingRandomChosen({ sample, token: 1 })]),
+      Story.model(model => { expect(model.page._tag).toBe(page) }),
+      Story.Command.expectNone())
+  })
+
+  it('uses the normal child entry commands for the chosen game', () => {
+    const base = createModel()
+    const index = LANDING_GAMES.findIndex(game => game.title === 'sequenceWordsTitle')
+    Story.story(Main.update, Story.with({ ...base, muted: true, landingHiddenGames: base.landingHiddenGames.map((_, i) => i !== index) }),
+      Story.message(ClickedRandomGame()),
+      Story.Command.resolveAll([{ name: 'LandingPickRandomGame' }, LandingRandomChosen({ sample: 0.5, token: 1 })]),
+      Story.Command.resolveAll([{ name: 'SequenceWordsSeed' }, SequenceWords.SeedReady({ seed: 12345, token: 1 })]),
+      Story.model(model => {
+        expect(model.page._tag).toBe('PageSequenceWords')
+        expect(model.sequenceWords.status).toBe('matching')
+      }), Story.Command.expectNone())
+  })
+
+  it('rejects malformed, off-page and superseded random choices', () => {
+    const [pending] = Main.update(createModel(), ClickedRandomGame())
+    for (const message of [
+      ...[-1, 1, Infinity, NaN].map(sample => LandingRandomChosen({ sample, token: pending.landingRandomToken })),
+      ...[-1, 0.5, NaN, 100].map(token => LandingRandomChosen({ sample: 0.5, token })),
+    ]) expect(Main.update(pending, message)).toEqual([pending, []])
+    const [newer] = Main.update(pending, ClickedRandomGame())
+    expect(Main.update(newer, LandingRandomChosen({ sample: 0.5, token: pending.landingRandomToken }))).toEqual([newer, []])
+    const [away] = Main.update(pending, ClickedCounter())
+    expect(Main.update(away, LandingRandomChosen({ sample: 0.5, token: pending.landingRandomToken }))).toEqual([away, []])
+    expect(Main.update(away, ClickedRandomGame())).toEqual([away, []])
+    const [returned] = Main.update(away, ClickedLanding())
+    expect(Main.update(returned, LandingRandomChosen({ sample: 0.5, token: pending.landingRandomToken }))).toEqual([returned, []])
+  })
+
+  it('rechecks current visibility and safely handles no visible games', () => {
+    const [pending] = Main.update(createModel(), ClickedRandomGame())
+    const hidden = { ...pending, landingHiddenGames: pending.landingHiddenGames.map(() => true) }
+    expect(Main.update(hidden, LandingRandomChosen({ sample: 0.5, token: pending.landingRandomToken }))).toEqual([hidden, []])
+    const onlyCounter = { ...hidden, landingHiddenGames: hidden.landingHiddenGames.map((_, index) => index !== 0) }
+    expect(Main.update(onlyCounter, LandingRandomChosen({ sample: 0.5, token: pending.landingRandomToken }))[0].page._tag).toBe('PageCounter')
+  })
+
+  it('keeps random request tokens out of preferences and decodes the result payload at the root boundary', () => {
+    expect(Main.shouldPersistSettings(ClickedRandomGame())).toBe(false)
+    expect(Main.shouldPersistSettings(LandingRandomChosen({ sample: 0.1, token: 1 }))).toBe(false)
+    expect(Option.isSome(S.decodeUnknownOption(Main.Message)(LandingRandomChosen({ sample: 0.1, token: 1 })))).toBe(true)
+    expect(Option.isNone(S.decodeUnknownOption(Main.Message)({ _tag: 'LandingRandomChosen', sample: '0.1', token: 1 }))).toBe(true)
+    const [exported] = Main.update(createModel(), ExportSettings())
+    expect(JSON.parse(exported.exportData).settings).not.toHaveProperty('landingRandomToken')
+  })
+})

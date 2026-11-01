@@ -48,6 +48,8 @@ const readSourceFiles = (dir: string): string[] =>
 const appSource = readSourceFiles(srcDir).join('\n')
 
 const generatedClassNames = new Set([
+  // Worksheet columns are rendered from their typed endpoint side.
+  'sequence-words-column--number', 'sequence-words-column--word',
   'lang-fa',
   'calc-theme-1',
   'calc-theme-2',

@@ -109,6 +109,65 @@ export const swoosh = <Msg>(msg: Msg) => ({
   effect: playTone(300, 0.12, 'triangle').pipe(Effect.as(msg)),
 })
 
+/** A short paper flutter and soft landing, using the shared, gesture-unlocked context. */
+export const cardDrop = <Msg>(msg: Msg) => ({
+  name: 'TarotCardDrop' as const,
+  effect: Effect.sync(() => {
+    const ctx = getContext()
+    if (!ctx) return
+    const nodes: AudioNode[] = []
+    const sources: AudioScheduledSourceNode[] = []
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let cleaned = false
+    const cleanup = (): void => {
+      if (cleaned) return
+      cleaned = true
+      if (timer !== undefined) clearTimeout(timer)
+      for (const source of sources) {
+        source.onended = null
+        try { source.stop() } catch { /* A source may already have ended. */ }
+      }
+      for (const node of nodes) { try { node.disconnect() } catch { /* Release every owned node. */ } }
+    }
+    const own = <N extends AudioNode>(node: N): N => { nodes.push(node); return node }
+    try {
+      const at = ctx.currentTime
+      const buffer = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * 0.16), ctx.sampleRate)
+      const samples = buffer.getChannelData(0)
+      for (let index = 0; index < samples.length; index++) samples[index] = Math.random() * 2 - 1
+      const paper = own(ctx.createBufferSource())
+      sources.push(paper)
+      paper.buffer = buffer
+      const filter = own(ctx.createBiquadFilter())
+      filter.type = 'bandpass'
+      filter.Q.value = 0.7
+      filter.frequency.setValueAtTime(1900, at)
+      filter.frequency.exponentialRampToValueAtTime(650, at + 0.15)
+      const flutter = own(ctx.createGain())
+      flutter.gain.setValueAtTime(0.0001, at)
+      flutter.gain.linearRampToValueAtTime(0.10, at + 0.018)
+      flutter.gain.linearRampToValueAtTime(0.025, at + 0.05)
+      flutter.gain.linearRampToValueAtTime(0.075, at + 0.085)
+      flutter.gain.exponentialRampToValueAtTime(0.0001, at + 0.16)
+      paper.connect(filter); filter.connect(flutter); flutter.connect(ctx.destination)
+      const tap = own(ctx.createOscillator())
+      sources.push(tap)
+      tap.type = 'sine'
+      tap.frequency.setValueAtTime(150, at + 0.09)
+      tap.frequency.exponentialRampToValueAtTime(65, at + 0.18)
+      const landing = own(ctx.createGain())
+      landing.gain.setValueAtTime(0.0001, at)
+      landing.gain.setValueAtTime(0.08, at + 0.09)
+      landing.gain.exponentialRampToValueAtTime(0.0001, at + 0.18)
+      tap.connect(landing); landing.connect(ctx.destination)
+      tap.onended = cleanup
+      paper.start(at); paper.stop(at + 0.16)
+      tap.start(at + 0.09); tap.stop(at + 0.18)
+      timer = globalThis.setTimeout(cleanup, 260)
+    } catch { cleanup() }
+  }).pipe(Effect.as(msg), Effect.catchCause(() => Effect.succeed(msg))),
+})
+
 export const playAudioFile = <Msg>(src: string, msg: Msg) => ({
   name: 'PlayAudioFile' as const,
   args: { src },

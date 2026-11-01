@@ -1,3 +1,4 @@
+import { ClickedRandomGame, ClickedColorMixing, ClickedSequenceWords, ClickedTarot } from '../message'
 import { html } from 'foldkit/html'
 
 import { ClickedAudioTest, ClickedBsl, ClickedBubbles, ClickedBubbles3d, ClickedHandwriting, ClickedDotShapes, ClickedShapeMatch, ClickedPicnicBasket, ClickedCounter, ClickedDraw, ClickedFindIt, ClickedGrowingNumbers, ClickedMagneticBlocks, ClickedMemory, ClickedMusicBox, ClickedPhonemeGarden, ClickedRps, ClickedShapeWorkshop, ClickedSpeakerCalculator, ClickedTalkingClock, ClickedTalkingKeyboard, ClickedWhackamole, ClickedPattern, LandingDragEnded, LandingDragStarted, LandingDroppedOn } from '../message'
@@ -27,7 +28,11 @@ type NavigationMessage = ReturnType<typeof ClickedCounter>
   | ReturnType<typeof ClickedDotShapes>
   | ReturnType<typeof ClickedShapeMatch>
   | ReturnType<typeof ClickedPicnicBasket>
+  | ReturnType<typeof ClickedColorMixing>
+  | ReturnType<typeof ClickedSequenceWords>
+  | ReturnType<typeof ClickedTarot>
 type Message = NavigationMessage
+  | ReturnType<typeof ClickedRandomGame>
   | ReturnType<typeof LandingDragStarted>
   | ReturnType<typeof LandingDroppedOn>
   | ReturnType<typeof LandingDragEnded>
@@ -61,6 +66,9 @@ export const LANDING_GAMES: readonly LandingGame[] = [
   { msg: ClickedDotShapes, title: 'dotShapesTitle' as const, emoji: '🔺' },
   { msg: ClickedShapeMatch, title: 'shapeMatchTitle' as const, emoji: '🔶' },
   { msg: ClickedPicnicBasket, title: 'picnicBasketTitle' as const, emoji: '🧺' },
+  { msg: ClickedColorMixing, title: 'colorMixingTitle', emoji: '🎨' },
+  { msg: ClickedSequenceWords, title: 'sequenceWordsTitle', emoji: '🗓️' },
+  { msg: ClickedTarot, title: 'tarotTitle', emoji: '🌙' },
 ]
 
 export const LANDING_GAME_COUNT = LANDING_GAMES.length
@@ -70,7 +78,7 @@ export const view = (order: readonly number[], hiddenGames: readonly boolean[], 
   const visibleOrder = order.filter(gameIdx => hiddenGames[gameIdx] !== true)
 
   return h.div(
-    [h.Class('landing')],
+    [h.Class('landing'), h.Attribute('data-multitouch-scroll', 'true')],
     [
       h.div([h.Class('header')], [
         h.h1([h.Class('logo')], [
@@ -91,6 +99,9 @@ export const view = (order: readonly number[], hiddenGames: readonly boolean[], 
           t('appName', language),
         ]),
         h.p([h.Class('subtitle')], [t('pickGame', language)]),
+        h.button([h.Class('btn btn-primary landing-random'), h.Attribute('type', 'button'), h.Disabled(visibleOrder.length === 0), h.OnClick(ClickedRandomGame())], [
+          h.span([h.AriaHidden(true)], ['🎲']), t('landingRandomGame', language),
+        ]),
       ]),
       h.div([
         h.Class('game-grid'),
@@ -106,8 +117,9 @@ export const view = (order: readonly number[], hiddenGames: readonly boolean[], 
         ...visibleOrder.map((gameIdx, displayIdx) => {
           const game = LANDING_GAMES[gameIdx]
           if (!game) return null
-          return h.div(
+          return h.button(
             [
+              h.Attribute('type', 'button'), h.Attribute('aria-label', t(game.title, language)),
               h.OnClick(game.msg()),
               h.Class('game-card' + (dragIndex === displayIdx ? ' game-card--dragging' : '')),
               h.DataAttribute('drag-index', displayIdx.toString()),
@@ -120,15 +132,15 @@ export const view = (order: readonly number[], hiddenGames: readonly boolean[], 
                 [
                   h.Class('game-card-drag-handle'),
                   h.Attribute('draggable', 'true'),
-                  h.Attribute('aria-label', 'Reorder game'),
-                  h.Title('Reorder game'),
+                  h.Attribute('aria-label', t('landingReorderGame', language)),
+                  h.Title(t('landingReorderGame', language)),
                   h.OnDragStart(LandingDragStarted({ index: displayIdx })),
                   h.OnDragEnd(LandingDragEnded()),
                 ],
                 ['⠿'],
               ),
-              h.div([h.Class('game-emoji')], [game.emoji]),
-              h.h2([h.Class('game-name')], [t(game.title, language)]),
+              h.span([h.Class('game-emoji'), h.AriaHidden(true)], [game.emoji]),
+              h.span([h.Class('game-name')], [t(game.title, language)]),
             ],
           )
         }),

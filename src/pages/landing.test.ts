@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { Scene } from 'foldkit/test'
+import { Scene, Story } from 'foldkit/test'
+import { html } from 'foldkit/html'
 import { LANDING_GAME_COUNT, LANDING_GAMES, view } from './landing'
 import * as Main from '../main'
 import * as DotShapes from '../games/dotShapes'
 import * as ShapeMatch from '../games/shapeMatch'
 import * as PicnicBasket from '../games/picnicBasket'
-import { LandingDragEnded } from '../message'
+import { ClickedCounter, ClickedRandomGame, LandingDragEnded, LandingRandomChosen } from '../message'
 
 describe('Landing', () => {
   const defaultOrder = Array.from({ length: LANDING_GAME_COUNT }, (_, i) => i)
@@ -19,11 +20,13 @@ describe('Landing', () => {
       'patternTitle', 'bslTitle', 'rpsTitle', 'magneticBlocksTitle', 'talkingKeyboardTitle',
       'talkingClockTitle', 'growingNumbersTitle', 'shapeWorkshopTitle', 'bubbles3dTitle',
       'handwritingTitle', 'dotShapesTitle', 'shapeMatchTitle', 'picnicBasketTitle',
+      'colorMixingTitle', 'sequenceWordsTitle', 'tarotTitle',
     ])
     expect(LANDING_GAMES[19]?.msg()).toEqual({ _tag: 'ClickedDotShapes' })
     expect(LANDING_GAMES[19]?.emoji).toBe('🔺')
     expect(LANDING_GAMES[20]?.msg()).toEqual({ _tag: 'ClickedShapeMatch' })
-    expect(LANDING_GAMES.at(-1)?.msg()).toEqual({ _tag: 'ClickedPicnicBasket' })
+    expect(LANDING_GAMES[21]?.msg()).toEqual({ _tag: 'ClickedPicnicBasket' })
+    expect(LANDING_GAMES.at(-1)?.msg()).toEqual({ _tag: 'ClickedTarot' })
   })
 
   it('renders title and subtitle', () => {
@@ -54,7 +57,21 @@ describe('Landing', () => {
       Scene.expect(Scene.text('Dot Shapes')).toExist(),
       Scene.expect(Scene.text('Shape Match')).toExist(),
       Scene.expect(Scene.text('Picnic Basket')).toExist(),
+      Scene.expect(Scene.text('Color Mixing')).toExist(),
+      Scene.expect(Scene.text('Sequence Words')).toExist(),
+      Scene.expect(Scene.text('Tarot Tales')).toExist(),
       acknowledgePointerReorder,
+      Scene.Command.expectNone(),
+    )
+  })
+
+  it('renders each game as an accessible native button with decorative emoji and a localized grab handle', () => {
+    Scene.scene(
+      { update: Main.update, view: () => view(defaultOrder, visibleGames, 'fr', -1) },
+      Scene.with(Main.init()[0]), acknowledgePointerReorder,
+      Scene.expect(Scene.role('button', { name: 'Compteur' })).toHaveAttr('type', 'button'),
+      Scene.expect(Scene.selector('.game-emoji')).toHaveAttr('aria-hidden', 'true'),
+      Scene.expect(Scene.selector('.game-card-drag-handle')).toHaveAttr('aria-label', 'Réorganiser le jeu'),
       Scene.Command.expectNone(),
     )
   })
@@ -159,6 +176,54 @@ describe('Landing', () => {
       acknowledgePointerReorder,
       Scene.Command.expectNone(),
     )
+  })
+
+
+  it('provides an accessible native Random game button in the landing header', () => {
+    Scene.scene({ update: Main.update, view: () => view(defaultOrder, visibleGames, 'en', -1) },
+      Scene.with(Main.init()[0]), acknowledgePointerReorder,
+      Scene.expect(Scene.role('button', { name: /Random game/ })).toHaveHandler('click'),
+      Scene.expect(Scene.selector('.header button')).toExist(), Scene.Command.expectNone())
+  })
+
+  it.each([[0, 'PageCounter'], [.999999, 'PageFindIt']] as const)('opens %s from the currently visible games through Random game', (sample, page) => {
+    const hidden = defaultOrder.map(index => index !== 0 && index !== 1)
+    const initial = { ...Main.init()[0], landingOrder: defaultOrder, landingHiddenGames: hidden }
+    Scene.scene({ update: Main.update, view: model => {
+      const h = html<Main.Message>()
+      return h.div([], [view(model.landingOrder, model.landingHiddenGames, model.language, -1), h.p([h.Id('random-game-page')], [model.page._tag])])
+    } }, Scene.with(initial), acknowledgePointerReorder,
+      Scene.click(Scene.role('button', { name: /Random game/ })),
+      Scene.Command.resolveAll([{ name: 'LandingPickRandomGame' }, LandingRandomChosen({ sample, token: 1 })]),
+      Scene.expect(Scene.selector('#random-game-page')).toHaveText(page), Scene.Command.expectNone())
+  })
+
+  it('samples the visible games in the saved order without selecting hidden cards', () => {
+    const initial = { ...Main.init()[0], landingOrder: [1, 0, ...defaultOrder.slice(2)], landingHiddenGames: defaultOrder.map(index => index !== 0 && index !== 1) }
+    Story.story(Main.update, Story.with(initial), Story.message(ClickedRandomGame()),
+      Story.model(model => expect(model.landingRandomToken).toBe(1)),
+      Story.Command.resolveAll([{ name: 'LandingPickRandomGame' }, LandingRandomChosen({ sample: 0, token: 1 })]),
+      Story.model(model => expect(model.page._tag).toBe('PageFindIt')), Story.Command.expectNone())
+  })
+
+  it.each([-1, 1, Infinity, NaN])('rejects an invalid random sample %s without navigating', sample => {
+    Story.story(Main.update, Story.with(Main.init()[0]), Story.message(ClickedRandomGame()),
+      Story.Command.resolveAll([{ name: 'LandingPickRandomGame' }, LandingRandomChosen({ sample, token: 1 })]),
+      Story.model(model => expect(model.page._tag).toBe('PageLanding')), Story.Command.expectNone())
+  })
+
+  it('ignores a late random choice after another game has been opened', () => {
+    const [pending, commands] = Main.update(Main.init()[0], ClickedRandomGame())
+    expect(commands.map(command => command.name)).toEqual(['LandingPickRandomGame'])
+    const [opened, navigation] = Main.update(pending, ClickedCounter())
+    expect(navigation).toEqual([])
+    expect(Main.update(opened, LandingRandomChosen({ sample: .99, token: 1 }))).toEqual([opened, []])
+  })
+
+  it('disables Random game when the rendered catalogue has no visible cards', () => {
+    Scene.scene({ update: Main.update, view: () => view(defaultOrder, defaultOrder.map(() => true), 'en', -1) },
+      Scene.with(Main.init()[0]), acknowledgePointerReorder,
+      Scene.expect(Scene.role('button', { name: /Random game/ })).toBeDisabled(), Scene.Command.expectNone())
   })
 
 

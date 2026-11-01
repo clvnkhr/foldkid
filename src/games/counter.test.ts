@@ -952,6 +952,165 @@ describe('counter button touch controls', () => {
     }
   })
 
+  it.each(['pointer-first', 'touch-first'] as const)('counts a Pencil contact once across pen, touch and click delivery (%s)', async order => {
+    const root = document.createElement('div')
+    root.innerHTML = '<button data-counter-button="inc">+1</button>'
+    document.body.append(root)
+    const button = root.querySelector<HTMLElement>('button')!
+    let model = Counter.init
+    const messages: Counter.Message[] = []
+    const apply = (message: Counter.Message): void => {
+      messages.push(message)
+      model = Counter.update(model, message, 'en', true)[0]
+    }
+    // The ordinary click handler remains necessary for keyboard/assistive activation.
+    button.addEventListener('click', () => apply(Counter.PressedIncrement({ duration: 0 })))
+    const fiber = Effect.runFork(Stream.runForEach(Counter.mountCounterPresses(root), message => Effect.sync(() => apply(message))))
+    try {
+      await tick()
+      if (order === 'pointer-first') {
+        pointer(button, 'pointerdown', 7, 100, 'pen')
+        touch(button, 'touchstart', 3, 110)
+      } else {
+        touch(button, 'touchstart', 3, 100)
+        pointer(button, 'pointerdown', 7, 110, 'pen')
+      }
+      await tick()
+      expect(model.presses).toHaveLength(1)
+      pointer(button, 'pointerup', 7, 500, 'pen')
+      touch(button, 'touchend', 3, 510)
+      button.dispatchEvent(new PointerEvent('click', { bubbles: true, cancelable: true, pointerType: 'pen', pointerId: 7, detail: 0 }))
+      button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }))
+      await tick()
+      expect(model).toMatchObject({ count: 1, holding: false, presses: [] })
+      expect(messages.filter(message => message._tag === 'CounterPressedIncrement')).toHaveLength(1)
+      // A later real Pencil press must still count, as must a keyboard click.
+      pointer(button, 'pointerdown', 8, 600, 'pen')
+      pointer(button, 'pointerup', 8, 700, 'pen')
+      button.dispatchEvent(new PointerEvent('click', { bubbles: true, cancelable: true, pointerType: 'pen', pointerId: 8, detail: 0 }))
+      await tick()
+      expect(model.count).toBe(2)
+      button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0 }))
+      expect(model.count).toBe(3)
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(fiber))
+      root.remove()
+    }
+  })
+
+  it.each([
+    ['pointer-first', 'pointer-first'], ['pointer-first', 'touch-first'],
+    ['touch-first', 'pointer-first'], ['touch-first', 'touch-first'],
+  ] as const)('deduplicates pen clicks reporting no touch capabilities with %s starts and %s releases', async (starts, releases) => {
+    const root = document.createElement('div')
+    root.innerHTML = '<button data-counter-button="inc">+1</button>'
+    document.body.append(root)
+    const button = root.querySelector<HTMLElement>('button')!
+    let model = Counter.init
+    const apply = (message: Counter.Message): void => { model = Counter.update(model, message, 'en', true)[0] }
+    button.addEventListener('click', () => apply(Counter.PressedIncrement({ duration: 0 })))
+    const penClick = (): void => {
+      const event = new PointerEvent('click', { bubbles: true, cancelable: true, pointerType: 'pen', pointerId: 7, detail: 0 })
+      Object.defineProperty(event, 'sourceCapabilities', { value: { firesTouchEvents: false } })
+      button.dispatchEvent(event)
+      expect(event.defaultPrevented).toBe(true)
+    }
+    const fiber = Effect.runFork(Stream.runForEach(Counter.mountCounterPresses(root), message => Effect.sync(() => apply(message))))
+    try {
+      await tick()
+      if (starts === 'pointer-first') {
+        pointer(button, 'pointerdown', 7, 100, 'pen'); touch(button, 'touchstart', 3, 110)
+      } else {
+        touch(button, 'touchstart', 3, 100); pointer(button, 'pointerdown', 7, 110, 'pen')
+      }
+      await tick()
+      expect(model.presses).toHaveLength(1)
+      if (releases === 'pointer-first') {
+        pointer(button, 'pointerup', 7, 500, 'pen')
+        penClick() // Some WebKit versions deliver this before the native touch ends.
+        button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }))
+        touch(button, 'touchend', 3, 510)
+      } else {
+        touch(button, 'touchend', 3, 500)
+        penClick()
+        pointer(button, 'pointerup', 7, 510, 'pen')
+      }
+      penClick()
+      await tick()
+      expect(model).toMatchObject({ count: 1, holding: false, presses: [] })
+      // Genuine mouse down/up and keyboard clicks remain independent inputs.
+      pointer(button, 'pointerdown', 8, 600, 'mouse'); pointer(button, 'pointerup', 8, 700, 'mouse')
+      const mouseClick = new PointerEvent('click', { bubbles: true, cancelable: true, pointerType: 'mouse', detail: 1 })
+      Object.defineProperty(mouseClick, 'sourceCapabilities', { value: { firesTouchEvents: false } })
+      button.dispatchEvent(mouseClick)
+      button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0 }))
+      await tick()
+      expect(model).toMatchObject({ count: 3, presses: [] })
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(fiber)); root.remove()
+    }
+  })
+
+  it.each(['pointer-first', 'touch-first'] as const)('keeps signed native touch identifiers separate from Pencil pointer IDs (%s)', async order => {
+    const root = document.createElement('div')
+    root.innerHTML = '<button data-counter-button="inc">+1</button>'
+    document.body.append(root)
+    const button = root.querySelector<HTMLElement>('button')!
+    let model = Counter.init
+    const fiber = Effect.runFork(Stream.runForEach(Counter.mountCounterPresses(root), message => Effect.sync(() => { model = Counter.update(model, message, 'en', true)[0] })))
+    try {
+      await tick()
+      if (order === 'pointer-first') {
+        pointer(button, 'pointerdown', 7, 100, 'pen'); touch(button, 'touchstart', -8, 110)
+      } else {
+        touch(button, 'touchstart', -8, 100); pointer(button, 'pointerdown', 7, 110, 'pen')
+      }
+      await tick()
+      expect(model.presses).toHaveLength(1)
+      pointer(button, 'pointerup', 7, 500, 'pen'); touch(button, 'touchend', -8, 510)
+      await tick()
+      expect(model).toMatchObject({ count: 1, holding: false, presses: [] })
+      // Positive and negative native IDs cannot collide, even on one button.
+      touch(button, 'touchstart', 0, 600); touch(button, 'touchstart', -8, 700)
+      await tick()
+      expect(model.presses).toHaveLength(2)
+      expect(new Set(model.presses.map(press => press.pointerId)).size).toBe(2)
+      expect(model.presses.every(press => press.pointerId < 0)).toBe(true)
+      touch(button, 'touchcancel', -8, 800); touch(button, 'touchend', 0, 900)
+      touch(button, 'touchstart', -8, 1000); touch(button, 'touchend', -8, 1100)
+      await tick()
+      expect(model).toMatchObject({ count: 3, holding: false, presses: [] })
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(fiber)); root.remove()
+    }
+  })
+
+  it('cleans up an adopted Pencil cancellation and accepts the same native ID on a later press', async () => {
+    const root = document.createElement('div')
+    root.innerHTML = '<button data-counter-button="inc">+1</button>'
+    document.body.append(root)
+    const button = root.querySelector<HTMLElement>('button')!
+    let model = Counter.init
+    const fiber = Effect.runFork(Stream.runForEach(Counter.mountCounterPresses(root), message => Effect.sync(() => { model = Counter.update(model, message, 'en', true)[0] })))
+    try {
+      await tick()
+      pointer(button, 'pointerdown', 7, 100, 'pen'); touch(button, 'touchstart', -8, 110)
+      pointer(button, 'lostpointercapture', 7, 150, 'pen')
+      await tick()
+      expect(model.presses).toHaveLength(1)
+      pointer(button, 'pointercancel', 7, 200, 'pen'); touch(button, 'touchcancel', -8, 210)
+      touch(button, 'touchend', -8, 220)
+      await tick()
+      expect(model).toMatchObject({ count: 0, holding: false, presses: [] })
+      touch(button, 'touchstart', -8, 300); pointer(button, 'pointerdown', 8, 310, 'pen')
+      pointer(button, 'pointerup', 8, 400, 'pen'); touch(button, 'touchend', -8, 410)
+      await tick()
+      expect(model).toMatchObject({ count: 1, holding: false, presses: [] })
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(fiber)); root.remove()
+    }
+  })
+
   it('allows real mouse clicks after touch and keeps reset releases from stealing a new press', async () => {
     const root = document.createElement('div')
     root.innerHTML = '<button data-counter-button="inc">+1</button>'

@@ -26,6 +26,10 @@ export const PageDotShapes = ts('PageDotShapes')
 export const PageShapeMatch = ts('PageShapeMatch')
 export const PagePicnicBasket = ts('PagePicnicBasket')
 
+export const PageColorMixing = ts('PageColorMixing')
+export const PageSequenceWords = ts('PageSequenceWords')
+export const PageTarot = ts('PageTarot')
+
 export const Page = S.Union([
   PageLanding,
   PageCounter,
@@ -51,5 +55,8 @@ export const Page = S.Union([
   PageDotShapes,
   PageShapeMatch,
   PagePicnicBasket,
+  PageColorMixing,
+  PageSequenceWords,
+  PageTarot,
 ])
 export type Page = typeof Page.Type

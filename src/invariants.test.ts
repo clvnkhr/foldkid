@@ -1,3 +1,9 @@
+import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { TAROT_CARDS } from './games/tarotDomain'
+import * as ColorMixing from './games/colorMixing'
+import * as SequenceWords from './games/sequenceWords'
+import * as Tarot from './games/tarot'
 import { Option, Schema as S } from 'effect'
 import { afterEach, describe, expect, it } from 'vitest'
 import * as Bubbles from './games/bubbles'
@@ -266,6 +272,9 @@ describe('codebase invariants', () => {
       ['Dot Shapes', DotShapes.Model, DotShapes.init()],
       ['Shape Match', ShapeMatch.Model, ShapeMatch.init()],
       ['Picnic Basket', PicnicBasket.Model, PicnicBasket.init()],
+      ['ColorMixing', ColorMixing.Model, ColorMixing.init()],
+      ['SequenceWords', SequenceWords.Model, SequenceWords.init()],
+      ['Tarot', Tarot.Model, Tarot.init()],
       ['Memory', Memory.Model, Memory.init()],
       ['MusicBox', MusicBox.Model, MusicBox.init()],
       ['GrowingNumbers', GrowingNumbers.Model, GrowingNumbers.init],
@@ -284,6 +293,14 @@ describe('codebase invariants', () => {
 
   it('rejects invalid nested messages at Effect schema boundaries', () => {
     const messageCases = [
+      ['Tarot history token', Main.Message, { _tag: 'TarotPreviousCard', token: '0' }],
+      ['Tarot arrival slot', Main.Message, { _tag: 'TarotCardArrived', token: 0, slot: '0' }],
+      ['Color Mixing length', Main.Message, { _tag: 'ColorMixingSetLength', length: 4 }],
+      ['Color Mixing token', Main.Message, { _tag: 'ColorMixingPick', index: 0, round: 0, token: '0' }],
+      ['Sequence Words group', Main.Message, { _tag: 'SequenceWordsSetGroup', group: 'unknown' }],
+      ['Sequence Words count', Main.Message, { _tag: 'SequenceWordsSetCount', count: 100 }],
+      ['Tarot mode', Main.Message, { _tag: 'TarotSetMode', mode: 'unknown' }],
+      ['Tarot draw token', Main.Message, { _tag: 'TarotDrawRequested', token: '0' }],
       ['3D Bubbles pop', Main.Message, { _tag: 'Bubbles3dClickedPop', id: '0', revision: 0 }],
       ['Handwriting mode', Main.Message, { _tag: 'HandwritingSetMode', mode: 'sentences' }],
       ['Handwriting case', Main.Message, { _tag: 'HandwritingSetCase', letterCase: 'joined' }],
@@ -340,6 +357,27 @@ describe('codebase invariants', () => {
 
     for (const [label, schema, payload] of messageCases) {
       expect(Option.isNone(S.decodeUnknownOption(schema)(payload)), label).toBe(true)
+    }
+  })
+})
+
+
+describe('illustrated tarot artwork', () => {
+  it('ships a distinct local WebP illustration and public-domain source record for all 78 cards', () => {
+    const root = join(process.cwd(), 'public', 'tarot')
+    const sources = JSON.parse(readFileSync(join(root, 'sources.json'), 'utf8')) as { cards: { id: string; license: string; source: string }[] }
+    expect(sources.cards).toHaveLength(78)
+    expect(new Set(sources.cards.map(card => card.id)).size).toBe(78)
+    for (const [id] of TAROT_CARDS) {
+      const file = join(root, `${id}.webp`)
+      expect(existsSync(file), id).toBe(true)
+      const bytes = readFileSync(file)
+      expect(bytes.subarray(0, 4).toString()).toBe('RIFF')
+      expect(bytes.subarray(8, 12).toString()).toBe('WEBP')
+      expect(bytes.length).toBeGreaterThan(1000)
+      const record = sources.cards.find(card => card.id === id)
+      expect(record?.license, id).toBe('Public domain')
+      expect(record?.source).toMatch(/^https:\/\/commons\.wikimedia\.org\/wiki\/File/)
     }
   })
 })

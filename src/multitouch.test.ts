@@ -3,6 +3,7 @@ import { html } from 'foldkit/html'
 import { Scene } from 'foldkit/test'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { multitouchClickStream, withMultitouchClicks } from './multitouch'
+import { pointerReorder } from './pointerReorder'
 
 const flush = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0))
 type Contact = { identifier: number; target: EventTarget; clientX: number; clientY: number }
@@ -43,6 +44,116 @@ describe('multitouch activation', () => {
     await flush()
     try { await run(a, b, clicks) } finally { await Effect.runPromise(Fiber.interrupt(fiber)) }
   }
+
+  it('lets a single finger scroll opt-in landing buttons without navigating or cancelling native movement', async () => {
+    await fixture(async (a, _b, clicks) => {
+      a.parentElement!.setAttribute('data-multitouch-scroll', 'true')
+      const finger = contact(-12, a)
+      expect(touch('touchstart', [finger]).defaultPrevented).toBe(false)
+      expect(touch('touchmove', [contact(-12, a, 20, 80)]).defaultPrevented).toBe(false)
+      expect(touch('touchend', [contact(-12, a, 20, 80)]).defaultPrevented).toBe(false)
+      a.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }))
+      expect(clicks).toEqual([])
+    })
+  })
+
+  it('activates one landing tap on release and suppresses only its duplicate browser click', async () => {
+    await fixture(async (a, _b, clicks) => {
+      a.parentElement!.setAttribute('data-multitouch-scroll', 'true')
+      const finger = contact(12, a)
+      expect(touch('touchstart', [finger]).defaultPrevented).toBe(false)
+      expect(touch('touchend', [finger]).defaultPrevented).toBe(true)
+      a.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }))
+      expect(clicks).toEqual(['A'])
+      a.click()
+      expect(clicks).toEqual(['A', 'A'])
+    })
+  })
+
+  it.each(['touchcancel', 'pointercancel'])('does not launch a landing game after native scrolling sends %s', async cancellation => {
+    await fixture(async (a, _b, clicks) => {
+      a.parentElement!.setAttribute('data-multitouch-scroll', 'true')
+      pointer('pointerdown', a, 12, 20, 100)
+      expect(touch('touchstart', [contact(2, a)], true, 101).defaultPrevented).toBe(false)
+      if (cancellation === 'pointercancel') pointer('pointercancel', a, 12, 20, 150)
+      else touch('touchcancel', [contact(2, a)], true, 150)
+      touch('touchend', [contact(2, a)], true, 180)
+      a.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }))
+      expect(clicks).toEqual([])
+      expect(touch('touchstart', [contact(3, a)]).defaultPrevented).toBe(false)
+      touch('touchend', [contact(3, a)])
+      expect(clicks).toEqual(['A'])
+    })
+  })
+
+  it('keeps landing buttons usable while a background finger remains held', async () => {
+    await fixture(async (a, b, clicks) => {
+      const root = a.parentElement!
+      root.setAttribute('data-multitouch-scroll', 'true')
+      const held = contact(1, root, 150)
+      expect(touch('touchstart', [held]).defaultPrevented).toBe(false)
+      for (let id = 2; id < 5; id++) {
+        const finger = contact(id, b, 80)
+        expect(touch('touchstart', [finger]).defaultPrevented).toBe(true)
+        touch('touchend', [finger])
+        b.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }))
+      }
+      touch('touchcancel', [held])
+      expect(clicks).toEqual(['B', 'B', 'B'])
+      expect(touch('touchstart', [contact(9, a)]).defaultPrevented).toBe(false)
+      touch('touchend', [contact(9, a)])
+      expect(clicks).toEqual(['B', 'B', 'B', 'A'])
+    })
+  })
+
+  it('scrolls landing card bodies while reserving reorder gestures for their grab handles', async () => {
+    const root = document.createElement('div')
+    root.setAttribute('data-multitouch-scroll', 'true')
+    root.innerHTML = '<button type="button" class="game-card" data-multitouch-click data-drag-index="0"><span class="game-card-drag-handle" draggable="true">⠿</span><span class="game-name">Counter</span></button><button type="button" class="game-card" data-multitouch-click data-drag-index="1">Bubbles</button>'
+    document.body.append(root)
+    const card = root.querySelector<HTMLElement>('.game-card')!
+    const handle = root.querySelector<HTMLElement>('.game-card-drag-handle')!
+    const body = root.querySelector<HTMLElement>('.game-name')!
+    const target = root.querySelector<HTMLElement>('[data-drag-index="1"]')!
+    vi.spyOn(document, 'elementFromPoint').mockReturnValue(target)
+    const navigate = vi.fn(), reordered: string[] = []
+    card.addEventListener('click', navigate)
+    const activation = Effect.runFork(Stream.runDrain(multitouchClickStream(root)))
+    const reorder = pointerReorder<string>({ name: 'LandingTouchReorder', itemSelector: '.game-card', handleSelector: '.game-card-drag-handle', start: index => `start:${index}`, drop: index => `drop:${index}`, end: () => 'cancel' })
+    const sorting = Effect.runFork(Stream.runForEach(reorder.f(root), message => Effect.sync(() => { reordered.push(message) })))
+    try {
+      await flush()
+      expect(pointer('pointerdown', body, 1, 20, 100).defaultPrevented).toBe(false)
+      expect(touch('touchstart', [contact(1, body)], true, 101).defaultPrevented).toBe(false)
+      touch('touchmove', [contact(1, body, 20, 80)], true, 150)
+      pointer('pointerup', body, 1, 20, 180)
+      expect(touch('touchend', [contact(1, body, 20, 80)], true, 180).defaultPrevented).toBe(false)
+      await flush()
+      expect(reordered).toEqual([]); expect(navigate).not.toHaveBeenCalled()
+      expect(pointer('pointerdown', handle, 2, 20, 200).defaultPrevented).toBe(true)
+      expect(touch('touchstart', [contact(2, handle)], true, 201).defaultPrevented).toBe(false)
+      pointer('pointerup', root, 2, 80, 250)
+      touch('touchend', [contact(2, handle, 80)], true, 250)
+      handle.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }))
+      await flush()
+      expect(reordered).toEqual(['start:0', 'drop:1'])
+      expect(navigate).not.toHaveBeenCalled()
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(activation))
+      await Effect.runPromise(Fiber.interrupt(sorting))
+    }
+  })
+
+  it('keeps other game buttons claimed when the landing scroll marker is absent', async () => {
+    await fixture(async (a, b, clicks) => {
+      a.setAttribute('data-multitouch-scroll', 'true')
+      expect(touch('touchstart', [contact(1, a)]).defaultPrevented).toBe(false)
+      touch('touchcancel', [contact(1, a)])
+      expect(touch('touchstart', [contact(2, b, 80)]).defaultPrevented).toBe(true)
+      touch('touchend', [contact(2, b, 80)])
+      expect(clicks).toEqual(['B'])
+    })
+  })
 
   it('activates each finger independently while another finger remains down', async () => {
     await fixture(async (a, b, clicks) => {

@@ -1,0 +1,33 @@
+.sequence-words-page { min-height: 100dvh; padding: calc(5.5rem + env(safe-area-inset-top, 0px)) 0.8rem calc(1.5rem + env(safe-area-inset-bottom, 0px)); }
+.sequence-words-card { width: min(100%, 680px); max-width: 680px; padding: clamp(1rem, 4vw, 2rem); align-items: stretch; }
+.sequence-words-settings { display: flex; flex-wrap: wrap; align-items: end; justify-content: center; gap: 0.6rem; }
+.sequence-words-pack { display: grid; gap: 0.3rem; flex: 1; min-width: 130px; font-size: 0.8rem; color: var(--text-secondary); text-align: start; }
+.sequence-words-select { width: 100%; border: 1px solid var(--text-muted); background: var(--card-bg); color: var(--text-primary); border-radius: 0.7rem; padding: 0.65rem; font: inherit; }
+.sequence-words-difficulty { display: flex; gap: 0.3rem; }
+.sequence-words-difficulty button, .sequence-words-reference-toggle { border: 1px solid var(--text-muted); border-radius: 0.7rem; background: var(--card-bg); color: var(--text-primary); padding: 0.5rem 0.65rem; font: inherit; cursor: pointer; }
+.sequence-words-difficulty button[aria-pressed="true"] { background: #5b5acb; border-color: #5b5acb; color: white; }
+.sequence-words-basis { margin: 0.8rem 0 1.1rem; font-size: 0.8rem; color: var(--text-secondary); }
+.sequence-words-board { position: relative; display: grid; grid-template-columns: minmax(55px, .5fr) minmax(0, 1fr); gap: clamp(2.8rem, 12vw, 6rem); isolation: isolate; }
+.sequence-words-column { display: grid; grid-auto-rows: minmax(72px, 1fr); gap: 0.9rem; min-width: 0; }
+.sequence-words-lines { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; z-index: -1; }
+.sequence-words-drag-line { color: #9892d4; stroke-dasharray: 6 7; }
+.sequence-words-endpoint { position: relative; display: flex; align-items: center; justify-content: center; min-width: 0; padding: 0.7rem; border: 2px solid var(--border-color, #8585bc55); border-radius: 1rem; background: var(--card-bg); color: var(--text-primary); font-family: inherit; font-weight: 700; font-size: clamp(1rem, 3.9vw, 1.3rem); line-height: 1.25; cursor: crosshair; touch-action: none; user-select: none; -webkit-user-select: none; }
+.sequence-words-column--number .sequence-words-endpoint { font-size: clamp(1.6rem, 7vw, 2.2rem); }
+.sequence-words-endpoint-text { overflow-wrap: anywhere; }
+.sequence-words-anchor { position: absolute; width: 20px; height: 20px; display: grid; place-items: center; top: calc(50% - 10px); border: 3px solid var(--sequence-colour); background: var(--card-bg); color: var(--sequence-colour); border-radius: 50%; font-size: 0.7rem; }
+.sequence-words-column--number .sequence-words-anchor { right: -11px; }
+.sequence-words-column--word .sequence-words-anchor { left: -11px; }
+.sequence-words-endpoint--selected { border-color: #8585de; box-shadow: 0 0 0 4px #8b70ee22; }
+.sequence-words-endpoint--matched { border-color: var(--sequence-colour); cursor: default; }
+.sequence-words-endpoint--matched .sequence-words-anchor { background: var(--sequence-colour); color: white; }
+.sequence-words-board--drawing .sequence-words-endpoint { cursor: grabbing; }
+.sequence-words-status { min-height: 2.5em; margin: 1rem 0 0.3rem; color: var(--text-secondary); font-size: 0.9rem; }
+.sequence-words-reference-toggle { align-self: center; margin-top: 0.4rem; font-size: 0.8rem; }
+.sequence-words-reference { list-style: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 0.5rem; padding: 0; text-align: start; }
+.sequence-words-reference li { display: flex; align-items: baseline; gap: 0.6rem; padding: 0.5rem; border-radius: 0.6rem; background: var(--cell-hover-bg); }
+.sequence-words-reference li span:first-child { font-weight: 800; color: #8585de; }
+.sequence-words-card button:focus-visible, .sequence-words-select:focus-visible { outline: 3px solid #b18bff; outline-offset: 3px; }
+.sequence-words-card--success .sequence-words-endpoint { animation: sequenceWordsMatch 650ms ease-out both; }
+@keyframes sequenceWordsMatch { 0%, 100% { transform: scale(1); } 45% { transform: scale(1.04); } }
+@media (max-width: 380px) { .sequence-words-settings { align-items: stretch; } .sequence-words-difficulty { flex: 1; justify-content: center; } .sequence-words-endpoint { padding: 0.5rem; } }
+@media (prefers-reduced-motion: reduce) { .sequence-words-card--success .sequence-words-endpoint { animation: none; } }

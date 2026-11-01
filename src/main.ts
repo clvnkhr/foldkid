@@ -1,3 +1,9 @@
+import { ClickedRandomGame, LandingRandomChosen } from './message'
+import { ClickedColorMixing, ClickedSequenceWords, ClickedTarot } from './message'
+import { PageColorMixing, PageSequenceWords, PageTarot } from './route'
+import * as ColorMixing from './games/colorMixing'
+import * as SequenceWords from './games/sequenceWords'
+import * as Tarot from './games/tarot'
 import { Effect, Match as M, Option, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { Document, html } from 'foldkit/html'
@@ -248,6 +254,9 @@ export const Model = S.Struct({
   dotShapes: DotShapes.Model,
   shapeMatch: ShapeMatch.Model,
   picnicBasket: PicnicBasket.Model,
+  colorMixing: ColorMixing.Model,
+  sequenceWords: SequenceWords.Model,
+  tarot: Tarot.Model,
   draw: Draw.Model,
   memory: Memory.Model,
   phonemeGarden: PhonemeGarden.Model,
@@ -268,6 +277,7 @@ export const Model = S.Struct({
   importExportMessage: S.String,
   exportData: S.String,
   settingsOverlay: SettingsOverlay,
+  landingRandomToken: S.Number,
   landingOrder: S.Array(S.Number),
   landingHiddenGames: S.Array(S.Boolean),
   landingDragIndex: S.Number,
@@ -280,6 +290,8 @@ export type Model = typeof Model.Type
 
 export const Message = S.Union([
   ClickedLanding,
+  ClickedRandomGame,
+  LandingRandomChosen,
   ClickedDarkMode,
   ClickedSettings,
   SetLanguage,
@@ -305,6 +317,12 @@ export const Message = S.Union([
   ClickedDotShapes,
   ClickedShapeMatch,
   ClickedPicnicBasket,
+  ClickedColorMixing,
+  ColorMixing.Message,
+  ClickedSequenceWords,
+  SequenceWords.Message,
+  ClickedTarot,
+  Tarot.Message,
   PicnicBasket.PickFood,
   PicnicBasket.FoodLanded,
   PicnicBasket.OrderRefreshReady,
@@ -586,6 +604,9 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
       dotShapes: DotShapes.init(),
       shapeMatch: ShapeMatch.init(),
       picnicBasket: PicnicBasket.init(),
+      colorMixing: ColorMixing.init(),
+      sequenceWords: SequenceWords.init(),
+      tarot: Tarot.init(),
       draw: Draw.normalizeTargetForPool({
         ...Draw.init(),
         topN: Draw.normalizeTopN(saved.drawTopN),
@@ -619,6 +640,7 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
       importExportMessage: '',
       exportData: '',
       settingsOverlay: '',
+      landingRandomToken: 0,
       landingOrder: isLandingOrder(saved.landingOrder)
         ? [...saved.landingOrder, ...DEFAULT_LANDING_ORDER.slice(saved.landingOrder.length)]
         : [...DEFAULT_LANDING_ORDER],
@@ -672,6 +694,24 @@ const updateHandwriting = (
   if (model.page._tag !== 'PageHandwriting' && (message._tag.startsWith('HandwritingPen') || message._tag.startsWith('HandwritingKeyboard'))) return [model, []]
   const [next, commands] = Handwriting.update(model.handwriting, message, model.muted)
   return [{ ...model, handwriting: next }, commands]
+}
+
+const updateColorMixing = (model: Model, message: ColorMixing.Message): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
+  if (model.page._tag !== 'PageColorMixing') return [model, []]
+  const [next, commands] = ColorMixing.update(model.colorMixing, message, model.language, model.muted, { rate: model.speechRate, pitch: model.speechPitch, lang: model.language })
+  return [{ ...model, colorMixing: next }, commands]
+}
+
+const updateSequenceWords = (model: Model, message: SequenceWords.Message): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
+  if (model.page._tag !== 'PageSequenceWords') return [model, []]
+  const [next, commands] = SequenceWords.update(model.sequenceWords, message, model.language, model.muted, { rate: model.speechRate, pitch: model.speechPitch, lang: model.language })
+  return [{ ...model, sequenceWords: next }, commands]
+}
+
+const updateTarot = (model: Model, message: Tarot.Message): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
+  if (model.page._tag !== 'PageTarot') return [model, []]
+  const [next, commands] = Tarot.update(model.tarot, message, model.language, model.muted, { rate: model.speechRate, pitch: model.speechPitch, lang: model.language })
+  return [{ ...model, tarot: next }, commands]
 }
 
 const updatePicnicBasket = (
@@ -973,6 +1013,20 @@ const _update = (
         const [next, commands] = model.page._tag === 'PageMusicBox' ? updateMusicBox(model, MusicBox.Stop()) : [model, []] as const
         return [{ ...next, page: PageLanding() }, commands]
       },
+      ClickedRandomGame: () => {
+        if (model.page._tag !== 'PageLanding' || model.showSettings || model.landingDragSource !== null) return [model, []]
+        const token = model.landingRandomToken + 1
+        return [{ ...model, landingRandomToken: token }, [{
+          name: 'LandingPickRandomGame', effect: Effect.sync(() => LandingRandomChosen({ sample: Math.random(), token })),
+        }]]
+      },
+      LandingRandomChosen: msg => {
+        if (model.page._tag !== 'PageLanding' || model.showSettings || model.landingDragSource !== null || !Number.isSafeInteger(msg.token) || msg.token !== model.landingRandomToken ||
+          !Number.isFinite(msg.sample) || msg.sample < 0 || msg.sample >= 1) return [model, []]
+        const visible = model.landingOrder.filter(index => LANDING_GAMES[index] && model.landingHiddenGames[index] !== true)
+        const game = LANDING_GAMES[visible[Math.floor(msg.sample * visible.length)] ?? -1]
+        return game ? _update({ ...model, landingRandomToken: model.landingRandomToken + 1 }, game.msg()) : [model, []]
+      },
       ClickedDarkMode: () => [
         { ...model, darkMode: cycleDarkMode(model.darkMode) },
         [],
@@ -991,6 +1045,32 @@ const _update = (
       ClickedDotShapes: () => [{ ...model, page: PageDotShapes() }, []],
       ClickedShapeMatch: () => model.page._tag === 'PageShapeMatch'
         ? [model, []] : updateShapeMatch({ ...model, page: PageShapeMatch() }, ShapeMatch.Entered()),
+      ClickedColorMixing: () => model.page._tag === 'PageColorMixing' ? [model, []] : updateColorMixing({ ...model, page: PageColorMixing() }, ColorMixing.Entered()),
+      ClickedSequenceWords: () => model.page._tag === 'PageSequenceWords' ? [model, []] : updateSequenceWords({ ...model, page: PageSequenceWords() }, SequenceWords.Entered()),
+      ClickedTarot: () => model.page._tag === 'PageTarot' ? [model, []] : updateTarot({ ...model, page: PageTarot() }, Tarot.Entered()),
+      ColorMixingEntered: msg => updateColorMixing(model, msg),
+      ColorMixingSeeded: msg => updateColorMixing(model, msg),
+      ColorMixingSetLength: msg => updateColorMixing(model, msg),
+      ColorMixingPick: msg => updateColorMixing(model, msg),
+      ColorMixingRoundReady: msg => updateColorMixing(model, msg),
+      SequenceWordsEntered: msg => updateSequenceWords(model, msg),
+      SequenceWordsSeedReady: msg => updateSequenceWords(model, msg),
+      SequenceWordsSetGroup: msg => updateSequenceWords(model, msg),
+      SequenceWordsSetCount: msg => updateSequenceWords(model, msg),
+      SequenceWordsToggleReference: msg => updateSequenceWords(model, msg),
+      SequenceWordsPick: msg => updateSequenceWords(model, msg),
+      SequenceWordsConnect: msg => updateSequenceWords(model, msg),
+      SequenceWordsAdvance: msg => updateSequenceWords(model, msg),
+      SequenceWordsSpoken: msg => updateSequenceWords(model, msg),
+      TarotEntered: msg => updateTarot(model, msg),
+      TarotSeedReady: msg => updateTarot(model, msg),
+      TarotDrawRequested: msg => updateTarot(model, msg),
+      TarotPreviousCard: msg => updateTarot(model, msg),
+      TarotCardArrived: msg => updateTarot(model, msg),
+      TarotSetMode: msg => updateTarot(model, msg),
+      TarotNextReading: msg => updateTarot(model, msg),
+      TarotShuffleFinished: msg => updateTarot(model, msg),
+      TarotFeedbackFinished: msg => updateTarot(model, msg),
       ClickedPicnicBasket: () => model.page._tag === 'PagePicnicBasket'
         ? [model, []] : updatePicnicBasket({ ...model, page: PagePicnicBasket() }, PicnicBasket.Entered()),
       PicnicBasketPickFood: msg => updatePicnicBasket(model, msg),
@@ -1338,16 +1418,37 @@ export const update = (
   const interruptedPicnic = model.page._tag === 'PagePicnicBasket' && (interruptedMatching.page._tag !== 'PagePicnicBasket' || matchingContextChanged)
     ? { ...interruptedMatching, picnicBasket: PicnicBasket.interrupt(interruptedMatching.picnicBasket) }
     : interruptedMatching
+  const activeGamesInterrupted = {
+    ...interruptedPicnic,
+    colorMixing: model.page._tag === 'PageColorMixing' && (interruptedPicnic.page._tag !== 'PageColorMixing' || matchingContextChanged) ? ColorMixing.interrupt(interruptedPicnic.colorMixing) : interruptedPicnic.colorMixing,
+    sequenceWords: model.page._tag === 'PageSequenceWords' && (interruptedPicnic.page._tag !== 'PageSequenceWords' || matchingContextChanged) ? SequenceWords.interrupt(interruptedPicnic.sequenceWords) : interruptedPicnic.sequenceWords,
+    tarot: model.page._tag === 'PageTarot' && (interruptedPicnic.page._tag !== 'PageTarot' || matchingContextChanged) ? Tarot.interrupt(interruptedPicnic.tarot) : interruptedPicnic.tarot,
+  }
   const result = [
-    model.page._tag === 'PageCounter' && interruptedPicnic.page._tag !== 'PageCounter'
-      ? { ...interruptedPicnic, counter: { ...interruptedPicnic.counter, presses: [], holding: false, pressedButton: null, pointerDownTime: 0 } }
-      : interruptedPicnic,
+    model.page._tag === 'PageCounter' && activeGamesInterrupted.page._tag !== 'PageCounter'
+      ? { ...activeGamesInterrupted, counter: { ...activeGamesInterrupted.counter, presses: [], holding: false, pressedButton: null, pointerDownTime: 0 } }
+      : activeGamesInterrupted,
     commands,
   ] as const
-  if (shouldPersistSettings(message)) {
-    return [result[0], [...result[1], persistSettings(result[0])]]
+  // A changed speech context invalidates old effects. Restart pending entropy
+  // requests as well, so an interrupted first round cannot stay loading forever.
+  let ready: readonly [Model, ReadonlyArray<Command.Command<Message>>] = result
+  if (matchingContextChanged && model.page._tag === ready[0].page._tag) {
+    const resumed = ready[0].page._tag === 'PageColorMixing'
+      ? updateColorMixing(ready[0], ColorMixing.Entered())
+      : ready[0].page._tag === 'PageSequenceWords'
+        ? updateSequenceWords(ready[0], SequenceWords.Entered())
+        : ready[0].page._tag === 'PageTarot'
+          ? updateTarot(ready[0], Tarot.Entered()) : [ready[0], []] as const
+    ready = [resumed[0], [...ready[1], ...resumed[1]]]
   }
-  return result
+  if (model.page._tag !== ready[0].page._tag || message._tag === 'ConfirmResetSettings' || message._tag === 'ClickedSettings') {
+    ready = [{ ...ready[0], landingRandomToken: model.landingRandomToken + 1 }, ready[1]]
+  }
+  if (shouldPersistSettings(message)) {
+    return [ready[0], [...ready[1], persistSettings(ready[0])]]
+  }
+  return ready
 }
 
 // VIEW
@@ -1365,6 +1466,9 @@ const pageTitle = (model: Model): string =>
       PageDotShapes: () => t('pageTitleDotShapes', model.language),
       PageShapeMatch: () => t('pageTitleShapeMatch', model.language),
       PagePicnicBasket: () => t('pageTitlePicnicBasket', model.language),
+      PageColorMixing: () => t('pageTitleColorMixing', model.language),
+      PageSequenceWords: () => t('pageTitleSequenceWords', model.language),
+      PageTarot: () => t('pageTitleTarot', model.language),
       PageDraw: () => t('pageTitleDraw', model.language),
       PageMusicBox: () => t('pageTitleMusicBox', model.language),
       PageMemory: () => t('pageTitleMemoryCards', model.language),
@@ -1982,6 +2086,9 @@ export const view = (model: Model): Document => {
               PageDotShapes: () => DotShapes.view(model.dotShapes, model.language),
               PageShapeMatch: () => ShapeMatch.view(model.shapeMatch, model.language),
               PagePicnicBasket: () => PicnicBasket.view(model.picnicBasket, model.language),
+              PageColorMixing: () => ColorMixing.view(model.colorMixing, model.language),
+              PageSequenceWords: () => SequenceWords.view(model.sequenceWords, model.language),
+              PageTarot: () => Tarot.view(model.tarot, model.language),
               PageDraw: () => Draw.view(model.draw),
               PageMusicBox: () => MusicBox.view(model.musicBox, model.language),
               PageMemory: () => Memory.view(model.memory, model.language),

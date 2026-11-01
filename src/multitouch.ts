@@ -4,6 +4,7 @@ import { warmAudio } from './audio'
 
 const CLICK_TARGET = '[data-multitouch-click]'
 const OWNED_INPUT = '[data-multitouch-owned], input, textarea, select'
+const SCROLLABLE_TOUCH = '[data-multitouch-scroll]'
 const TAP_SLOP = 12
 const COMPAT_CLICK_MS = 900
 const CONTACT_START_MS = 40
@@ -29,6 +30,7 @@ export const multitouchClickStream = (element: Element): Stream.Stream<never> =>
         const root = element as HTMLElement
         const doc = root.ownerDocument
         const presses = new Map<string, Press>()
+        const activeNativeTouches = new Set<number>()
         const pointerTouches = new Map<string, string>()
         const recentReleases = new WeakMap<HTMLElement, number>()
         const mouseTargets = new WeakSet<HTMLElement>()
@@ -94,8 +96,12 @@ export const multitouchClickStream = (element: Element): Stream.Stream<never> =>
           }
         }
         const touchStart = (event: TouchEvent): void => {
-          // Claim button contacts before WebKit can turn a second finger into
-          // a page gesture and cancel it. Background contacts still scroll.
+          // Landing cards opt into native single-finger scrolling. Track every
+          // contact (including the background), so additional button fingers
+          // can still be claimed before WebKit cancels a multitouch gesture.
+          eachTouch(event, touch => {
+            if (Number.isSafeInteger(touch.identifier)) activeNativeTouches.add(touch.identifier)
+          })
           let buttonContact = false
           // Pair the two event streams per contact; their relative order is not
           // guaranteed. Unmatched and later pointers continue working normally.
@@ -111,7 +117,8 @@ export const multitouchClickStream = (element: Element): Stream.Stream<never> =>
               presses.set(id, pointer[1])
               pointerTouches.set(pointer[0], id)
             } else start(id, touch.target, touch.clientX, touch.clientY, event.timeStamp)
-            if (presses.has(id)) buttonContact = true
+            const press = presses.get(id)
+            if (press && (!press.target.closest(SCROLLABLE_TOUCH) || activeNativeTouches.size > 1)) buttonContact = true
           })
           if (buttonContact) event.preventDefault()
         }
@@ -119,10 +126,16 @@ export const multitouchClickStream = (element: Element): Stream.Stream<never> =>
           eachTouch(event, touch => move(`touch:${touch.identifier}`, touch.clientX, touch.clientY))
         }
         const touchEnd = (event: TouchEvent): void => {
-          eachTouch(event, touch => finish(`touch:${touch.identifier}`, touch.clientX, touch.clientY, event, false))
+          eachTouch(event, touch => {
+            finish(`touch:${touch.identifier}`, touch.clientX, touch.clientY, event, false)
+            activeNativeTouches.delete(touch.identifier)
+          })
         }
         const touchCancel = (event: TouchEvent): void => {
-          eachTouch(event, touch => finish(`touch:${touch.identifier}`, touch.clientX, touch.clientY, event, true))
+          eachTouch(event, touch => {
+            finish(`touch:${touch.identifier}`, touch.clientX, touch.clientY, event, true)
+            activeNativeTouches.delete(touch.identifier)
+          })
         }
         const pointerDown = (event: PointerEvent): void => {
           if (event.pointerType === 'mouse' || event.pointerType === 'pen') {
@@ -180,6 +193,7 @@ export const multitouchClickStream = (element: Element): Stream.Stream<never> =>
         const clear = (): void => {
           for (const press of presses.values()) recentReleases.set(press.target, Date.now())
           presses.clear()
+          activeNativeTouches.clear()
           pointerTouches.clear()
         }
         const dragStart = (event: DragEvent): void => {

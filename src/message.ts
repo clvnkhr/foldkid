@@ -3,6 +3,8 @@ import { m } from 'foldkit/message'
 import { Language } from './i18n'
 
 export const ClickedLanding = m('ClickedLanding')
+export const ClickedRandomGame = m('ClickedRandomGame')
+export const LandingRandomChosen = m('LandingRandomChosen', { sample: S.Number, token: S.Number })
 export const ClickedCounter = m('ClickedCounter')
 export const ClickedFindIt = m('ClickedFindIt')
 export const ClickedBubbles = m('ClickedBubbles')
@@ -55,3 +57,7 @@ export const LandingSettingsDragStarted = m('LandingSettingsDragStarted', { inde
 export const LandingSettingsDroppedOn = m('LandingSettingsDroppedOn', { index: S.Number })
 export const LandingSettingsDragEnded = m('LandingSettingsDragEnded')
 export const LandingToggleGameVisibility = m('LandingToggleGameVisibility', { index: S.Number })
+
+export const ClickedColorMixing = m('ClickedColorMixing')
+export const ClickedSequenceWords = m('ClickedSequenceWords')
+export const ClickedTarot = m('ClickedTarot')

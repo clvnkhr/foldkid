@@ -903,10 +903,20 @@ export const mountCounterPresses = (element: Element): Stream.Stream<Message> =>
     yield* Effect.acquireRelease(
       Effect.sync(() => {
         const root = element as HTMLElement
-        const presses = new Map<number, { button: PressedButton; element: HTMLElement; timeStamp: number; captured: boolean; pointerId: number; touchPointer: boolean; touchInput: boolean; clientX: number; clientY: number; nativePointerId?: number }>()
+        const presses = new Map<number, { button: PressedButton; element: HTMLElement; timeStamp: number; captured: boolean; pointerId: number; directPointer: boolean; penInput: boolean; touchInput: boolean; clientX: number; clientY: number; nativePointerId?: number }>()
         const nativePointers = new Map<number, number>()
-        const suppressClicks = new Map<HTMLElement, { time: number; touch: boolean }>()
-        const start = (pointerId: number, target: EventTarget | null, timeStamp: number, capture: boolean, touchPointer = false, clientX = 0, clientY = 0): boolean => {
+        const nativeTouches = new Map<number, number>()
+        let nextNativeId = -1
+        const nativeIdFor = (identifier: number): number => {
+          // Native touch identifiers are signed. Keep their internal IDs separate
+          // from PointerEvent IDs, preserving the familiar mapping when possible.
+          const preferred = -identifier - 1
+          if (identifier >= 0 && Number.isSafeInteger(preferred) && !presses.has(preferred)) return preferred
+          while (presses.has(nextNativeId)) nextNativeId--
+          return nextNativeId--
+        }
+        const suppressClicks = new Map<HTMLElement, { time: number; touch: boolean; pen: boolean }>()
+        const start = (pointerId: number, target: EventTarget | null, timeStamp: number, capture: boolean, directPointer = false, clientX = 0, clientY = 0, penInput = false): boolean => {
           if (!(target instanceof Element) || presses.has(pointerId)) return false
           const buttonElement = target.closest<HTMLElement>('[data-counter-button]')
           const button = buttonElement?.dataset.counterButton
@@ -915,7 +925,7 @@ export const mountCounterPresses = (element: Element): Stream.Stream<Message> =>
           if (capture) {
             try { buttonElement.setPointerCapture(pointerId); captured = true } catch { /* Document listeners keep uncaptured presses alive. */ }
           }
-          presses.set(pointerId, { button, element: buttonElement, timeStamp, captured, pointerId, touchPointer, touchInput: !capture, clientX, clientY })
+          presses.set(pointerId, { button, element: buttonElement, timeStamp, captured, pointerId, directPointer, penInput, touchInput: !capture, clientX, clientY })
           Queue.offerUnsafe(queue, PointerDown({ pointerId, timeStamp, button }))
           return true
         }
@@ -923,8 +933,9 @@ export const mountCounterPresses = (element: Element): Stream.Stream<Message> =>
           const press = presses.get(pointerId)
           if (!press) return false
           presses.delete(pointerId)
+          for (const [identifier, id] of nativeTouches) if (id === pointerId) nativeTouches.delete(identifier)
           for (const [alias, nativeId] of nativePointers) if (nativeId === pointerId) nativePointers.delete(alias)
-          suppressClicks.set(press.element, { time: Date.now(), touch: press.touchInput })
+          suppressClicks.set(press.element, { time: Date.now(), touch: press.touchInput, pen: press.penInput })
           if (press.captured) {
             try { if (press.element.hasPointerCapture(press.pointerId)) press.element.releasePointerCapture(press.pointerId) } catch { /* WebKit may already have released capture. */ }
           }
@@ -938,17 +949,18 @@ export const mountCounterPresses = (element: Element): Stream.Stream<Message> =>
         }
         const onPointerDown = (event: PointerEvent): void => {
           if (event.button !== 0) return
-          if (event.pointerType === 'touch') {
+          // WebKit can deliver one Pencil contact through both pen and Touch Events.
+          if (event.pointerType === 'touch' || event.pointerType === 'pen') {
             if (nativePointers.has(event.pointerId)) return
             const button = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-counter-button]') : null
-            const native = [...presses].find(([id, press]) => id < 0 && press.nativePointerId === undefined && press.element === button && Math.hypot(press.clientX - event.clientX, press.clientY - event.clientY) <= 1 && Math.abs(press.timeStamp - event.timeStamp) <= 40)
-            if (native) { native[1].nativePointerId = event.pointerId; nativePointers.set(event.pointerId, native[0]); return }
+            const native = [...presses].find(([id, press]) => [...nativeTouches.values()].includes(id) && press.nativePointerId === undefined && press.element === button && Math.hypot(press.clientX - event.clientX, press.clientY - event.clientY) <= 1 && Math.abs(press.timeStamp - event.timeStamp) <= 40)
+            if (native) { native[1].nativePointerId = event.pointerId; native[1].penInput = event.pointerType === 'pen'; nativePointers.set(event.pointerId, native[0]); return }
           }
           if ((event.pointerType === 'mouse' || event.pointerType === 'pen') && event.target instanceof Element) {
             const button = event.target.closest<HTMLElement>('[data-counter-button]')
             if (button) suppressClicks.delete(button)
           }
-          start(event.pointerId, event.target, event.timeStamp, event.pointerType !== 'touch', event.pointerType === 'touch', event.clientX, event.clientY)
+          start(event.pointerId, event.target, event.timeStamp, event.pointerType !== 'touch', event.pointerType === 'touch' || event.pointerType === 'pen', event.clientX, event.clientY, event.pointerType === 'pen')
         }
         const onPointerFinish = (event: PointerEvent): void => {
           const nativeId = nativePointers.get(event.pointerId)
@@ -970,33 +982,45 @@ export const mountCounterPresses = (element: Element): Stream.Stream<Message> =>
         }
         const onTouchStart = (event: TouchEvent): void => {
           eachTouch(event, touch => {
-            const id = -touch.identifier - 1
-            if (presses.has(id)) return false
+            if (!Number.isSafeInteger(touch.identifier) || nativeTouches.has(touch.identifier)) return false
+            const id = nativeIdFor(touch.identifier)
             const button = touch.target instanceof Element ? touch.target.closest<HTMLElement>('[data-counter-button]') : null
-            const pointer = [...presses].find(([, press]) => press.touchPointer && press.element === button && Math.hypot(press.clientX - touch.clientX, press.clientY - touch.clientY) <= 1 && Math.abs(press.timeStamp - event.timeStamp) <= 40)
+            const pointer = [...presses].find(([, press]) => press.directPointer && press.element === button && Math.hypot(press.clientX - touch.clientX, press.clientY - touch.clientY) <= 1 && Math.abs(press.timeStamp - event.timeStamp) <= 40)
             if (pointer) {
               presses.delete(pointer[0])
-              presses.set(id, { ...pointer[1], touchPointer: false, nativePointerId: pointer[0] })
+              presses.set(id, { ...pointer[1], directPointer: false, nativePointerId: pointer[0] })
               nativePointers.set(pointer[0], id)
+              nativeTouches.set(touch.identifier, id)
               return true
             }
-            return start(id, touch.target, event.timeStamp, false, false, touch.clientX, touch.clientY)
+            if (!start(id, touch.target, event.timeStamp, false, false, touch.clientX, touch.clientY)) return false
+            nativeTouches.set(touch.identifier, id)
+            return true
           })
         }
         const onTouchFinish = (event: TouchEvent): void => {
-          if (eachTouch(event, touch => finish(-touch.identifier - 1, event.timeStamp, event.type === 'touchcancel'))) event.preventDefault()
+          if (eachTouch(event, touch => {
+            const id = nativeTouches.get(touch.identifier)
+            return id !== undefined && finish(id, event.timeStamp, event.type === 'touchcancel')
+          })) event.preventDefault()
         }
         const onClick = (event: MouseEvent): void => {
           const button = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-counter-button]') : null
           const capabilities = (event as MouseEvent & { sourceCapabilities?: { firesTouchEvents: boolean } }).sourceCapabilities
           const release = button && suppressClicks.get(button)
-          const pendingTouch = button && [...presses.values()].some(press => press.element === button && press.touchInput)
-          if (event.detail > 0 && ((pendingTouch && capabilities?.firesTouchEvents !== false) || (release && (!release.touch || capabilities?.firesTouchEvents !== false) && Date.now() - release.time < 800))) {
+          const pendingTouch = button && [...presses.values()].some(press => press.element === button && (press.touchInput || press.nativePointerId !== undefined))
+          const pendingPen = button && [...presses.values()].some(press => press.element === button && press.penInput)
+          const pointerType = (event as PointerEvent).pointerType
+          const physicalClick = event.detail > 0 || pointerType === 'pen' || pointerType === 'touch'
+          if (physicalClick && ((pointerType === 'pen' && pendingPen) || (pendingTouch && capabilities?.firesTouchEvents !== false) || (release && ((pointerType === 'pen' && release.pen) || !release.touch || capabilities?.firesTouchEvents !== false) && Date.now() - release.time < 800))) {
             event.preventDefault()
             event.stopImmediatePropagation()
           } else if (button) warmAudio()
         }
-        const cancelAll = (): void => { for (const pointerId of [...presses.keys()]) finish(pointerId, 0, true) }
+        const cancelAll = (): void => {
+          for (const pointerId of [...presses.keys()]) finish(pointerId, 0, true)
+          nativePointers.clear(); nativeTouches.clear()
+        }
         const onVisibility = (): void => { if (root.ownerDocument.hidden) cancelAll() }
         root.addEventListener('pointerdown', onPointerDown)
         root.addEventListener('lostpointercapture', onPointerFinish)
