@@ -1,4 +1,4 @@
-import { Effect } from 'effect'
+import { Effect, Option } from 'effect'
 import { Scene, Story } from 'foldkit/test'
 import { describe, expect, it, vi } from 'vitest'
 import { t } from '../i18n'
@@ -6,6 +6,7 @@ import * as Audio from '../audio'
 import * as Speech from '../speech'
 import * as Tarot from './tarot'
 import { cardKey, drawCard, fullDeck, meaningKey, sampleDropAngle, TAROT_CARDS } from './tarotDomain'
+import { tarotImageSource } from './tarotArt'
 
 const update = (model: Tarot.Model, message: Tarot.Message) => Tarot.update(model, message, 'en', true, {})
 const view = (model: Tarot.Model) => Tarot.view(model, 'en')
@@ -107,6 +108,36 @@ describe('Tarot deck and continuous pile', () => {
       Story.message(Tarot.DrawRequested({ token: 1 })),
       Story.model(model => { expect(model.phase).toBe('ready'); expect(model.pile).toHaveLength(2); expect(model.pile[1]).toBe(model.drawn); expect(new Set(model.pile).size).toBe(2) }),
       Story.Command.expectNone())
+  })
+
+  it('keeps the five visible cards beneath the top face up at their original angles without replaying flips or captions', () => {
+    let model = Tarot.init()
+    for (let index = 0; index < 8; index++) model = pull(model)[0]
+    const previous = update(model, Tarot.PreviousCard({ token: model.token }))[0]
+    for (const displayed of [model, previous, pull(previous)[0]]) {
+      const lower = displayed.pile.slice(Math.max(0, displayed.cursor - 5), displayed.cursor)
+      Scene.scene({ update, view }, Scene.with(displayed),
+        Scene.Mount.resolve({ name: 'TarotDeckGestures' }, Tarot.DrawRequested({ token: -1 })),
+        Scene.expectAll(Scene.all.selector('.tarot-pile-layer')).toHaveCount(5),
+        Scene.expectAll(Scene.all.selector('.tarot-art-caption')).toHaveCount(1),
+        Scene.expectAll(Scene.all.selector('.tarot-card-flipper--dropping')).toHaveCount(1),
+        Scene.expect(Scene.selector('.tarot-pile-layer .tarot-card-flipper--face-down')).not.toExist(),
+        Scene.expect(Scene.selector('.tarot-pile-layer .tarot-face-name')).not.toExist(),
+        Scene.expect(Scene.selector('.tarot-reveal .tarot-art-image')).toHaveAttr('src', tarotImageSource(displayed.drawn)),
+        Scene.tap(simulation => {
+          const sources = Scene.findAll(simulation.html, '.tarot-pile-layer .tarot-art-image').map(node => Option.getOrThrow(Scene.attr(node, 'src')))
+          expect(sources).toEqual(lower.map(tarotImageSource))
+          const layers = Scene.findAll(simulation.html, '.tarot-pile-layer')
+          for (let offset = 0; offset < layers.length; offset++) {
+            const layer = layers[offset]!
+            const index = displayed.cursor - 5 + offset
+            expect(Option.getOrThrow(Scene.attr(layer, 'aria-hidden'))).toBe('true')
+            expect(layer.data?.style?.transform).toBe(`translate(${index % 2 ? -2 : 2}px, ${2 + index % 3}px) rotate(${displayed.pileAngles[index]}deg)`)
+          }
+          const ids = Scene.findAll(simulation.html, '[id]').map(node => Option.getOrThrow(Scene.attr(node, 'id')))
+          expect(new Set(ids).size).toBe(ids.length)
+        }), Scene.Command.expectNone())
+    }
   })
 
   it('automatically returns the full pile to the deck and unlocks another endless cycle', () => {

@@ -7,7 +7,7 @@
 .tarot-mode[aria-pressed="true"] { background: #324b66; color: #fff0cb; border-color: #ae996d; }
 .tarot-mode:focus-visible, .tarot-next:focus-visible, .tarot-deck:focus-visible { outline: 3px solid #bf9c53; outline-offset: 4px; }
 .tarot-prompt { min-height: 2.8em; margin: 0.8rem 0 0.2rem; color: var(--text-secondary); font-size: 0.95rem; }
-.tarot-table { isolation: isolate; display: flex; align-items: center; justify-content: center; gap: clamp(1rem, 6vw, 4rem); width: 100%; min-height: 245px; padding: 0.5rem 0 1.5rem; }
+.tarot-table { isolation: isolate; display: flex; align-items: flex-start; justify-content: center; gap: clamp(1rem, 6vw, 4rem); width: 100%; min-height: 245px; padding: 0.5rem 0 1.5rem; }
 .tarot-deck-area { position: relative; width: clamp(100px, 24vw, 150px); flex: 0 0 auto; }
 .tarot-deck { display: block; position: relative; width: 100%; aspect-ratio: 3/5; padding: 0; border: 1px solid #c9ae77; border-radius: 12px; color: #dac18b; background: #22354d; box-shadow: -3px 4px 0 #9a8b70, -5px 7px 0 #182638, -7px 9px 0 #c9bea8, 0 16px 28px #10182838; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
 .tarot-deck:active { cursor: grabbing; }
@@ -31,9 +31,10 @@
 
 @media (max-width: 480px) { .tarot-table { min-height: 205px; } .tarot-prompt { font-size: 0.85rem; } .tarot-spread .tarot-face-name { font-size: 0.72rem; } .tarot-deck-area { width: 105px; } }
 .tarot-pile { z-index: 1; width: clamp(110px, 27vw, 165px); position: relative; }
-.tarot-pile-cards { position: relative; width: 100%; }
-.tarot-pile-layer { position: absolute; inset: 3px 3px auto; aspect-ratio: 3/5; border: 1px solid #b7a27b; border-radius: 9px; background: #26374c; box-shadow: 0 2px 4px #1018281f; }
-.tarot-pile .tarot-reveal { position: relative; width: 100%; }
+.tarot-pile-cards { position: relative; width: 100%; padding-bottom: 4.5rem; }
+.tarot-pile-layer { position: absolute; inset: 3px 3px auto; aspect-ratio: 3/5; pointer-events: none; }
+.tarot-pile .tarot-reveal { position: relative; width: 100%; aspect-ratio: 3/5; min-height: 0; }
+.tarot-reveal > .tarot-face { position: absolute; inset: 0; }
 .tarot-pile-count { display: block; margin: 0.6rem 0 0; color: var(--text-muted); font-size: 0.75rem; font-variant-numeric: tabular-nums; }
 
 .tarot-deck-area--dragging { z-index: 10; }

@@ -343,6 +343,14 @@ describe('styles.css invariants', () => {
     expect(pairsCell).toContain('font-size: var(--findit-emoji-size)')
   })
 
+  it('anchors Tarot’s deck and reserves space for the revealed card and its name', () => {
+    expect(cssRule('.tarot-table')).toContain('align-items: flex-start')
+    expect(cssRule('.tarot-pile .tarot-reveal')).toContain('aspect-ratio: 3/5')
+    expect(cssRule('.tarot-reveal > .tarot-face')).toContain('position: absolute')
+    expect(cssRule('.tarot-pile-cards')).toMatch(/padding-bottom:\s*[\d.]+rem/)
+    expect(cssRule('.tarot-pile-layer')).toContain('pointer-events: none')
+  })
+
   it('keeps every paged Bubble shape visible and its dark-mode selection readable', () => {
     for (const shape of ['semicircle', 'rectangle', 'diamond', 'trapezoid', 'square', 'pentagon', 'hexagon', 'heptagon', 'octagon']) {
       expect(cssRule(`.bubble--${shape}`), shape).toContain('clip-path:')
