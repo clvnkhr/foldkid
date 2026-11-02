@@ -9,7 +9,7 @@
     "test:safari": "FOLDKID_SAFARI_E2E=1 node scripts/safari-e2e.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
-    "check:scripts": "node --check scripts/mobile-dev.mjs && node --check scripts/safari-e2e.mjs",
+    "check:scripts": "node --check scripts/mobile-dev.mjs && node --check scripts/safari-e2e.mjs && node --check scripts/offline-worker.js",
     "build": "npm run typecheck && npm run lint && npm run check:scripts && vite build",
     "preview": "vite preview",
     "test": "vitest run"

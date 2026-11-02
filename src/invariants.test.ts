@@ -368,6 +368,7 @@ describe('illustrated tarot artwork', () => {
     const sources = JSON.parse(readFileSync(join(root, 'sources.json'), 'utf8')) as { cards: { id: string; license: string; source: string }[] }
     expect(sources.cards).toHaveLength(78)
     expect(new Set(sources.cards.map(card => card.id)).size).toBe(78)
+    let totalBytes = 0
     for (const [id] of TAROT_CARDS) {
       const file = join(root, `${id}.webp`)
       expect(existsSync(file), id).toBe(true)
@@ -375,9 +376,12 @@ describe('illustrated tarot artwork', () => {
       expect(bytes.subarray(0, 4).toString()).toBe('RIFF')
       expect(bytes.subarray(8, 12).toString()).toBe('WEBP')
       expect(bytes.length).toBeGreaterThan(1000)
+      expect(bytes.length, id).toBeLessThan(64 * 1024)
+      totalBytes += bytes.length
       const record = sources.cards.find(card => card.id === id)
       expect(record?.license, id).toBe('Public domain')
       expect(record?.source).toMatch(/^https:\/\/commons\.wikimedia\.org\/wiki\/File/)
     }
+    expect(totalBytes).toBeLessThan(3.5 * 1024 * 1024)
   })
 })

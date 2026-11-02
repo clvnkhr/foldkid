@@ -40,6 +40,7 @@ import { Language, normalizeLanguage, t, tf } from './i18n'
 import { DEFAULT_SPEECH_PITCH, DEFAULT_SPEECH_RATE, speak } from './speech'
 import { pointerReorder } from './pointerReorder'
 import { multitouchClickStream, withMultitouchClicks } from './multitouch'
+import { mountOfflineAssets } from './offline'
 import { settingsResizeStream } from './subscriptions'
 
 const ICON_UNMUTED = '🔊'
@@ -1502,6 +1503,14 @@ const counterTiltPermissionStream = (element: Element): Stream.Stream<never> =>
     return yield* Effect.never
   }))
 
+export const appRuntimeStream = (element: Element): Stream.Stream<Message> => Stream.mergeAll([
+  Stream.fromEventListener(window.matchMedia('(prefers-color-scheme: dark)'), 'change').pipe(
+    Stream.map(() => SystemDarkModeChanged()),
+  ),
+  multitouchClickStream(element),
+  mountOfflineAssets(element),
+], { concurrency: 'unbounded' })
+
 export const view = (model: Model): Document => {
   const h = html<Message>()
   const settingsOnClick = (message: PersistedSettingsMessage) => h.OnClick(message)
@@ -1516,16 +1525,8 @@ export const view = (model: Model): Document => {
     title: pageTitle(model),
     body: withMultitouchClicks(h.div(
       [h.Class(`app${isDark ? ' dark' : ''}${model.page._tag === 'PageBubbles3d' ? ' app--bubbles3d' : ''} lang-${model.language}`), h.OnMount({
-        name: 'watchDarkMode',
-        f: () => Stream.fromEventListener(
-          window.matchMedia('(prefers-color-scheme: dark)'),
-          'change',
-        ).pipe(
-          Stream.map(() => SystemDarkModeChanged()),
-        ),
-      }), h.OnMount({
-        name: 'multitouchClicks',
-        f: multitouchClickStream,
+        name: 'appRuntime',
+        f: appRuntimeStream,
       })],
       [
           !isLanding

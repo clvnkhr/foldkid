@@ -7,7 +7,6 @@ import { Effect, Fiber, Option, Schema as S, Stream } from 'effect'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Scene, Story } from 'foldkit/test'
 import * as Main from './main'
-import { multitouchClickStream } from './multitouch'
 import * as Counter from './games/counter'
 import * as FindIt from './games/findit'
 import * as Bubbles from './games/bubbles'
@@ -441,7 +440,7 @@ describe('Music Box accompaniment preferences', () => {
     Scene.scene(
       { update: Main.update, view: Main.view }, Scene.with(opened),
       Scene.Mount.resolveAll(
-        [{ name: 'multitouchClicks' }, SettingsPersisted()],
+        [{ name: 'appRuntime' }, SettingsPersisted()],
         [{ name: 'settingsResize' }, SettingsDragEnded()],
         [{ name: 'musicBoxSongPointerReorder' }, MusicBox.SongDragEnded()],
         [{ name: 'landingSettingsPointerReorder' }, LandingSettingsDragEnded()],
@@ -2646,6 +2645,19 @@ describe('Main', () => {
   })
 
   describe('mount lifecycles', () => {
+    it('starts the app-wide preload from the persistent root while the home buttons remain usable', () => {
+      Scene.scene({ update: Main.update, view: Main.view }, Scene.with({ ...createModel(), language: 'en' }),
+        Scene.Mount.resolveAll(
+          [{ name: 'appRuntime' }, SettingsPersisted()],
+          [{ name: 'settingsResize' }, SettingsDragEnded()],
+          [{ name: 'landingSettingsPointerReorder' }, LandingSettingsDragEnded()],
+          [{ name: 'landingGamePointerReorder' }, LandingDragEnded()],
+        ),
+        Scene.expect(Scene.selector('.landing-random')).toHaveAttr('type', 'button'),
+        Scene.expect(Scene.selector('.landing-random')).not.toBeDisabled(),
+        Scene.Command.expectNone())
+    })
+
     it('removes the multitouch release listener when the stream is interrupted', async () => {
       const originalAdd = document.addEventListener.bind(document)
       const originalRemove = document.removeEventListener.bind(document)
@@ -2665,7 +2677,7 @@ describe('Main', () => {
         return originalRemove(type, listener, options)
       }) as Document['removeEventListener']
 
-      const fiber = Effect.runFork(Stream.runDrain(multitouchClickStream(document.body)))
+      const fiber = Effect.runFork(Stream.runDrain(Main.appRuntimeStream(document.body)))
       try {
         await vi.waitFor(() => expect(added).toHaveLength(1))
         await Effect.runPromise(Fiber.interrupt(fiber))
