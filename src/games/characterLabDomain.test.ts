@@ -2,9 +2,10 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import catalogue from './characterLabCatalogue.json'
+import { radicals as dictionaryRadicals } from './chineseHandwritingRadicals.json'
 import {
   CHARACTER_LAB_BASES, CHARACTER_LAB_CHARACTERS, CHARACTER_LAB_COMMON_RADICALS, CHARACTER_LAB_DECOMPOSITIONS, CHARACTER_LAB_PALETTE, CHARACTER_LAB_RECIPES, MAX_CHARACTER_LAB_COMPONENTS,
-  baseComponents, canonicalCharacter, characterColors, characterComponentCount, characterHash, isCharacterLabCharacter, mergeCandidates, mergeCharacters, mergeGroupCandidates, multiJoinPatterns, radicalForms, selectCharacterPalette, splitCharacter,
+  baseComponents, canonicalCharacter, characterColors, characterComponentCount, characterHash, isCharacterLabCharacter, mergeCandidates, mergeCharacters, mergeGroupCandidates, multiJoinPatterns, radicalForms, selectCharacterCombiners, selectCharacterPalette, splitCharacter,
 } from './characterLabDomain'
 
 type Node = string | { readonly operator: string; readonly children: ReadonlyArray<Node> }
@@ -140,7 +141,8 @@ describe('Character Lab verified compositions', () => {
   })
 
   it('offers every supported canonical character with the familiar shortcuts first', () => {
-    expect(CHARACTER_LAB_COMMON_RADICALS).toHaveLength(16)
+    expect(CHARACTER_LAB_COMMON_RADICALS).toHaveLength(413)
+    expect(CHARACTER_LAB_COMMON_RADICALS.slice(0, 16)).toEqual([...'木口人水手心言火土日女子艸宀门金'])
     expect(CHARACTER_LAB_PALETTE.length).toBeGreaterThan(9000)
     const choices = [...CHARACTER_LAB_COMMON_RADICALS, ...CHARACTER_LAB_PALETTE]
     expect(new Set(choices).size).toBe(choices.length)
@@ -158,6 +160,31 @@ describe('Character Lab verified compositions', () => {
     expect(Object.isFrozen(CHARACTER_LAB_CHARACTERS)).toBe(true)
     expect(Object.isFrozen(CHARACTER_LAB_RECIPES[0])).toBe(true)
     expect(Object.isFrozen(CHARACTER_LAB_RECIPES[0]!.parts)).toBe(true)
+  })
+
+  it('keeps every basic piece and supported dictionary combiner in the fixed top list without duplicate forms', () => {
+    const expected = new Set([
+      ...CHARACTER_LAB_BASES.map(canonicalCharacter),
+      ...dictionaryRadicals.map(row => canonicalCharacter(String(row[1]))).filter(isCharacterLabCharacter),
+    ])
+    expect(new Set(CHARACTER_LAB_COMMON_RADICALS)).toEqual(expected)
+    expect(new Set(CHARACTER_LAB_COMMON_RADICALS).size).toBe(CHARACTER_LAB_COMMON_RADICALS.length)
+    for (const character of [...'疒广巾亠穴酉竹糸刀犬示爪食辵月']) {
+      expect(CHARACTER_LAB_COMMON_RADICALS, character).toContain(character)
+      expect(CHARACTER_LAB_PALETTE, character).not.toContain(character)
+    }
+    for (const alias of ['囗', '忄', '氵', '亻', '釒', '糹']) expect(CHARACTER_LAB_COMMON_RADICALS).not.toContain(alias)
+    const uses = new Map<string, number>()
+    for (const decomposition of CHARACTER_LAB_DECOMPOSITIONS) for (const part of decomposition.parts) {
+      const character = canonicalCharacter(part)
+      uses.set(character, (uses.get(character) ?? 0) + 1)
+    }
+    const rest = CHARACTER_LAB_COMMON_RADICALS.slice(16)
+    expect(rest).toEqual([...rest].sort((first, second) =>
+      (uses.get(second) ?? 0) - (uses.get(first) ?? 0) || first.codePointAt(0)! - second.codePointAt(0)!),
+    )
+    expect(CHARACTER_LAB_COMMON_RADICALS).toContain('孓')
+    expect(baseComponents('孓')).toEqual(['孓'])
   })
 
   it('includes common formerly unsupported structures and complex simplified/traditional characters', () => {
@@ -182,7 +209,7 @@ describe('Character Lab verified compositions', () => {
     expect(selectCharacterPalette('忄')).toBe(heart)
     expect(selectCharacterPalette('清')[0]).toBe('清')
     const sunMoon = selectCharacterPalette('日 月')
-    expect(sunMoon[0]).toBe('月')
+    expect(sunMoon[0]).toBe('明')
     expect(sunMoon).toContain('明')
     expect(sunMoon).not.toContain('情')
     expect(selectCharacterPalette('木木')).toContain('林')
@@ -190,6 +217,21 @@ describe('Character Lab verified compositions', () => {
     expect(selectCharacterPalette('⺗')).toContain('情')
     for (const query of ['not Chinese', '木?', '𰻝', '__proto__', '木'.repeat(MAX_CHARACTER_LAB_COMPONENTS + 1)]) expect(selectCharacterPalette(query)).toEqual([])
     expect(Object.isFrozen(selectCharacterPalette('心'))).toBe(true)
+  })
+
+  it('finds top combiners with the same canonical character and component search rules', () => {
+    expect(selectCharacterCombiners('')).toBe(CHARACTER_LAB_COMMON_RADICALS)
+    expect(selectCharacterCombiners(' \n ')).toBe(CHARACTER_LAB_COMMON_RADICALS)
+    expect(selectCharacterCombiners('疒')[0]).toBe('疒')
+    expect(selectCharacterCombiners('广')).toContain('疒')
+    const heart = selectCharacterCombiners('心')
+    expect(heart[0]).toBe('心')
+    expect(selectCharacterCombiners('忄')).toBe(heart)
+    expect(selectCharacterCombiners('囗')).toContain('口')
+    for (const query of ['English', '木?', '𰻝', '__proto__']) expect(selectCharacterCombiners(query)).toEqual([])
+    expect(Object.isFrozen(selectCharacterCombiners('疒'))).toBe(true)
+    expect(selectCharacterCombiners('心')).not.toContain('情')
+    expect(selectCharacterPalette('心')).toContain('情')
   })
 
   it.each([

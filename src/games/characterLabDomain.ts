@@ -1,4 +1,5 @@
 import catalogue from './characterLabCatalogue.json'
+import { radicals as dictionaryRadicals } from './chineseHandwritingRadicals.json'
 
 export interface CharacterDecomposition {
   readonly character: string
@@ -49,7 +50,23 @@ export const CHARACTER_LAB_CHARACTERS: ReadonlyArray<string> = Object.freeze([
 const known = new Set(CHARACTER_LAB_CHARACTERS)
 export const isCharacterLabCharacter = (character: string): boolean => known.has(character)
 
-export const CHARACTER_LAB_COMMON_RADICALS: ReadonlyArray<string> = Object.freeze([...'木口人水手心言火土日女子艸宀门金'])
+const familiarRadicals = [...'木口人水手心言火土日女子艸宀门金']
+const familiarSet = new Set(familiarRadicals)
+const ingredientFrequency = new Map<string, number>()
+for (const decomposition of CHARACTER_LAB_DECOMPOSITIONS) for (const ingredient of decomposition.parts) {
+  const character = canonicalCharacter(ingredient)
+  ingredientFrequency.set(character, (ingredientFrequency.get(character) ?? 0) + 1)
+}
+const unicodeRadicals = dictionaryRadicals as unknown as ReadonlyArray<readonly [number, string]>
+/** All loose base pieces plus supported dictionary radicals, including decomposable combiners such as 疒 and 广. */
+export const CHARACTER_LAB_COMMON_RADICALS: ReadonlyArray<string> = Object.freeze([
+  ...familiarRadicals,
+  ...[...new Set([
+    ...CHARACTER_LAB_BASES.map(canonicalCharacter),
+    ...unicodeRadicals.map(([, character]) => canonicalCharacter(character)),
+  ])].filter(character => known.has(character) && !familiarSet.has(character)).sort((first, second) =>
+    (ingredientFrequency.get(second) ?? 0) - (ingredientFrequency.get(first) ?? 0) || first.codePointAt(0)! - second.codePointAt(0)!),
+])
 const common = new Set(CHARACTER_LAB_COMMON_RADICALS)
 export const CHARACTER_LAB_PALETTE: ReadonlyArray<string> = Object.freeze([...new Set([
   ...'青明林森好休清字家',
@@ -169,33 +186,38 @@ const countComponents = (character: string): ReadonlyMap<string, number> => {
   componentCounts.set(character, counts)
   return counts
 }
-const paletteMembers = new Set(CHARACTER_LAB_PALETTE)
-let previousQuery = ''
-let previousSelection = CHARACTER_LAB_PALETTE
-/** Find actual characters or all compounds containing the entered base components. */
-export const selectCharacterPalette = (query: string): ReadonlyArray<string> => {
-  const normalized = [...query.normalize('NFC')].filter(character => !/\s/u.test(character)).map(canonicalCharacter).join('')
-  if (normalized === previousQuery) return previousSelection
-  const characters = [...normalized]
-  let selection: ReadonlyArray<string>
-  if (characters.length === 0) selection = CHARACTER_LAB_PALETTE
-  else if (characters.length > MAX_CHARACTER_LAB_COMPONENTS || characters.some(character => !/^\p{Script=Han}$/u.test(character) || !known.has(character))) selection = noComponents
-  else {
-    const exact = [...new Set(characters.filter(character => paletteMembers.has(character)))]
-    const required = new Map<string, number>()
-    for (const character of characters) for (const [part, count] of countComponents(character)) required.set(part, (required.get(part) ?? 0) + count)
-    const exactSet = new Set(exact)
-    selection = Object.freeze([...exact, ...CHARACTER_LAB_PALETTE.filter(character => {
-      if (exactSet.has(character)) return false
-      const counts = countComponents(character)
-      for (const [part, count] of required) if ((counts.get(part) ?? 0) < count) return false
-      return true
-    })])
+const characterSelector = (choices: ReadonlyArray<string>) => {
+  const members = new Set(choices)
+  let previousQuery = ''
+  let previousSelection = choices
+  return (query: string): ReadonlyArray<string> => {
+    const normalized = [...query.normalize('NFC')].filter(character => !/\s/u.test(character)).map(canonicalCharacter).join('')
+    if (normalized === previousQuery) return previousSelection
+    const characters = [...normalized]
+    let selection: ReadonlyArray<string>
+    if (characters.length === 0) selection = choices
+    else if (characters.length > MAX_CHARACTER_LAB_COMPONENTS || characters.some(character => !/^\p{Script=Han}$/u.test(character) || !known.has(character))) selection = noComponents
+    else {
+      const exact = [...new Set(characters.filter(character => members.has(character)))]
+      const required = new Map<string, number>()
+      for (const character of characters) for (const [part, count] of countComponents(character)) required.set(part, (required.get(part) ?? 0) + count)
+      const exactSet = new Set(exact)
+      selection = Object.freeze([...exact, ...choices.filter(character => {
+        if (exactSet.has(character)) return false
+        const counts = countComponents(character)
+        for (const [part, count] of required) if ((counts.get(part) ?? 0) < count) return false
+        return true
+      })])
+    }
+    previousQuery = normalized
+    previousSelection = selection
+    return selection
   }
-  previousQuery = normalized
-  previousSelection = selection
-  return selection
 }
+/** Find actual characters or all compounds containing the entered base components. */
+export const selectCharacterPalette = characterSelector(CHARACTER_LAB_PALETTE)
+/** Search the fixed combiner bank too, so moving a basic piece upward never hides it. */
+export const selectCharacterCombiners = characterSelector(CHARACTER_LAB_COMMON_RADICALS)
 
 export const characterHash = (character: string): number => {
   let value = 0x811c9dc5

@@ -5,7 +5,7 @@ import { m } from 'foldkit/message'
 import { chime, click, pop } from '../audio'
 import { normalizeLanguage, t, tf } from '../i18n'
 import { speakNow, type SpeechOptions } from '../speech'
-import { baseComponents, canonicalCharacter, CHARACTER_LAB_COMMON_RADICALS, CHARACTER_LAB_PALETTE, characterColors, characterComponentCount, characterHash, isCharacterLabCharacter, mergeGroupCandidates, radicalForms, selectCharacterPalette } from './characterLabDomain'
+import { baseComponents, canonicalCharacter, CHARACTER_LAB_COMMON_RADICALS, CHARACTER_LAB_PALETTE, characterColors, characterComponentCount, characterHash, isCharacterLabCharacter, mergeGroupCandidates, radicalForms, selectCharacterCombiners, selectCharacterPalette } from './characterLabDomain'
 import { createCharacterLabRuntime } from './characterLabRuntime'
 
 export const MAX_CHARACTER_LAB_PIECES = 60
@@ -219,7 +219,7 @@ export const view = (model: Model, language: string, _muted: boolean) => {
     ]),
     h.div([h.Class('character-lab-palette'), h.Attribute('role', 'group'), h.Attribute('aria-label', t('characterLabPalette', language))], [
       h.div([h.Class('character-lab-palette-group'), h.Attribute('role', 'group'), h.Attribute('aria-label', t('characterLabCommonRadicals', language))], [
-        h.div([h.Class('character-lab-radicals')], CHARACTER_LAB_COMMON_RADICALS.map(dropButton)),
+        h.div([h.Class('character-lab-radicals'), h.Attribute('data-multitouch-scroll', 'true')], selectCharacterCombiners(model.query).map(dropButton)),
       ]),
       h.div([h.Class('character-lab-palette-group'), h.Attribute('role', 'group'), h.Attribute('aria-label', t('characterLabCharacters', language))], [
         h.div([h.Class('character-lab-characters')], [

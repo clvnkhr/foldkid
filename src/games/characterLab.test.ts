@@ -5,7 +5,7 @@ import * as Audio from '../audio'
 import { t, tf } from '../i18n'
 import * as Speech from '../speech'
 import * as Lab from './characterLab'
-import { baseComponents, canonicalCharacter, CHARACTER_LAB_COMMON_RADICALS, CHARACTER_LAB_PALETTE, CHARACTER_LAB_RECIPES, characterColors, isCharacterLabCharacter, mergeCandidates, mergeCharacters, mergeGroupCandidates, radicalForms, selectCharacterPalette } from './characterLabDomain'
+import { baseComponents, canonicalCharacter, CHARACTER_LAB_COMMON_RADICALS, CHARACTER_LAB_PALETTE, CHARACTER_LAB_RECIPES, characterColors, isCharacterLabCharacter, mergeCandidates, mergeCharacters, mergeGroupCandidates, radicalForms, selectCharacterCombiners, selectCharacterPalette } from './characterLabDomain'
 
 const update = (model: Lab.Model, message: Lab.Message) => Lab.update(model, message, 'en', true, {})
 const view = (model: Lab.Model) => Lab.view(model, 'en', true)
@@ -306,6 +306,7 @@ describe('Character Lab commands and accessible controls', () => {
       Scene.expect(Scene.role('group', { name: t('characterLabCommonRadicals', 'en') })).toBeVisible(),
       Scene.expect(Scene.role('group', { name: t('characterLabCharacters', 'en') })).toBeVisible(),
       Scene.expectAll(Scene.all.selector('.character-lab-radicals button')).toHaveCount(CHARACTER_LAB_COMMON_RADICALS.length),
+      Scene.expect(Scene.selector('.character-lab-radicals')).toHaveAttr('data-multitouch-scroll', 'true'),
       Scene.expect(Scene.role('button', { name: tf('characterLabDrop', 'en', '心') })).toHaveAttr('title', tf('characterLabRadicalForms', 'en', '心', new Intl.ListFormat('en', { style: 'short', type: 'conjunction' }).format([...radicalForms('心')]))),
       Scene.expectAll(Scene.all.role('button', { name: tf('characterLabDrop', 'en', '忄') })).toHaveCount(0),
       Scene.click(Scene.role('button', { name: tf('characterLabDrop', 'en', '木') })),
@@ -357,23 +358,38 @@ describe('Character Lab commands and accessible controls', () => {
     expect(update(empty, Lab.ChangedSearch({ query: '' }))[0].palettePage).toBe(0)
   })
 
-  it('offers native search and keeps the common radicals usable while the lower row is filtered', () => {
+  it('searches both combiner and character rows while keeping a compact paginated catalogue', () => {
     const label = t('characterLabSearch', 'en')
     Scene.scene({ update, view }, Scene.with(Lab.init()),
       Scene.Mount.resolveAll(mounted),
       Scene.type(Scene.label(label), '心'),
       Scene.expect(Scene.label(label)).toHaveValue('心'),
       Scene.expect(Scene.role('button', { name: tf('characterLabDrop', 'en', '情') })).toBeVisible(),
-      Scene.expectAll(Scene.all.selector('.character-lab-radicals button')).toHaveCount(16),
+      Scene.expectAll(Scene.all.selector('.character-lab-radicals button')).toHaveCount(selectCharacterCombiners('心').length),
+      Scene.expect(Scene.role('button', { name: tf('characterLabDrop', 'en', '心') })).toBeVisible(),
       Scene.type(Scene.label(label), 'no results'),
       Scene.expectAll(Scene.all.selector('.character-lab-characters .character-lab-drop')).toHaveCount(0),
       Scene.expect(Scene.role('button', { name: t('characterLabMore', 'en') })).toBeDisabled(),
       Scene.expect(Scene.role('button', { name: t('characterLabPrevious', 'en') })).toBeDisabled(),
+      Scene.type(Scene.label(label), '心'),
       Scene.click(Scene.role('button', { name: tf('characterLabDrop', 'en', '心') })),
       Scene.expect(Scene.role('button', { name: tf('characterLabPiece', 'en', '心') })).toBeVisible(),
       Scene.type(Scene.label(label), ''),
+      Scene.expectAll(Scene.all.selector('.character-lab-radicals button')).toHaveCount(CHARACTER_LAB_COMMON_RADICALS.length),
       Scene.expect(Scene.role('button', { name: tf('characterLabDrop', 'en', '青') })).toBeVisible(),
       Scene.expectAll(Scene.all.selector('.character-lab-characters .character-lab-drop')).toHaveCount(8),
+      Scene.Command.expectNone(),
+    )
+  })
+
+  it('finds a non-atomic basic combiner without duplicating it in the lower row', () => {
+    Scene.scene({ update, view }, Scene.with(Lab.init()),
+      Scene.Mount.resolveAll(mounted),
+      Scene.type(Scene.label(t('characterLabSearch', 'en')), '疒'),
+      Scene.expect(Scene.selector('.character-lab-radicals button')).toHaveAttr('aria-label', tf('characterLabDrop', 'en', '疒')),
+      Scene.expectAll(Scene.all.role('button', { name: tf('characterLabDrop', 'en', '疒') })).toHaveCount(1),
+      Scene.click(Scene.role('button', { name: tf('characterLabDrop', 'en', '疒') })),
+      Scene.expect(Scene.role('button', { name: tf('characterLabPiece', 'en', '疒') })).toBeVisible(),
       Scene.Command.expectNone(),
     )
   })
