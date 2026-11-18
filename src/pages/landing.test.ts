@@ -4,6 +4,8 @@ import { html } from 'foldkit/html'
 import { LANDING_GAME_COUNT, LANDING_GAMES, view } from './landing'
 import * as Main from '../main'
 import * as DotShapes from '../games/dotShapes'
+import * as ChineseHandwriting from '../games/chineseHandwriting'
+import * as CharacterLab from '../games/characterLab'
 import * as ShapeMatch from '../games/shapeMatch'
 import * as PicnicBasket from '../games/picnicBasket'
 import { ClickedCounter, ClickedRandomGame, LandingDragEnded, LandingRandomChosen } from '../message'
@@ -13,20 +15,22 @@ describe('Landing', () => {
   const visibleGames = Array.from({ length: LANDING_GAME_COUNT }, () => false)
   const acknowledgePointerReorder = Scene.Mount.resolve({ name: 'landingGamePointerReorder' }, LandingDragEnded())
 
-  it('appends Picnic Basket while retaining every existing catalogue index', () => {
+  it('appends Character Lab while retaining every existing catalogue index', () => {
     expect(LANDING_GAMES.map(game => game.title)).toEqual([
       'counterTitle', 'findItTitle', 'bubblesTitle', 'drawTitle', 'musicBoxTitle',
       'memoryCardsTitle', 'phonemeGardenTitle', 'calculatorTitle', 'whackTitle',
       'patternTitle', 'bslTitle', 'rpsTitle', 'magneticBlocksTitle', 'talkingKeyboardTitle',
       'talkingClockTitle', 'growingNumbersTitle', 'shapeWorkshopTitle', 'bubbles3dTitle',
       'handwritingTitle', 'dotShapesTitle', 'shapeMatchTitle', 'picnicBasketTitle',
-      'colorMixingTitle', 'sequenceWordsTitle', 'tarotTitle',
+      'colorMixingTitle', 'sequenceWordsTitle', 'tarotTitle', 'chineseHandwritingTitle', 'characterLabTitle',
     ])
     expect(LANDING_GAMES[19]?.msg()).toEqual({ _tag: 'ClickedDotShapes' })
     expect(LANDING_GAMES[19]?.emoji).toBe('🔺')
     expect(LANDING_GAMES[20]?.msg()).toEqual({ _tag: 'ClickedShapeMatch' })
     expect(LANDING_GAMES[21]?.msg()).toEqual({ _tag: 'ClickedPicnicBasket' })
-    expect(LANDING_GAMES.at(-1)?.msg()).toEqual({ _tag: 'ClickedTarot' })
+    expect(LANDING_GAMES[24]?.msg()).toEqual({ _tag: 'ClickedTarot' })
+    expect(LANDING_GAMES[25]?.msg()).toEqual({ _tag: 'ClickedChineseHandwriting' })
+    expect(LANDING_GAMES.at(-1)?.msg()).toEqual({ _tag: 'ClickedCharacterLab' })
   })
 
   it('renders title and subtitle', () => {
@@ -54,6 +58,8 @@ describe('Landing', () => {
       Scene.expect(Scene.text('Shape Workshop')).toExist(),
       Scene.expect(Scene.text('3D Bubbles')).toExist(),
       Scene.expect(Scene.text('Handwriting')).toExist(),
+      Scene.expect(Scene.text('Chinese Handwriting')).toExist(),
+      Scene.expect(Scene.text('Character Lab')).toExist(),
       Scene.expect(Scene.text('Dot Shapes')).toExist(),
       Scene.expect(Scene.text('Shape Match')).toExist(),
       Scene.expect(Scene.text('Picnic Basket')).toExist(),
@@ -85,6 +91,30 @@ describe('Landing', () => {
       acknowledgePointerReorder,
       Scene.Command.expectNone(),
     )
+  })
+
+  it('opens the separate Chinese handwriting game from its landing card', () => {
+    Scene.scene(
+      { update: Main.update, view: model => model.page._tag === 'PageChineseHandwriting'
+        ? ChineseHandwriting.view(model.chineseHandwriting, model.language, model.muted) : view(defaultOrder, visibleGames, 'en', -1) },
+      Scene.with({ ...Main.init()[0], muted: true }), acknowledgePointerReorder,
+      Scene.click(Scene.role('button', { name: 'Chinese Handwriting' })),
+      Scene.Mount.expectEnded({ name: 'landingGamePointerReorder' }),
+      Scene.expect(Scene.selector('.chinese-handwriting-board')).toExist(),
+      Scene.Mount.resolve({ name: 'chineseHandwritingInput' }, ChineseHandwriting.SoundPlayed()),
+      Scene.Command.expectNone())
+  })
+
+  it('opens Character Lab from its appended landing card', () => {
+    Scene.scene(
+      { update: Main.update, view: model => model.page._tag === 'PageCharacterLab'
+        ? CharacterLab.view(model.characterLab, model.language, model.muted) : view(defaultOrder, visibleGames, 'en', -1) },
+      Scene.with({ ...Main.init()[0], muted: true }), acknowledgePointerReorder,
+      Scene.click(Scene.role('button', { name: 'Character Lab' })),
+      Scene.Mount.expectEnded({ name: 'landingGamePointerReorder' }),
+      Scene.expect(Scene.selector('.character-lab-stage')).toExist(),
+      Scene.Mount.resolve({ name: 'characterLabPhysics' }, CharacterLab.SoundPlayed()),
+      Scene.Command.expectNone())
   })
 
   it('opens Dot Shapes from its landing card', () => {

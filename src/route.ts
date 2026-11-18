@@ -22,6 +22,8 @@ export const PageTalkingClock = ts('PageTalkingClock')
 export const PageGrowingNumbers = ts('PageGrowingNumbers')
 export const PageShapeWorkshop = ts('PageShapeWorkshop')
 export const PageHandwriting = ts('PageHandwriting')
+export const PageChineseHandwriting = ts('PageChineseHandwriting')
+export const PageCharacterLab = ts('PageCharacterLab')
 export const PageDotShapes = ts('PageDotShapes')
 export const PageShapeMatch = ts('PageShapeMatch')
 export const PagePicnicBasket = ts('PagePicnicBasket')
@@ -52,6 +54,8 @@ export const Page = S.Union([
   PageShapeWorkshop,
   PageBubbles3d,
   PageHandwriting,
+  PageChineseHandwriting,
+  PageCharacterLab,
   PageDotShapes,
   PageShapeMatch,
   PagePicnicBasket,

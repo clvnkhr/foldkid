@@ -8,6 +8,8 @@ import { Option, Schema as S } from 'effect'
 import { afterEach, describe, expect, it } from 'vitest'
 import * as Bubbles from './games/bubbles'
 import * as Bubbles3d from './games/bubbles3d'
+import * as ChineseHandwriting from './games/chineseHandwriting'
+import * as CharacterLab from './games/characterLab'
 import * as Handwriting from './games/handwriting'
 import * as DotShapes from './games/dotShapes'
 import * as ShapeMatch from './games/shapeMatch'
@@ -241,6 +243,41 @@ describe('codebase invariants', () => {
     }
   })
 
+  it('rejects malformed nested Chinese handwriting state', () => {
+    const initial = ChineseHandwriting.init()
+    for (const invalid of [{ ...initial, category: 0 }, { ...initial, targetPage: '0' }, { ...initial, choicePage: '0' }, { ...initial, targetIndex: '0' }, { ...initial, progress: ['1'] },
+      { ...initial, contacts: [{ id: 1, stroke: 0, point: { x: '2', y: 3 } }] }]) {
+      expect(Option.isNone(S.decodeUnknownOption(ChineseHandwriting.Model)(invalid))).toBe(true)
+      expect(Option.isNone(S.decodeUnknownOption(Main.Model)({ ...Main.init()[0], chineseHandwriting: invalid }))).toBe(true)
+    }
+  })
+
+  it('rejects malformed nested Character Lab pieces and collision messages', () => {
+    const initial = CharacterLab.init()
+    const piece = { id: 0, character: '木', atoms: ['木'], x: .5, y: .1, vx: 0, vy: 0, angle: 0, spin: 0, delay: 0 }
+    const pendingJoin = { request: 1, ids: [0, 1], x: .5, y: .5, vx: 0, vy: 0, angle: 0, revision: 0 }
+    expect(Option.isSome(S.decodeUnknownOption(CharacterLab.Model)({ ...initial, pieces: [piece] }))).toBe(true)
+    for (const invalid of [{ ...initial, revision: '0' }, { ...initial, query: 1 }, { ...initial, joinRequest: '0' }, { ...initial, joining: 1 }, { ...initial, pieces: [{ ...piece, id: '0' }] },
+      { ...initial, joining: [{ ...pendingJoin, request: '1' }] }, { ...initial, joining: [{ ...pendingJoin, ids: [0, '1'] }] },
+      { ...initial, joining: [{ ...pendingJoin, angle: '0' }] }, { ...initial, joining: [{ ...pendingJoin, revision: '0' }] },
+      { ...initial, pieces: [{ ...piece, character: 1 }] }, { ...initial, pieces: [{ ...piece, angle: '0' }] },
+      { ...initial, lastEvent: { kind: 'merged', first: '木', second: '木', result: '林', parts: [1] } }]) {
+      expect(Option.isNone(S.decodeUnknownOption(CharacterLab.Model)(invalid))).toBe(true)
+      expect(Option.isNone(S.decodeUnknownOption(Main.Model)({ ...Main.init()[0], characterLab: invalid }))).toBe(true)
+    }
+    for (const invalid of [
+      { _tag: 'CharacterLabDroppedCharacter', character: 1 },
+      { _tag: 'CharacterLabChangedSearch', query: 1 },
+      { _tag: 'CharacterLabJoinChosen', request: '1', revision: 0, character: '杏' },
+      { _tag: 'CharacterLabJoinChosen', request: 1, revision: '0', character: '杏' },
+      { _tag: 'CharacterLabJoinChosen', request: 1, revision: 0, character: 1 },
+      { _tag: 'CharacterLabCollidedPieces', firstId: '0', secondId: 1, x: .5, y: .5, vx: 0, vy: 0, angle: 0, revision: 0 },
+      { _tag: 'CharacterLabCollidedGroup', ids: [0, '1'], x: .5, y: .5, vx: 0, vy: 0, angle: 0, revision: 0 },
+      { _tag: 'CharacterLabCollidedGroup', ids: [0, 1, 2], x: .5, y: .5, vx: 0, vy: 0, angle: 0, revision: '0' },
+      { _tag: 'CharacterLabTappedPiece', id: 0, x: .5, y: .5, vx: 0, vy: 0, angle: 0, revision: '0' },
+    ]) expect(Option.isNone(S.decodeUnknownOption(Main.Message)(invalid))).toBe(true)
+  })
+
   it('every 3D shape has a localized name and valid schema identity', () => {
     expect(Object.keys(Bubbles3d.BUBBLE3D_SHAPE_KEYS).sort()).toEqual(BUBBLE3D_SHAPES.map(shape => shape.id).sort())
     for (const shape of BUBBLE3D_SHAPES) {
@@ -269,6 +306,8 @@ describe('codebase invariants', () => {
       ['Bubbles', Bubbles.Model, Bubbles.init()],
       ['3D Bubbles', Bubbles3d.Model, Bubbles3d.init()],
       ['Handwriting', Handwriting.Model, Handwriting.init()],
+      ['Chinese Handwriting', ChineseHandwriting.Model, ChineseHandwriting.init()],
+      ['Character Lab', CharacterLab.Model, CharacterLab.init()],
       ['Dot Shapes', DotShapes.Model, DotShapes.init()],
       ['Shape Match', ShapeMatch.Model, ShapeMatch.init()],
       ['Picnic Basket', PicnicBasket.Model, PicnicBasket.init()],
@@ -302,6 +341,11 @@ describe('codebase invariants', () => {
       ['Tarot mode', Main.Message, { _tag: 'TarotSetMode', mode: 'unknown' }],
       ['Tarot draw token', Main.Message, { _tag: 'TarotDrawRequested', token: '0' }],
       ['3D Bubbles pop', Main.Message, { _tag: 'Bubbles3dClickedPop', id: '0', revision: 0 }],
+      ['Chinese Handwriting target', Main.Message, { _tag: 'ChineseHandwritingSelectedTarget', index: '0' }],
+      ['Chinese Handwriting category', Main.Message, { _tag: 'ChineseHandwritingSelectedCategory', category: 0 }],
+      ['Chinese Handwriting group', Main.Message, { _tag: 'ChineseHandwritingSelectedGroup', index: '0' }],
+      ['Chinese Handwriting point', Main.Message, { _tag: 'ChineseHandwritingPenMoved', id: 0, points: [{ x: 10, y: '25' }], revision: 0 }],
+      ['Chinese Handwriting random result', Main.Message, { _tag: 'ChineseHandwritingRandomTargetSelected', index: 1, revision: '0', request: 1 }],
       ['Handwriting mode', Main.Message, { _tag: 'HandwritingSetMode', mode: 'sentences' }],
       ['Handwriting case', Main.Message, { _tag: 'HandwritingSetCase', letterCase: 'joined' }],
       ['Handwriting style', Main.Message, { _tag: 'HandwritingSetStyle', style: 'ornate' }],

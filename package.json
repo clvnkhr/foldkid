@@ -12,9 +12,15 @@
     "check:scripts": "node --check scripts/mobile-dev.mjs && node --check scripts/safari-e2e.mjs && node --check scripts/offline-worker.js",
     "build": "npm run typecheck && npm run lint && npm run check:scripts && vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build:ios": "npm run typecheck && npm run lint && npm run check:scripts && vite build --mode ios",
+    "ios:sync": "npm run build:ios && cap sync ios",
+    "ios:open": "cap open ios",
+    "ios:run": "npm run build:ios && cap run ios"
   },
   "dependencies": {
+    "@capacitor/core": "^8.6.0",
+    "@capacitor/ios": "^8.6.0",
     "@effect/platform-browser": "4.0.0-beta.66",
     "effect": "4.0.0-beta.66",
     "foldkit": "0.104.1",
@@ -22,6 +28,7 @@
     "three": "0.186.1"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.6.0",
     "@eslint/js": "^10.0.1",
     "@foldkit/vite-plugin": "0.7.0",
     "@types/three": "0.186.0",

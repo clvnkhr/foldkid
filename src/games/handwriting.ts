@@ -5,6 +5,7 @@ import { m } from 'foldkit/message'
 
 import { chime } from '../audio'
 import { normalizeLanguage, t, tf } from '../i18n'
+import { speakNow, type SpeechOptions } from '../speech'
 import {
   HANDWRITING_LETTERS, HANDWRITING_WORDS, HANDWRITING_NUMBERS, HANDWRITING_TOLERANCE,
   advanceHandwritingStroke, handwritingGuide, handwritingPath, handwritingResumeDistance, type HandwritingPoint,
@@ -19,7 +20,7 @@ const Contact = S.Struct({ id: S.Number, stroke: S.Number, point: Point })
 const Pen = S.Struct({ stroke: S.Number, point: Point })
 export const Model = S.Struct({
   mode: Mode, style: Style, letterCase: LetterCase, letterIndex: S.Number, wordIndex: S.Number, numberIndex: S.Number,
-  revision: S.Number, progress: S.Array(S.Number), contacts: S.Array(Contact),
+  revision: S.Number, targetPage: S.Number, randomRequest: S.Number, progress: S.Array(S.Number), contacts: S.Array(Contact),
   pen: S.NullOr(Pen), celebrated: S.Boolean,
 })
 export type Model = typeof Model.Type
@@ -30,6 +31,9 @@ export const SetStyle = m('HandwritingSetStyle', { style: Style })
 export const SelectedTarget = m('HandwritingSelectedTarget', { index: S.Number })
 export const NextTarget = m('HandwritingNextTarget')
 export const PreviousTarget = m('HandwritingPreviousTarget')
+export const NextTargetPage = m('HandwritingNextTargetPage')
+export const RandomTarget = m('HandwritingRandomTarget')
+export const RandomTargetSelected = m('HandwritingRandomTargetSelected', { index: S.Number, revision: S.Number, request: S.Number })
 export const Restarted = m('HandwritingRestarted')
 export const PenStarted = m('HandwritingPenStarted', { id: S.Number, x: S.Number, y: S.Number, revision: S.Number })
 export const PenMoved = m('HandwritingPenMoved', { id: S.Number, points: S.Array(Point), revision: S.Number })
@@ -38,16 +42,18 @@ export const PenCancelled = m('HandwritingPenCancelled', { id: S.Number, revisio
 export const KeyboardPressed = m('HandwritingKeyboardPressed', { key: S.String, revision: S.Number })
 export const KeyboardLifted = m('HandwritingKeyboardLifted', { revision: S.Number })
 export const SoundPlayed = m('HandwritingSoundPlayed')
+export const TargetSpoken = m('HandwritingTargetSpoken')
 export const Message = S.Union([
-  SetMode, SetCase, SetStyle, SelectedTarget, NextTarget, PreviousTarget, Restarted,
-  PenStarted, PenMoved, PenEnded, PenCancelled, KeyboardPressed, KeyboardLifted, SoundPlayed,
+  SetMode, SetCase, SetStyle, SelectedTarget, NextTarget, PreviousTarget, NextTargetPage, RandomTarget, RandomTargetSelected, Restarted,
+  PenStarted, PenMoved, PenEnded, PenCancelled, KeyboardPressed, KeyboardLifted, SoundPlayed, TargetSpoken,
 ])
 export type Message = typeof Message.Type
 
 const targetIndex = (model: Model): number => model.mode === 'letters' ? model.letterIndex : model.mode === 'words' ? model.wordIndex : model.numberIndex
+export const HANDWRITING_CHOICES_PER_PAGE = 6
 export const currentGuide = (model: Model) => handwritingGuide(model.mode, model.mode === 'words' ? 'lower' : model.letterCase, targetIndex(model), model.style)
 export const init = (): Model => ({
-  mode: 'letters', style: 'print', letterCase: 'upper', letterIndex: 0, wordIndex: 0, numberIndex: 0, revision: 0,
+  mode: 'letters', style: 'print', letterCase: 'upper', letterIndex: 0, wordIndex: 0, numberIndex: 0, revision: 0, targetPage: 0, randomRequest: 0,
   progress: handwritingGuide('letters', 'upper', 0).strokes.map(() => 0), contacts: [], pen: null, celebrated: false,
 })
 export const completedStrokes = (model: Model): number => currentGuide(model).strokes.filter((stroke, index) => model.progress[index] === stroke.length).length
@@ -55,10 +61,21 @@ export const isComplete = (model: Model): boolean => completedStrokes(model) ===
 
 const reset = (model: Model, patch: Partial<Pick<Model, 'mode' | 'style' | 'letterCase' | 'letterIndex' | 'wordIndex' | 'numberIndex'>> = {}): Model => {
   const next = { ...model, ...patch }
-  return { ...next, revision: model.revision + 1, progress: currentGuide(next).strokes.map(() => 0), contacts: [], pen: null, celebrated: false }
+  return { ...next, revision: model.revision + 1, targetPage: Math.floor(targetIndex(next) / HANDWRITING_CHOICES_PER_PAGE), progress: currentGuide(next).strokes.map(() => 0), contacts: [], pen: null, celebrated: false }
 }
-// Keep the colored writing on navigation; invalidate any events already queued by the old board.
-export const interrupt = (model: Model): Model => ({ ...model, revision: model.revision + 1, contacts: [], pen: null })
+const resumableProgress = (model: Model, stroke: number): Model['progress'] => {
+  const length = currentGuide(model).strokes[stroke]!.length
+  if (model.celebrated || model.progress[stroke] !== length) return model.progress
+  const progress = [...model.progress]
+  progress[stroke] = Math.max(0, length - 1)
+  return progress
+}
+// Keep the colored writing and leave an unreleased final stroke resumable after navigation.
+export const interrupt = (model: Model): Model => ({
+  ...model, revision: model.revision + 1, contacts: [], pen: null,
+  progress: isComplete(model) && !model.celebrated
+    ? resumableProgress(model, model.contacts.at(-1)?.stroke ?? model.pen?.stroke ?? currentGuide(model).strokes.length - 1) : model.progress,
+})
 const targetCount = (model: Model): number => model.mode === 'letters' ? HANDWRITING_LETTERS.length : model.mode === 'words' ? HANDWRITING_WORDS.length : HANDWRITING_NUMBERS.length
 const select = (model: Model, index: number): Model => reset(model, model.mode === 'letters' ? { letterIndex: index } : model.mode === 'words' ? { wordIndex: index } : { numberIndex: index })
 const validId = (id: number): boolean => Number.isSafeInteger(id) && id >= 0
@@ -82,14 +99,20 @@ const nextStroke = (model: Model, point?: HandwritingPoint): number => {
   })
   return nearest >= 0 ? nearest : resumed
 }
-const celebrate = (model: Model, muted: boolean): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
+const celebrate = (model: Model, muted: boolean, speech: SpeechOptions): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
   if (!isComplete(model) || model.celebrated) return [model, []]
   return [{ ...model, celebrated: true }, muted ? [] : [{
     name: 'HandwritingPlayChime', effect: chime(SoundPlayed()).effect.pipe(Effect.catchCause(() => Effect.succeed(SoundPlayed()))),
+  }, {
+    name: 'HandwritingSpeakTarget', effect: Effect.sync(() => {
+      const text = currentGuide(model).text
+      speakNow(model.mode === 'letters' ? text.toUpperCase() : text, { ...speech, lang: 'en' })
+      return TargetSpoken()
+    }).pipe(Effect.catchCause(() => Effect.succeed(TargetSpoken()))),
   }]]
 }
 
-export const update = (model: Model, message: Message, muted: boolean): readonly [Model, ReadonlyArray<Command.Command<Message>>] =>
+export const update = (model: Model, message: Message, muted: boolean, speech: SpeechOptions = {}): readonly [Model, ReadonlyArray<Command.Command<Message>>] =>
   M.value(message).pipe(M.withReturnType<readonly [Model, ReadonlyArray<Command.Command<Message>>]>(), M.tagsExhaustive({
     HandwritingSetMode: msg => (msg.mode === 'letters' || msg.mode === 'words' || msg.mode === 'numbers') && msg.mode !== model.mode ? [reset(model, { mode: msg.mode }), []] : [model, []],
     HandwritingSetCase: msg => model.mode === 'letters' && (msg.letterCase === 'upper' || msg.letterCase === 'lower') && msg.letterCase !== model.letterCase
@@ -100,6 +123,19 @@ export const update = (model: Model, message: Message, muted: boolean): readonly
       msg.index !== targetIndex(model) ? [select(model, msg.index), []] : [model, []],
     HandwritingNextTarget: () => [select(model, (targetIndex(model) + 1) % targetCount(model)), []],
     HandwritingPreviousTarget: () => [select(model, (targetIndex(model) + targetCount(model) - 1) % targetCount(model)), []],
+    HandwritingNextTargetPage: () => [{ ...model, targetPage: (model.targetPage + 1) % Math.ceil(targetCount(model) / HANDWRITING_CHOICES_PER_PAGE) }, []],
+    HandwritingRandomTarget: () => {
+      const request = model.randomRequest + 1
+      const count = targetCount(model)
+      const selected = targetIndex(model)
+      const result = (index: number) => RandomTargetSelected({ index, revision: model.revision, request })
+      return [{ ...model, randomRequest: request }, [{ name: 'HandwritingChooseRandomTarget', effect: Effect.sync(() => {
+        const offset = Math.floor(Math.random() * (count - 1))
+        return result(offset >= selected ? offset + 1 : offset)
+      }).pipe(Effect.catchCause(() => Effect.succeed(result((selected + 1) % count)))) }]]
+    },
+    HandwritingRandomTargetSelected: msg => msg.revision === model.revision && Number.isSafeInteger(msg.request) && msg.request > 0 && msg.request === model.randomRequest &&
+      Number.isSafeInteger(msg.index) && msg.index >= 0 && msg.index < targetCount(model) && msg.index !== targetIndex(model) ? [select(model, msg.index), []] : [model, []],
     HandwritingRestarted: () => [reset(model), []],
     HandwritingPenStarted: msg => {
       if (msg.revision !== model.revision || !validId(msg.id) || !validPoint(msg) || isComplete(model) || model.contacts.some(contact => contact.id === msg.id)) return [model, []]
@@ -121,14 +157,17 @@ export const update = (model: Model, message: Message, muted: boolean): readonly
     },
     HandwritingPenEnded: msg => {
       if (msg.revision !== model.revision || !validId(msg.id) || !model.contacts.some(contact => contact.id === msg.id)) return [model, []]
-      return celebrate({ ...model, contacts: model.contacts.filter(contact => contact.id !== msg.id) }, muted)
+      return celebrate({ ...model, contacts: model.contacts.filter(contact => contact.id !== msg.id) }, muted, speech)
     },
-    HandwritingPenCancelled: msg => msg.revision === model.revision && validId(msg.id) && model.contacts.some(contact => contact.id === msg.id)
-      ? [{ ...model, contacts: model.contacts.filter(contact => contact.id !== msg.id) }, []] : [model, []],
+    HandwritingPenCancelled: msg => {
+      const contact = model.contacts.find(contact => contact.id === msg.id)
+      return msg.revision === model.revision && validId(msg.id) && contact
+        ? [{ ...model, progress: resumableProgress(model, contact.stroke), contacts: model.contacts.filter(contact => contact.id !== msg.id) }, []] : [model, []]
+    },
     HandwritingKeyboardLifted: msg => msg.revision === model.revision && model.pen ? [{ ...model, pen: null }, []] : [model, []],
     HandwritingKeyboardPressed: msg => {
       if (msg.revision !== model.revision) return [model, []]
-      if (msg.key === 'Enter' || msg.key === ' ') return celebrate({ ...model, pen: null }, muted)
+      if (msg.key === 'Enter' || msg.key === ' ') return celebrate({ ...model, pen: null }, muted, speech)
       const direction = Object.hasOwn(KEY_DIRECTIONS, msg.key) ? KEY_DIRECTIONS[msg.key] : undefined
       if (!direction || isComplete(model)) return [model, []]
       const stroke = model.pen?.stroke ?? nextStroke(model)
@@ -138,9 +177,10 @@ export const update = (model: Model, message: Message, muted: boolean): readonly
       const point = { x: Math.max(0, Math.min(currentGuide(model).width, from.x + direction[0]!)), y: Math.max(0, Math.min(160, from.y + direction[1]!)) }
       const progress = [...model.progress]
       progress[stroke] = advanceHandwritingStroke(samples, progress[stroke]!, from, point)
-      return celebrate({ ...model, progress, pen: { stroke, point } }, muted)
+      return celebrate({ ...model, progress, pen: { stroke, point } }, muted, speech)
     },
     HandwritingSoundPlayed: () => [model, []],
+    HandwritingTargetSpoken: () => [model, []],
   }))
 
 export const mountHandwriting = (element: Element): Stream.Stream<Message> => Stream.callback<Message>(queue => Effect.gen(function* () {
@@ -200,7 +240,7 @@ export const view = (model: Model, language: string) => {
   const modeLabel = model.mode === 'letters' ? 'handwritingLetters' : model.mode === 'words' ? 'handwritingWords' : 'handwritingNumbers'
   const choices = model.mode === 'letters' ? HANDWRITING_LETTERS.map(letter => ({ text: model.letterCase === 'upper' ? letter.toUpperCase() : letter, emoji: '' }))
     : model.mode === 'words' ? HANDWRITING_WORDS : HANDWRITING_NUMBERS.map(text => ({ text, emoji: '' }))
-  return h.div([h.Class('page handwriting-page')], [h.div([h.Class('card handwriting-card')], [
+  return h.div([h.Class('page handwriting-page'), h.Attribute('data-multitouch-scroll', 'true')], [h.div([h.Class('card handwriting-card')], [
     h.h1([h.Class('title')], [t('handwritingTitle', language)]),
     h.div([h.Class('handwriting-toolbar')], [
       h.div([h.Class('handwriting-modes'), h.Attribute('role', 'group'), h.Attribute('aria-label', t('handwritingTitle', language))],
@@ -211,9 +251,12 @@ export const view = (model: Model, language: string) => {
         (['upper', 'lower'] as const).map(letterCase => h.button([h.Class('handwriting-case'), h.Attribute('type', 'button'), h.Attribute('aria-pressed', String(model.letterCase === letterCase)), h.Attribute('aria-label', t(letterCase === 'upper' ? 'handwritingUppercaseLabel' : 'handwritingLowercaseLabel', language)), h.OnClick(SetCase({ letterCase }))], [t(letterCase === 'upper' ? 'handwritingUppercase' : 'handwritingLowercase', language)])))] : []),
     ]),
     h.div([h.Class(cursive ? 'handwriting-choices handwriting-cursive' : 'handwriting-choices'), h.Attribute('role', 'group'), h.Attribute('aria-label', t(modeLabel, language))],
-      choices.map((target, targetIndex) => h.button([
-        h.Class('handwriting-choice'), h.Key(`${model.mode}-${targetIndex}`), h.Attribute('type', 'button'), h.Attribute('aria-pressed', String(index === targetIndex)), h.OnClick(SelectedTarget({ index: targetIndex })),
-      ], [h.span([h.AriaHidden(true)], [target.emoji]), h.span([h.Attribute('dir', 'ltr')], [target.text])]))),
+      [...choices.slice(model.targetPage * HANDWRITING_CHOICES_PER_PAGE, (model.targetPage + 1) * HANDWRITING_CHOICES_PER_PAGE).map((target, offset) => {
+        const targetIndex = model.targetPage * HANDWRITING_CHOICES_PER_PAGE + offset
+        return h.button([
+          h.Class('handwriting-choice'), h.Key(`${model.mode}-${targetIndex}`), h.Attribute('type', 'button'), h.Attribute('aria-pressed', String(index === targetIndex)), h.OnClick(SelectedTarget({ index: targetIndex })),
+        ], [h.span([h.AriaHidden(true)], [target.emoji]), h.span([h.Attribute('dir', 'ltr')], [target.text])])
+      }), h.button([h.Class('handwriting-more'), h.Key('handwriting-more'), h.Attribute('type', 'button'), h.OnClick(NextTargetPage())], [t('handwritingMore', language)])]),
     h.div([h.Class(cursive ? 'handwriting-target handwriting-cursive' : 'handwriting-target'), h.Attribute('dir', 'ltr')], [h.span([h.AriaHidden(true)], [guide.emoji]), guide.text]),
     h.svg([
       h.Class('handwriting-board'), h.Key(`handwriting-board-${model.revision}`), h.ViewBox(`0 0 ${guide.width} ${guide.height}`),
@@ -263,6 +306,7 @@ export const view = (model: Model, language: string) => {
     h.div([h.Class('handwriting-actions')], [
       h.button([h.Class('btn btn-secondary'), h.Attribute('type', 'button'), h.OnClick(PreviousTarget())], [t('handwritingPrevious', language)]),
       h.button([h.Class('btn btn-secondary'), h.Attribute('type', 'button'), h.OnClick(Restarted())], [t('handwritingAgain', language)]),
+      h.button([h.Class('btn btn-secondary'), h.Attribute('type', 'button'), h.OnClick(RandomTarget())], [t('handwritingRandom', language)]),
       h.button([h.Class('btn btn-primary'), h.Attribute('type', 'button'), h.OnClick(NextTarget())], [t('handwritingNext', language)]),
     ]),
   ])])

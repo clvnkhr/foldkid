@@ -30,9 +30,18 @@ afterEach(() => {
   if (initialWorker) Object.defineProperty(navigator, 'serviceWorker', initialWorker)
   else Reflect.deleteProperty(navigator, 'serviceWorker')
   vi.restoreAllMocks()
+  vi.unstubAllEnvs()
 })
 
 describe('app-wide offline preload lifecycle', () => {
+  it('uses the packaged iOS assets without registering the web service worker', () => {
+    const { workers } = setup()
+    vi.stubEnv('PROD', true)
+    vi.stubEnv('MODE', 'ios')
+    startOfflinePreload(document.body)()
+    expect(workers.register).not.toHaveBeenCalled()
+  })
+
   it('registers under the app base and starts preloading without waiting for installation', async () => {
     const { workers, active, ready } = setup()
     start()

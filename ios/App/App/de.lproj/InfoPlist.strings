@@ -1,0 +1,2 @@
+/* Motion is used only by the optional counter tilt feature. */
+"NSMotionUsageDescription" = "FoldKid nutzt die Bewegungssensoren, um die Zählblöcke zu bewegen, wenn du dein Gerät neigst.";

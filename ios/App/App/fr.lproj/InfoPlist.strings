@@ -1,0 +1,2 @@
+/* Motion is used only by the optional counter tilt feature. */
+"NSMotionUsageDescription" = "FoldKid utilise les mouvements de votre appareil pour déplacer les blocs du compteur lorsque vous l’inclinez.";

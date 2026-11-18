@@ -1,15 +1,10 @@
 .counter-page {
-  justify-content: flex-start;
-  min-height: 100dvh;
-  padding: 4.25rem clamp(0.35rem, 1vw, 1rem) 0.5rem;
   overscroll-behavior: none;
 }
 
 .counter-card {
   width: 100%;
   max-width: none;
-  min-height: calc(100vh - 4.75rem);
-  min-height: calc(100dvh - 4.75rem);
   padding: clamp(0.65rem, 1.5vw, 1.25rem);
 }
 
@@ -152,13 +147,7 @@
 }
 
 @media (max-width: 520px) {
-  .counter-page {
-    padding: 3.75rem 0.3rem 0.3rem;
-  }
-
   .counter-card {
-    min-height: calc(100vh - 4.05rem);
-    min-height: calc(100dvh - 4.05rem);
     padding: 0.55rem;
   }
 

@@ -1,0 +1,2 @@
+/* Motion is used only by the optional counter tilt feature. */
+"NSMotionUsageDescription" = "當你傾斜裝置時，FoldKid 會使用動作感應來移動計數器中的積木。";

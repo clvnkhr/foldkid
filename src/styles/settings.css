@@ -1,17 +1,12 @@
 .settings-panel {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
+  position: fixed; top: 0; right: 0; bottom: 0;
   background: var(--settings-bg);
   box-shadow: -4px 0 24px var(--shadow-color-strong);
   z-index: 100;
-  padding: 1.5rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
+  padding: calc(1.5rem + var(--safe-top)) max(1.5rem, env(safe-area-inset-right, 0px)) calc(1.5rem + var(--safe-bottom)) 1.5rem;
+  display: flex; flex-direction: column; gap: 1.25rem;
   animation: slideIn 0.25s ease-out;
-  max-height: 100vh;
+  max-height: 100dvh;
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;

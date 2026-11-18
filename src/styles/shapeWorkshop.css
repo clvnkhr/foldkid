@@ -1,4 +1,3 @@
-.shape-workshop-page { justify-content: flex-start; min-height: 100dvh; padding-top: 4.5rem; }
 .shape-workshop-card { max-width: 680px; padding: clamp(1.2rem, 4vw, 2.4rem); gap: .7rem; }
 .shape-workshop-heading { width: 100%; display: flex; align-items: start; justify-content: space-between; text-align: left; }
 .shape-workshop-prompt { color: var(--text-secondary); font-weight: 600; }

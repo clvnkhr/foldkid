@@ -1,7 +1,7 @@
-import { ClickedRandomGame, ClickedColorMixing, ClickedSequenceWords, ClickedTarot } from '../message'
+import { ClickedRandomGame, ClickedColorMixing, ClickedSequenceWords, ClickedTarot, ClickedCharacterLab } from '../message'
 import { html } from 'foldkit/html'
 
-import { ClickedAudioTest, ClickedBsl, ClickedBubbles, ClickedBubbles3d, ClickedHandwriting, ClickedDotShapes, ClickedShapeMatch, ClickedPicnicBasket, ClickedCounter, ClickedDraw, ClickedFindIt, ClickedGrowingNumbers, ClickedMagneticBlocks, ClickedMemory, ClickedMusicBox, ClickedPhonemeGarden, ClickedRps, ClickedShapeWorkshop, ClickedSpeakerCalculator, ClickedTalkingClock, ClickedTalkingKeyboard, ClickedWhackamole, ClickedPattern, LandingDragEnded, LandingDragStarted, LandingDroppedOn } from '../message'
+import { ClickedAudioTest, ClickedBsl, ClickedBubbles, ClickedBubbles3d, ClickedHandwriting, ClickedChineseHandwriting, ClickedDotShapes, ClickedShapeMatch, ClickedPicnicBasket, ClickedCounter, ClickedDraw, ClickedFindIt, ClickedGrowingNumbers, ClickedMagneticBlocks, ClickedMemory, ClickedMusicBox, ClickedPhonemeGarden, ClickedRps, ClickedShapeWorkshop, ClickedSpeakerCalculator, ClickedTalkingClock, ClickedTalkingKeyboard, ClickedWhackamole, ClickedPattern, LandingDragEnded, LandingDragStarted, LandingDroppedOn } from '../message'
 import { t, type StringKey } from '../i18n'
 import { pointerReorder } from '../pointerReorder'
 
@@ -31,6 +31,8 @@ type NavigationMessage = ReturnType<typeof ClickedCounter>
   | ReturnType<typeof ClickedColorMixing>
   | ReturnType<typeof ClickedSequenceWords>
   | ReturnType<typeof ClickedTarot>
+  | ReturnType<typeof ClickedChineseHandwriting>
+  | ReturnType<typeof ClickedCharacterLab>
 type Message = NavigationMessage
   | ReturnType<typeof ClickedRandomGame>
   | ReturnType<typeof LandingDragStarted>
@@ -69,6 +71,8 @@ export const LANDING_GAMES: readonly LandingGame[] = [
   { msg: ClickedColorMixing, title: 'colorMixingTitle', emoji: '🎨' },
   { msg: ClickedSequenceWords, title: 'sequenceWordsTitle', emoji: '🗓️' },
   { msg: ClickedTarot, title: 'tarotTitle', emoji: '🌙' },
+  { msg: ClickedChineseHandwriting, title: 'chineseHandwritingTitle', emoji: '字' },
+  { msg: ClickedCharacterLab, title: 'characterLabTitle', emoji: '🧩' },
 ]
 
 export const LANDING_GAME_COUNT = LANDING_GAMES.length

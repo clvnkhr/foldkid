@@ -5,7 +5,7 @@ const availableServiceWorker = (win: Window): ServiceWorkerContainer | undefined
 }
 
 /** Registration and reconnect listeners belong to the persistent app mount. */
-export const startOfflinePreload = (element: Element, enabled = import.meta.env.PROD): (() => void) => {
+export const startOfflinePreload = (element: Element, enabled = import.meta.env.PROD && import.meta.env.MODE !== 'ios'): (() => void) => {
   const doc = element.ownerDocument
   const win = doc.defaultView
   if (!enabled || !win) return () => {}

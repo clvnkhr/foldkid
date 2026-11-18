@@ -1,0 +1,2 @@
+/* Motion is used only by the optional counter tilt feature. */
+"NSMotionUsageDescription" = "FoldKidは、端末を傾けたときにカウンターのブロックを動かすため、モーションセンサーを使います。";

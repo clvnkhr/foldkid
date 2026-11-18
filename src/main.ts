@@ -1,6 +1,6 @@
-import { ClickedRandomGame, LandingRandomChosen } from './message'
+import { ClickedRandomGame, LandingRandomChosen, ClickedCharacterLab } from './message'
 import { ClickedColorMixing, ClickedSequenceWords, ClickedTarot } from './message'
-import { PageColorMixing, PageSequenceWords, PageTarot } from './route'
+import { PageColorMixing, PageSequenceWords, PageTarot, PageCharacterLab } from './route'
 import * as ColorMixing from './games/colorMixing'
 import * as SequenceWords from './games/sequenceWords'
 import * as Tarot from './games/tarot'
@@ -8,11 +8,13 @@ import { Effect, Match as M, Option, Schema as S, Stream } from 'effect'
 import { Command } from 'foldkit'
 import { Document, html } from 'foldkit/html'
 
-import { ApplyImport, CancelResetSettings, ClickedAudioTest, ClickedBsl, ClickedBubbles, ClickedBubbles3d, ClickedHandwriting, ClickedDotShapes, ClickedShapeMatch, ClickedPicnicBasket, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedGrowingNumbers, ClickedLanding, ClickedDraw, ClickedMagneticBlocks, ClickedMemory, ClickedMusicBox, ClickedPhonemeGarden, ClickedRps, ClickedShapeWorkshop, ClickedSpeakerCalculator, ClickedSettings, ClickedTalkingClock, ClickedTalkingKeyboard, ClickedWhackamole, ClickedPattern, ConfirmResetSettings, CopyExportData, DismissMessage, ExportSettings, ImportSettings, ImportedSettings, LandingDragEnded, LandingDragStarted, LandingDroppedOn, LandingSettingsDragEnded, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, ResetSettings, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsDragEnded, SettingsDragMoved, SettingsDragStarted, SettingsImportFailed, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
+import { ApplyImport, CancelResetSettings, ClickedAudioTest, ClickedBsl, ClickedBubbles, ClickedBubbles3d, ClickedHandwriting, ClickedChineseHandwriting, ClickedDotShapes, ClickedShapeMatch, ClickedPicnicBasket, ClickedCounter, ClickedDarkMode, ClickedFindIt, ClickedGrowingNumbers, ClickedLanding, ClickedDraw, ClickedMagneticBlocks, ClickedMemory, ClickedMusicBox, ClickedPhonemeGarden, ClickedRps, ClickedShapeWorkshop, ClickedSpeakerCalculator, ClickedSettings, ClickedTalkingClock, ClickedTalkingKeyboard, ClickedWhackamole, ClickedPattern, ConfirmResetSettings, CopyExportData, DismissMessage, ExportSettings, ImportSettings, ImportedSettings, LandingDragEnded, LandingDragStarted, LandingDroppedOn, LandingSettingsDragEnded, LandingSettingsDragStarted, LandingSettingsDroppedOn, LandingToggleGameVisibility, ResetSettings, SetExportData, SetLanguage, SetSpeechPitch, SetSpeechRate, SettingsDragEnded, SettingsDragMoved, SettingsDragStarted, SettingsImportFailed, SettingsPersisted, SystemDarkModeChanged, ToggleMute } from './message'
 
-import { Page, PageAudioTest, PageBsl, PageBubbles, PageBubbles3d, PageHandwriting, PageDotShapes, PageShapeMatch, PagePicnicBasket, PageCounter, PageFindIt, PageGrowingNumbers, PageLanding, PageDraw, PageMagneticBlocks, PageMemory, PageMusicBox, PagePhonemeGarden, PageRps, PageShapeWorkshop, PageSpeakerCalculator, PageTalkingClock, PageTalkingKeyboard, PageWhackamole, PagePattern } from './route'
+import { Page, PageAudioTest, PageBsl, PageBubbles, PageBubbles3d, PageHandwriting, PageChineseHandwriting, PageDotShapes, PageShapeMatch, PagePicnicBasket, PageCounter, PageFindIt, PageGrowingNumbers, PageLanding, PageDraw, PageMagneticBlocks, PageMemory, PageMusicBox, PagePhonemeGarden, PageRps, PageShapeWorkshop, PageSpeakerCalculator, PageTalkingClock, PageTalkingKeyboard, PageWhackamole, PagePattern } from './route'
 
 import * as Handwriting from './games/handwriting'
+import * as ChineseHandwriting from './games/chineseHandwriting'
+import * as CharacterLab from './games/characterLab'
 import * as DotShapes from './games/dotShapes'
 import * as ShapeMatch from './games/shapeMatch'
 import * as PicnicBasket from './games/picnicBasket'
@@ -252,6 +254,8 @@ export const Model = S.Struct({
   bubbles: Bubbles.Model,
   bubbles3d: Bubbles3d.Model,
   handwriting: Handwriting.Model,
+  chineseHandwriting: ChineseHandwriting.Model,
+  characterLab: CharacterLab.Model,
   dotShapes: DotShapes.Model,
   shapeMatch: ShapeMatch.Model,
   picnicBasket: PicnicBasket.Model,
@@ -315,6 +319,10 @@ export const Message = S.Union([
   Bubbles3d.RendererFailed,
   Bubbles3d.SoundPlayed,
   ClickedHandwriting,
+  ClickedChineseHandwriting,
+  ChineseHandwriting.Message,
+  ClickedCharacterLab,
+  CharacterLab.Message,
   ClickedDotShapes,
   ClickedShapeMatch,
   ClickedPicnicBasket,
@@ -352,6 +360,10 @@ export const Message = S.Union([
   Handwriting.SetStyle,
   Handwriting.SelectedTarget,
   Handwriting.NextTarget,
+  Handwriting.NextTargetPage,
+  Handwriting.RandomTarget,
+  Handwriting.RandomTargetSelected,
+  Handwriting.TargetSpoken,
   Handwriting.PreviousTarget,
   Handwriting.Restarted,
   Handwriting.PenStarted,
@@ -602,6 +614,8 @@ export const init = (): readonly [Model, ReadonlyArray<Command.Command<Message>>
       },
       bubbles3d: Bubbles3d.init(),
       handwriting: Handwriting.init(),
+      chineseHandwriting: ChineseHandwriting.init(),
+      characterLab: CharacterLab.init(),
       dotShapes: DotShapes.init(),
       shapeMatch: ShapeMatch.init(),
       picnicBasket: PicnicBasket.init(),
@@ -693,8 +707,23 @@ const updateHandwriting = (
   message: Handwriting.Message,
 ): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
   if (model.page._tag !== 'PageHandwriting' && (message._tag.startsWith('HandwritingPen') || message._tag.startsWith('HandwritingKeyboard'))) return [model, []]
-  const [next, commands] = Handwriting.update(model.handwriting, message, model.muted)
+  const [next, commands] = Handwriting.update(model.handwriting, message, model.muted, { rate: model.speechRate, pitch: model.speechPitch })
   return [{ ...model, handwriting: next }, commands]
+}
+
+const updateChineseHandwriting = (
+  model: Model,
+  message: ChineseHandwriting.Message,
+): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
+  if (model.page._tag !== 'PageChineseHandwriting') return [model, []]
+  const [next, commands] = ChineseHandwriting.update(model.chineseHandwriting, message, model.language, model.muted, { rate: model.speechRate, pitch: model.speechPitch })
+  return [{ ...model, chineseHandwriting: next }, commands]
+}
+
+const updateCharacterLab = (model: Model, message: CharacterLab.Message): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
+  if (model.page._tag !== 'PageCharacterLab') return [model, []]
+  const [next, commands] = CharacterLab.update(model.characterLab, message, model.language, model.muted, { rate: model.speechRate, pitch: model.speechPitch })
+  return [{ ...model, characterLab: next }, commands]
 }
 
 const updateColorMixing = (model: Model, message: ColorMixing.Message): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
@@ -1043,6 +1072,8 @@ const _update = (
       ClickedBubbles: () => [{ ...model, page: PageBubbles() }, []],
       ClickedBubbles3d: () => [{ ...model, page: PageBubbles3d() }, []],
       ClickedHandwriting: () => [{ ...model, page: PageHandwriting() }, []],
+      ClickedChineseHandwriting: () => [{ ...model, page: PageChineseHandwriting() }, []],
+      ClickedCharacterLab: () => [{ ...model, page: PageCharacterLab() }, []],
       ClickedDotShapes: () => [{ ...model, page: PageDotShapes() }, []],
       ClickedShapeMatch: () => model.page._tag === 'PageShapeMatch'
         ? [model, []] : updateShapeMatch({ ...model, page: PageShapeMatch() }, ShapeMatch.Entered()),
@@ -1097,11 +1128,46 @@ const _update = (
       DotShapesUndo: (msg) => updateDotShapes(model, msg),
       DotShapesClear: (msg) => updateDotShapes(model, msg),
       DotShapesSoundPlayed: (msg) => updateDotShapes(model, msg),
+      CharacterLabDroppedCharacter: msg => updateCharacterLab(model, msg),
+      CharacterLabChangedSearch: msg => updateCharacterLab(model, msg),
+      CharacterLabNextPalette: msg => updateCharacterLab(model, msg),
+      CharacterLabPreviousPalette: msg => updateCharacterLab(model, msg),
+      CharacterLabRequestedRandom: msg => updateCharacterLab(model, msg),
+      CharacterLabRandomChosen: msg => updateCharacterLab(model, msg),
+      CharacterLabCollidedPieces: msg => updateCharacterLab(model, msg),
+      CharacterLabCollidedGroup: msg => updateCharacterLab(model, msg),
+      CharacterLabJoinChosen: msg => updateCharacterLab(model, msg),
+      CharacterLabTappedPiece: msg => updateCharacterLab(model, msg),
+      CharacterLabCleared: msg => updateCharacterLab(model, msg),
+      CharacterLabSoundPlayed: msg => updateCharacterLab(model, msg),
+      CharacterLabCharacterSpoken: msg => updateCharacterLab(model, msg),
+      ChineseHandwritingSelectedTarget: (msg) => updateChineseHandwriting(model, msg),
+      ChineseHandwritingSelectedCategory: (msg) => updateChineseHandwriting(model, msg),
+      ChineseHandwritingSelectedGroup: (msg) => updateChineseHandwriting(model, msg),
+      ChineseHandwritingNextTarget: (msg) => updateChineseHandwriting(model, msg),
+      ChineseHandwritingPreviousTarget: (msg) => updateChineseHandwriting(model, msg),
+      ChineseHandwritingNextTargetPage: (msg) => updateChineseHandwriting(model, msg),
+      ChineseHandwritingPreviousTargetPage: (msg) => updateChineseHandwriting(model, msg),
+      ChineseHandwritingRandomTarget: (msg) => updateChineseHandwriting(model, msg),
+      ChineseHandwritingRandomTargetSelected: (msg) => updateChineseHandwriting(model, msg),
+      ChineseHandwritingRestarted: (msg) => updateChineseHandwriting(model, msg),
+      ChineseHandwritingPenStarted: (msg) => updateChineseHandwriting(model, msg),
+      ChineseHandwritingPenMoved: (msg) => updateChineseHandwriting(model, msg),
+      ChineseHandwritingPenEnded: (msg) => updateChineseHandwriting(model, msg),
+      ChineseHandwritingPenCancelled: (msg) => updateChineseHandwriting(model, msg),
+      ChineseHandwritingKeyboardPressed: (msg) => updateChineseHandwriting(model, msg),
+      ChineseHandwritingKeyboardLifted: (msg) => updateChineseHandwriting(model, msg),
+      ChineseHandwritingSoundPlayed: (msg) => updateChineseHandwriting(model, msg),
+      ChineseHandwritingTargetSpoken: (msg) => updateChineseHandwriting(model, msg),
       HandwritingSetMode: (msg) => updateHandwriting(model, msg),
       HandwritingSetCase: (msg) => updateHandwriting(model, msg),
       HandwritingSetStyle: (msg) => updateHandwriting(model, msg),
       HandwritingSelectedTarget: (msg) => updateHandwriting(model, msg),
       HandwritingNextTarget: (msg) => updateHandwriting(model, msg),
+      HandwritingNextTargetPage: (msg) => updateHandwriting(model, msg),
+      HandwritingRandomTarget: (msg) => updateHandwriting(model, msg),
+      HandwritingRandomTargetSelected: (msg) => updateHandwriting(model, msg),
+      HandwritingTargetSpoken: (msg) => updateHandwriting(model, msg),
       HandwritingPreviousTarget: (msg) => updateHandwriting(model, msg),
       HandwritingRestarted: (msg) => updateHandwriting(model, msg),
       HandwritingPenStarted: (msg) => updateHandwriting(model, msg),
@@ -1408,9 +1474,12 @@ export const update = (
   const interruptedWriting = model.page._tag === 'PageHandwriting' && pausedClear.page._tag !== 'PageHandwriting'
     ? { ...pausedClear, handwriting: Handwriting.interrupt(pausedClear.handwriting) }
     : pausedClear
-  const interruptedDots = model.page._tag === 'PageDotShapes' && interruptedWriting.page._tag !== 'PageDotShapes'
-    ? { ...interruptedWriting, dotShapes: DotShapes.interrupt(interruptedWriting.dotShapes) }
+  const interruptedChineseWriting = model.page._tag === 'PageChineseHandwriting' && interruptedWriting.page._tag !== 'PageChineseHandwriting'
+    ? { ...interruptedWriting, chineseHandwriting: ChineseHandwriting.interrupt(interruptedWriting.chineseHandwriting) }
     : interruptedWriting
+  const interruptedDots = model.page._tag === 'PageDotShapes' && interruptedChineseWriting.page._tag !== 'PageDotShapes'
+    ? { ...interruptedChineseWriting, dotShapes: DotShapes.interrupt(interruptedChineseWriting.dotShapes) }
+    : interruptedChineseWriting
   const matchingContextChanged = model.muted !== interruptedDots.muted || model.language !== interruptedDots.language ||
     model.speechRate !== interruptedDots.speechRate || model.speechPitch !== interruptedDots.speechPitch
   const interruptedMatching = model.page._tag === 'PageShapeMatch' && (interruptedDots.page._tag !== 'PageShapeMatch' || matchingContextChanged)
@@ -1421,6 +1490,7 @@ export const update = (
     : interruptedMatching
   const activeGamesInterrupted = {
     ...interruptedPicnic,
+    characterLab: model.page._tag === 'PageCharacterLab' && interruptedPicnic.page._tag !== 'PageCharacterLab' ? CharacterLab.interrupt(interruptedPicnic.characterLab) : interruptedPicnic.characterLab,
     colorMixing: model.page._tag === 'PageColorMixing' && (interruptedPicnic.page._tag !== 'PageColorMixing' || matchingContextChanged) ? ColorMixing.interrupt(interruptedPicnic.colorMixing) : interruptedPicnic.colorMixing,
     sequenceWords: model.page._tag === 'PageSequenceWords' && (interruptedPicnic.page._tag !== 'PageSequenceWords' || matchingContextChanged) ? SequenceWords.interrupt(interruptedPicnic.sequenceWords) : interruptedPicnic.sequenceWords,
     tarot: model.page._tag === 'PageTarot' && (interruptedPicnic.page._tag !== 'PageTarot' || matchingContextChanged) ? Tarot.interrupt(interruptedPicnic.tarot) : interruptedPicnic.tarot,
@@ -1464,6 +1534,8 @@ const pageTitle = (model: Model): string =>
       PageBubbles: () => t('pageTitleBubbles', model.language),
       PageBubbles3d: () => t('pageTitleBubbles3d', model.language),
       PageHandwriting: () => t('pageTitleHandwriting', model.language),
+      PageChineseHandwriting: () => t('pageTitleChineseHandwriting', model.language),
+      PageCharacterLab: () => t('pageTitleCharacterLab', model.language),
       PageDotShapes: () => t('pageTitleDotShapes', model.language),
       PageShapeMatch: () => t('pageTitleShapeMatch', model.language),
       PagePicnicBasket: () => t('pageTitlePicnicBasket', model.language),
@@ -2084,6 +2156,8 @@ export const view = (model: Model): Document => {
               PageBubbles: () => Bubbles.view(model.bubbles, model.language),
               PageBubbles3d: () => Bubbles3d.view(model.bubbles3d, model.language),
               PageHandwriting: () => Handwriting.view(model.handwriting, model.language),
+              PageChineseHandwriting: () => ChineseHandwriting.view(model.chineseHandwriting, model.language, model.muted),
+              PageCharacterLab: () => CharacterLab.view(model.characterLab, model.language, model.muted),
               PageDotShapes: () => DotShapes.view(model.dotShapes, model.language),
               PageShapeMatch: () => ShapeMatch.view(model.shapeMatch, model.language),
               PagePicnicBasket: () => PicnicBasket.view(model.picnicBasket, model.language),

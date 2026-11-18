@@ -30,17 +30,15 @@
   box-shadow: 0 2px 7px var(--shadow-color);
 }
 .handwriting-choices {
-  display: flex; gap: .4rem; width: 100%; min-width: 0;
-  padding: .25rem .15rem .5rem; overflow-x: auto;
-  overscroll-behavior-x: contain; scroll-snap-type: x proximity;
-  -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y;
+  display: flex; flex-wrap: wrap; justify-content: center; gap: .4rem; width: 100%; min-width: 0;
+  padding: .25rem .15rem .5rem; touch-action: manipulation;
 }
-.handwriting-choice {
+.handwriting-choice, .handwriting-more {
   flex: 0 0 auto; min-width: 44px; min-height: 44px;
   padding: .45rem .65rem; border: 2px solid transparent; border-radius: .8rem;
   color: var(--text-primary); background: var(--cell-bg);
   font: inherit; font-size: 1.15rem; font-weight: 800; cursor: pointer;
-  scroll-snap-align: start; touch-action: manipulation;
+  touch-action: manipulation;
   transition: background .15s, border-color .15s;
 }
 .handwriting-choice[aria-pressed="true"] {
@@ -50,9 +48,10 @@
 .handwriting-cursive, .handwriting-cursive .handwriting-choice {
   font-family: "Snell Roundhand", "Segoe Script", "Apple Chancery", cursive;
 }
-.handwriting-mode:hover, .handwriting-case:hover, .handwriting-choice:hover { background: var(--cell-hover-bg); }
+.handwriting-more { font-size: 1rem; }
+.handwriting-mode:hover, .handwriting-case:hover, .handwriting-choice:hover, .handwriting-more:hover { background: var(--cell-hover-bg); }
 .handwriting-mode:focus-visible, .handwriting-case:focus-visible,
-.handwriting-choice:focus-visible, .handwriting-actions button:focus-visible, .handwriting-board:focus-visible {
+.handwriting-choice:focus-visible, .handwriting-more:focus-visible, .handwriting-actions button:focus-visible, .handwriting-board:focus-visible {
   outline: 3px solid var(--text-primary); outline-offset: 3px;
 }
 .handwriting-target {
@@ -130,5 +129,5 @@
   .handwriting-actions button { flex: 1 1 5rem; padding-inline: .55rem; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .handwriting-mode, .handwriting-case, .handwriting-choice, .handwriting-board { transition: none; }
+  .handwriting-mode, .handwriting-case, .handwriting-choice, .handwriting-more, .handwriting-board { transition: none; }
 }

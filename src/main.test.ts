@@ -11,11 +11,14 @@ import * as Counter from './games/counter'
 import * as FindIt from './games/findit'
 import * as Bubbles from './games/bubbles'
 import * as Bubbles3d from './games/bubbles3d'
+import * as ChineseHandwriting from './games/chineseHandwriting'
+import * as CharacterLab from './games/characterLab'
+import { CHINESE_HANDWRITING_CATEGORIES } from './games/chineseHandwritingGroups'
 import * as Handwriting from './games/handwriting'
 import * as DotShapes from './games/dotShapes'
 import * as ShapeMatch from './games/shapeMatch'
 import * as PicnicBasket from './games/picnicBasket'
-import { ClickedHandwriting, ClickedDotShapes, ClickedShapeMatch, ClickedPicnicBasket } from './message'
+import { ClickedHandwriting, ClickedChineseHandwriting, ClickedCharacterLab, ClickedDotShapes, ClickedShapeMatch, ClickedPicnicBasket } from './message'
 import { t, tf, translations } from './i18n'
 import * as Draw from './games/draw'
 import * as Memory from './games/memory'
@@ -156,7 +159,7 @@ describe('landing catalogue migration', () => {
     expect(commands).toHaveLength(0)
   })
 
-  it.each([17, 18, 19, 20, 21, 22, 23, 24])('appends all missing games to a complete historical catalogue of %s games', count => {
+  it.each([17, 18, 19, 20, 21, 22, 23, 24, 25, 26])('appends all missing games to a complete historical catalogue of %s games', count => {
     const order = Array.from({ length: count }, (_, index) => index).reverse()
     const hidden = Array.from({ length: count }, (_, index) => index === 2)
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ landingOrder: order, landingHiddenGames: hidden }))
@@ -719,6 +722,9 @@ describe('settings persistence', () => {
     { label: 'Bubbles3dRendererFailed', msg: Bubbles3d.RendererFailed({ revision: 0 }) },
     { label: 'Bubbles3dSoundPlayed', msg: Bubbles3d.SoundPlayed() },
     { label: 'ClickedHandwriting', msg: ClickedHandwriting() },
+    { label: 'ClickedChineseHandwriting', msg: ClickedChineseHandwriting() },
+    { label: 'ChineseHandwritingNextTarget', msg: ChineseHandwriting.NextTarget() },
+    { label: 'ChineseHandwritingRestarted', msg: ChineseHandwriting.Restarted() },
     { label: 'ClickedDotShapes', msg: ClickedDotShapes() },
     { label: 'ClickedPicnicBasket', msg: ClickedPicnicBasket(), resolves: [[{ name: 'PicnicBasketFeedback' }, PicnicBasket.FeedbackFinished({ round: 0, token: 1 })]] },
     { label: 'PicnicBasketEntered', msg: PicnicBasket.Entered() },
@@ -751,6 +757,10 @@ describe('settings persistence', () => {
     { label: 'HandwritingSelectedTarget', msg: Handwriting.SelectedTarget({ index: 1 }) },
     { label: 'HandwritingNextTarget', msg: Handwriting.NextTarget() },
     { label: 'HandwritingPreviousTarget', msg: Handwriting.PreviousTarget() },
+    { label: 'HandwritingNextTargetPage', msg: Handwriting.NextTargetPage() },
+    { label: 'HandwritingRandomTarget', msg: Handwriting.RandomTarget(), resolves: [[{ name: 'HandwritingChooseRandomTarget' }, Handwriting.RandomTargetSelected({ index: 1, revision: 0, request: 1 })]] },
+    { label: 'HandwritingRandomTargetSelected', msg: Handwriting.RandomTargetSelected({ index: 1, revision: 0, request: 1 }) },
+    { label: 'HandwritingTargetSpoken', msg: Handwriting.TargetSpoken() },
     { label: 'HandwritingRestarted', msg: Handwriting.Restarted() },
     { label: 'HandwritingPenStarted', msg: Handwriting.PenStarted({ id: 0, x: 20, y: 120, revision: 0 }) },
     { label: 'HandwritingPenMoved', msg: Handwriting.PenMoved({ id: 0, points: [{ x: 25, y: 105 }], revision: 0 }) },
@@ -1558,7 +1568,7 @@ describe('Main', () => {
         Story.message(Handwriting.PenMoved({ id, points: stroke.slice(1), revision: 0 })),
         Story.message(Handwriting.PenEnded({ id, revision: 0 })),
         id === guide.strokes.length - 1 && !muted
-          ? Story.Command.resolveAll([{ name: 'HandwritingPlayChime' }, Handwriting.SoundPlayed()]) : Story.Command.expectNone(),
+          ? Story.Command.resolveAll([{ name: 'HandwritingPlayChime' }, Handwriting.SoundPlayed()], [{ name: 'HandwritingSpeakTarget' }, Handwriting.TargetSpoken()]) : Story.Command.expectNone(),
       ]),
       Story.model(model => {
         expect(Handwriting.isComplete(model.handwriting)).toBe(true)
@@ -1594,6 +1604,273 @@ describe('Main', () => {
       }),
       Story.Command.expectNone(),
     )
+  })
+
+  it('opens Character Lab with a localized title and keeps its pieces out of persisted settings', () => {
+    for (const language of Object.keys(translations) as Array<keyof typeof translations>) {
+      const [opened, commands] = Main.update({ ...createModel(), language }, ClickedCharacterLab())
+      expect(opened.page._tag).toBe('PageCharacterLab')
+      expect(opened.characterLab).toEqual(CharacterLab.init())
+      expect(Main.view(opened).title).toBe(t('pageTitleCharacterLab', language))
+      expect(commands).toEqual([])
+    }
+    Story.story(Main.update, Story.with({ ...createModel(), muted: true }),
+      Story.message(ClickedCharacterLab()),
+      Story.message(CharacterLab.DroppedCharacter({ character: '木' })),
+      Story.model(model => expect(model.characterLab.pieces.map(piece => piece.character)).toEqual(['木'])),
+      Story.message(ClickedLanding()),
+      Story.message(ClickedCharacterLab()),
+      Story.model(model => expect(model.characterLab.pieces.map(piece => piece.character)).toEqual(['木'])),
+      Story.message(ExportSettings()),
+      Story.model(model => expect(JSON.parse(model.exportData).settings).not.toHaveProperty('characterLab')),
+      Story.Command.expectNone())
+  })
+
+  it.each([false, true])('forwards root mute to Character Lab merging without losing the compound: %s', muted => {
+    const [first] = CharacterLab.update(CharacterLab.init(), CharacterLab.DroppedCharacter({ character: '木' }), 'en', true, {})
+    const [pieces] = CharacterLab.update(first, CharacterLab.DroppedCharacter({ character: '木' }), 'en', true, {})
+    Story.story(Main.update, Story.with({ ...createModel(), muted, characterLab: pieces }),
+      Story.message(ClickedCharacterLab()),
+      Story.message(CharacterLab.CollidedPieces({ firstId: 0, secondId: 1, x: .5, y: .5, vx: 0, vy: 0, angle: 0, revision: pieces.revision })),
+      ...(muted ? [Story.Command.expectNone()] : [Story.Command.resolveAll(
+        [{ name: 'CharacterLabPlayMergeSound' }, CharacterLab.SoundPlayed()],
+        [{ name: 'CharacterLabSpeakCharacter' }, CharacterLab.CharacterSpoken()])]),
+      Story.model(model => {
+        expect(model.characterLab.pieces.map(piece => piece.character)).toEqual(['林'])
+        expect(model.characterLab.merges).toBe(1)
+      }),
+      Story.Command.expectNone())
+  })
+
+  it('delegates Character Lab search only while active and keeps it transient without disturbing physics or voice preferences', () => {
+    let pieces: CharacterLab.Model['pieces'] = []
+    let revision = 0
+    Story.story(Main.update, Story.with({ ...createModel(), language: 'fr', muted: true, speechRate: .65, speechPitch: 1.3 }),
+      Story.message(ClickedCharacterLab()),
+      Story.message(CharacterLab.DroppedCharacter({ character: '木' })),
+      Story.model(model => { pieces = model.characterLab.pieces; revision = model.characterLab.revision }),
+      Story.message(CharacterLab.ChangedSearch({ query: '忄' })),
+      Story.model(model => {
+        expect(model.characterLab).toMatchObject({ query: '忄', palettePage: 0, revision, nextId: 1 })
+        expect(model.characterLab.pieces).toBe(pieces)
+        expect(model).toMatchObject({ language: 'fr', muted: true, speechRate: .65, speechPitch: 1.3 })
+      }),
+      Story.message(ExportSettings()),
+      Story.model(model => expect(JSON.parse(model.exportData).settings).not.toHaveProperty('characterLab')),
+      Story.message(ClickedLanding()),
+      Story.message(CharacterLab.ChangedSearch({ query: '月' })),
+      Story.model(model => {
+        expect(model.characterLab.query).toBe('忄')
+        expect(model.characterLab.pieces).toBe(pieces)
+      }),
+      Story.message(ClickedCharacterLab()),
+      Story.model(model => expect(model.characterLab.query).toBe('忄')),
+      Story.Command.expectNone())
+    expect(Main.shouldPersistSettings(CharacterLab.ChangedSearch({ query: '心' }))).toBe(false)
+  })
+
+  it('forwards root voice settings to Character Lab Chinese narration', async () => {
+    const [first] = CharacterLab.update(CharacterLab.init(), CharacterLab.DroppedCharacter({ character: '木' }), 'en', true, {})
+    const [pieces] = CharacterLab.update(first, CharacterLab.DroppedCharacter({ character: '木' }), 'en', true, {})
+    const [opened] = Main.update({ ...createModel(), language: 'fr', speechRate: .65, speechPitch: 1.3, characterLab: pieces }, ClickedCharacterLab())
+    const [, commands] = Main.update(opened, CharacterLab.CollidedPieces({ firstId: 0, secondId: 1, x: .5, y: .5, vx: 0, vy: 0, angle: 0, revision: pieces.revision }))
+    const command = commands.find(command => command.name === 'CharacterLabSpeakCharacter')!
+    await withSpeechMock(async spoken => {
+      expect(await Effect.runPromise(command.effect)).toEqual(CharacterLab.CharacterSpoken())
+      expect(spoken).toEqual([{ text: '林', lang: 'zh-CN', rate: .65, pitch: 1.3 }])
+    })
+  })
+
+  it('preserves Character Lab pieces on navigation and rejects stale physics and random events', async () => {
+    const [opened] = Main.update({ ...createModel(), muted: true }, ClickedCharacterLab())
+    const [dropped] = Main.update(opened, CharacterLab.DroppedCharacter({ character: '明' }))
+    const [waiting, commands] = Main.update(dropped, CharacterLab.RequestedRandom())
+    const [left] = Main.update(waiting, ClickedLanding())
+    expect(left.characterLab.pieces).toBe(waiting.characterLab.pieces)
+    expect(left.characterLab.revision).toBe(waiting.characterLab.revision + 1)
+    const oldTap = CharacterLab.TappedPiece({ id: 0, x: .5, y: .5, vx: 0, vy: 0, angle: 0, revision: waiting.characterLab.revision })
+    for (const message of [oldTap, CharacterLab.Cleared(), CharacterLab.DroppedCharacter({ character: '木' })]) {
+      expect(Main.update(left, message)).toEqual([left, []])
+    }
+    const result = await Effect.runPromise(commands[0]!.effect)
+    expect(Main.update(left, result)).toEqual([left, []])
+    const [returned] = Main.update(left, ClickedCharacterLab())
+    expect(Main.update(returned, oldTap)).toEqual([returned, []])
+    expect(Main.update(returned, result)).toEqual([returned, []])
+  })
+
+  it('routes ambiguous Character Lab join results and rejects them after clearing or leaving the game', async () => {
+    const [opened] = Main.update({ ...createModel(), muted: true }, ClickedCharacterLab())
+    const [first] = Main.update(opened, CharacterLab.DroppedCharacter({ character: '木' }))
+    const [pair] = Main.update(first, CharacterLab.DroppedCharacter({ character: '口' }))
+    const [waiting, commands] = Main.update(pair, CharacterLab.CollidedPieces({ firstId: 0, secondId: 1, x: .5, y: .5, vx: 0, vy: 0, angle: 0, revision: pair.characterLab.revision }))
+    expect(waiting.characterLab.joining).toHaveLength(1)
+    expect(commands).toHaveLength(1)
+    const result = await Effect.runPromise(commands[0]!.effect)
+    expect(result._tag).toBe('CharacterLabJoinChosen')
+    if (result._tag !== 'CharacterLabJoinChosen') throw new Error('Expected a Character Lab join result')
+    const [joined, feedback] = Main.update(waiting, result)
+    expect(joined.characterLab.pieces.map(piece => piece.character)).toEqual([result.character])
+    expect(joined.characterLab.joining).toEqual([])
+    expect(feedback).toEqual([])
+    const [cleared] = Main.update(waiting, CharacterLab.Cleared())
+    expect(Main.update(cleared, result)).toEqual([cleared, []])
+    const [left] = Main.update(waiting, ClickedLanding())
+    expect(Main.update(left, result)).toEqual([left, []])
+    const [returned] = Main.update(left, ClickedCharacterLab())
+    expect(Main.update(returned, result)).toEqual([returned, []])
+    expect(returned.characterLab.joining).toEqual([])
+    expect(Main.shouldPersistSettings(result)).toBe(false)
+  })
+
+  it('opens separate Chinese handwriting with localized titles and transient learning state', () => {
+    for (const language of Object.keys(translations) as Array<keyof typeof translations>) {
+      const [opened, commands] = Main.update({ ...createModel(), language }, ClickedChineseHandwriting())
+      expect(opened.page._tag).toBe('PageChineseHandwriting')
+      expect(opened.chineseHandwriting).toEqual(ChineseHandwriting.init())
+      expect(opened.handwriting).toEqual(Handwriting.init())
+      expect(Main.view(opened).title).toBe(t('pageTitleChineseHandwriting', language))
+      expect(commands).toEqual([])
+    }
+    Story.story(Main.update, Story.with({ ...createModel(), muted: true }),
+      Story.message(ClickedChineseHandwriting()),
+      Story.message(ChineseHandwriting.SelectedTarget({ index: 1 })),
+      Story.message(ClickedHandwriting()),
+      Story.message(Handwriting.SelectedTarget({ index: 3 })),
+      Story.message(ClickedChineseHandwriting()),
+      Story.model(model => {
+        expect(model.chineseHandwriting.targetIndex).toBe(1)
+        expect(model.handwriting.letterIndex).toBe(3)
+      }),
+      Story.message(ExportSettings()),
+      Story.model(model => expect(JSON.parse(model.exportData).settings).not.toHaveProperty('chineseHandwriting')),
+      Story.Command.expectNone())
+  })
+
+  it.each([false, true])('forwards root mute to Chinese completion while retaining the highlighted character: %s', muted => {
+    const guide = ChineseHandwriting.currentGuide(ChineseHandwriting.init())
+    Story.story(Main.update, Story.with({ ...createModel(), muted }),
+      Story.message(ClickedChineseHandwriting()),
+      ...guide.strokes.flatMap((stroke, id) => [
+        Story.message(ChineseHandwriting.PenStarted({ id, ...stroke[0]!, revision: 0 })),
+        Story.message(ChineseHandwriting.PenMoved({ id, points: stroke.slice(1), revision: 0 })),
+        Story.message(ChineseHandwriting.PenEnded({ id, revision: 0 })),
+        id === guide.strokes.length - 1 && !muted
+          ? Story.Command.resolveAll(
+            [{ name: 'ChineseHandwritingPlayChime' }, ChineseHandwriting.SoundPlayed()],
+            [{ name: 'ChineseHandwritingSpeakTarget' }, ChineseHandwriting.TargetSpoken()])
+          : Story.Command.expectNone(),
+      ]),
+      Story.model(model => {
+        expect(ChineseHandwriting.isComplete(model.chineseHandwriting)).toBe(true)
+        expect(model.chineseHandwriting.celebrated).toBe(true)
+      }), Story.Command.expectNone())
+  })
+
+  it('keeps Chinese choice pagination inside its selected group without interrupting writing', async () => {
+    const category = CHINESE_HANDWRITING_CATEGORIES.find(category => category.groups.length > 1 &&
+      category.groups[1]!.indices.length > ChineseHandwriting.CHINESE_HANDWRITING_CHOICES_PER_PAGE)!
+    const initialStroke = ChineseHandwriting.currentGuide(ChineseHandwriting.init()).strokes[0]!
+    const groupedStroke = ChineseHandwriting.currentGuide({ ...ChineseHandwriting.init(), targetIndex: category.groups[1]!.indices[0]! }).strokes[0]!
+    const lastChoicePage = Math.ceil(category.groups[1]!.indices.length / ChineseHandwriting.CHINESE_HANDWRITING_CHOICES_PER_PAGE) - 1
+    let writing = ChineseHandwriting.init()
+    let grouped = createModel()
+    Story.story(Main.update, Story.with({ ...createModel(), muted: true }),
+      Story.message(ClickedChineseHandwriting()),
+      Story.message(ChineseHandwriting.PenStarted({ id: 0, ...initialStroke[0]!, revision: 0 })),
+      Story.message(ChineseHandwriting.SelectedCategory({ category: category.id })),
+      Story.model(model => {
+        expect(model.chineseHandwriting).toMatchObject({ category: category.id, targetPage: 0, choicePage: 0, targetIndex: category.groups[0]!.indices[0], contacts: [], pen: null })
+        expect(model.chineseHandwriting.revision).toBe(1)
+      }),
+      Story.message(ChineseHandwriting.PenMoved({ id: 0, points: initialStroke.slice(1), revision: 0 })),
+      Story.message(ChineseHandwriting.SelectedGroup({ index: 1 })),
+      Story.model(model => expect(model.chineseHandwriting).toMatchObject({ targetPage: 1, choicePage: 0, targetIndex: category.groups[1]!.indices[0] })),
+      Story.message(ChineseHandwriting.PenStarted({ id: 1, ...groupedStroke[0]!, revision: 2 })),
+      Story.model(model => {
+        expect(model.chineseHandwriting.contacts).toHaveLength(1)
+        writing = model.chineseHandwriting
+      }),
+      Story.message(ChineseHandwriting.PreviousTargetPage()),
+      Story.model(model => expect(model.chineseHandwriting).toEqual({ ...writing, choicePage: lastChoicePage })),
+      Story.message(ChineseHandwriting.NextTargetPage()),
+      Story.model(model => expect(model.chineseHandwriting).toEqual(writing)),
+      Story.message(ChineseHandwriting.NextTargetPage()),
+      Story.model(model => {
+        expect(model.chineseHandwriting).toEqual({ ...writing, choicePage: 1 })
+        expect(model.chineseHandwriting.progress).toBe(writing.progress)
+        expect(model.chineseHandwriting.contacts).toBe(writing.contacts)
+      }),
+      Story.model(model => { grouped = model }),
+      Story.message(ExportSettings()),
+      Story.model(model => expect(JSON.parse(model.exportData).settings).not.toHaveProperty('chineseHandwriting')),
+      Story.Command.expectNone(),
+    )
+    const [waiting, commands] = Main.update(grouped, ChineseHandwriting.RandomTarget())
+    expect(commands.map(command => command.name)).toEqual(['ChineseHandwritingChooseRandom'])
+    const [changed] = Main.update(waiting, ChineseHandwriting.SelectedCategory({ category: 'numbers' }))
+    expect(changed.chineseHandwriting).toMatchObject({ category: 'numbers', targetPage: 0, choicePage: 0, targetIndex: 0, contacts: [] })
+    expect(changed.chineseHandwriting.progress).toEqual(ChineseHandwriting.init().progress)
+    const result = await Effect.runPromise(commands[0]!.effect)
+    expect(Main.update(changed, result)).toEqual([changed, []])
+  })
+
+  it('ignores Chinese category and group controls while another game is active', () => {
+    const model = createModel()
+    for (const message of [ChineseHandwriting.SelectedCategory({ category: 'family' }), ChineseHandwriting.SelectedGroup({ index: 1 }), ChineseHandwriting.PreviousTargetPage(), ChineseHandwriting.NextTargetPage()]) {
+      expect(Main.update(model, message)).toEqual([model, []])
+    }
+  })
+
+  it('forwards speech rate and pitch while reading a completed English word in English', async () => {
+    const [word] = Handwriting.update(Handwriting.init(), Handwriting.SetMode({ mode: 'words' }), true)
+    const guide = Handwriting.currentGuide(word)
+    const model = { ...createModel(), speechRate: 1.2, speechPitch: .9, language: 'zh' as const,
+      handwriting: { ...word, progress: guide.strokes.map(points => points.length),
+        contacts: [{ id: 0, stroke: 0, point: guide.strokes[0]!.at(-1)! }] } }
+    const [opened] = Main.update(model, ClickedHandwriting())
+    const [, commands] = Main.update(opened, Handwriting.PenEnded({ id: 0, revision: word.revision }))
+    const spokenCommand = commands.find(command => command.name === 'HandwritingSpeakTarget')!
+    await withSpeechMock(async spoken => {
+      expect(await Effect.runPromise(spokenCommand.effect)).toEqual(Handwriting.TargetSpoken())
+      expect(spoken).toEqual([{ text: guide.text, lang: 'en', rate: 1.2, pitch: .9 }])
+    })
+  })
+
+  it('forwards speech rate and pitch while teaching the completed Chinese character in Mandarin', async () => {
+    const initial = ChineseHandwriting.init()
+    const guide = ChineseHandwriting.currentGuide(initial)
+    const stroke = guide.strokes.at(-1)!
+    const model = { ...createModel(), speechRate: 1.3, speechPitch: .8, language: 'fr' as const,
+      chineseHandwriting: { ...initial, progress: guide.strokes.map(points => points.length),
+        contacts: [{ id: 0, stroke: guide.strokes.length - 1, point: stroke.at(-1)! }] } }
+    const [opened] = Main.update(model, ClickedChineseHandwriting())
+    const [, commands] = Main.update(opened, ChineseHandwriting.PenEnded({ id: 0, revision: 0 }))
+    const spokenCommand = commands.find(command => command.name === 'ChineseHandwritingSpeakTarget')!
+    await withSpeechMock(async spoken => {
+      expect(await Effect.runPromise(spokenCommand.effect)).toEqual(ChineseHandwriting.TargetSpoken())
+      expect(spoken).toEqual([{ text: guide.text, lang: 'zh-CN', rate: 1.3, pitch: .8 }])
+    })
+  })
+
+  it('invalidates Chinese board events on navigation while preserving the traced progress', () => {
+    const stroke = ChineseHandwriting.currentGuide(ChineseHandwriting.init()).strokes[0]!
+    let progress: ReadonlyArray<number> = []
+    Story.story(Main.update, Story.with({ ...createModel(), muted: true }),
+      Story.message(ClickedChineseHandwriting()),
+      Story.message(ChineseHandwriting.PenStarted({ id: 0, ...stroke[0]!, revision: 0 })),
+      Story.message(ChineseHandwriting.PenMoved({ id: 0, points: stroke.slice(1, 3), revision: 0 })),
+      Story.model(model => { progress = model.chineseHandwriting.progress }),
+      Story.message(ClickedLanding()),
+      Story.message(ChineseHandwriting.NextTarget()),
+      Story.message(ChineseHandwriting.PenStarted({ id: 1, ...stroke[0]!, revision: 1 })),
+      Story.message(ClickedChineseHandwriting()),
+      Story.message(ChineseHandwriting.PenMoved({ id: 0, points: stroke.slice(3), revision: 0 })),
+      Story.message(ChineseHandwriting.PenEnded({ id: 0, revision: 0 })),
+      Story.model(model => {
+        expect(model.chineseHandwriting.progress).toEqual(progress)
+        expect(model.chineseHandwriting).toMatchObject({ targetIndex: 0, revision: 1, contacts: [], pen: null })
+      }), Story.Command.expectNone())
   })
 
   it('init returns correct initial state', () => {

@@ -32,6 +32,113 @@ describe('i18n completeness', () => {
     }
   })
 
+  it('localizes both handwriting pickers and formats the Chinese character library count', () => {
+    for (const language of langKeys) {
+      for (const key of ['chineseHandwritingTitle', 'pageTitleChineseHandwriting', 'chineseHandwritingCharacters', 'handwritingRandom', 'handwritingMore'] as const) {
+        expect(i18n.t(key, language).trim().length).toBeGreaterThan(0)
+      }
+      const count = new Intl.NumberFormat(language).format(2500)
+      expect(i18n.tf('chineseHandwritingLibrary', language, count)).toContain(count)
+    }
+  })
+
+  it('localizes Character Lab controls, piece labels and composition feedback in every language', () => {
+    for (const language of langKeys) {
+      for (const key of ['characterLabTitle', 'pageTitleCharacterLab', 'characterLabPalette', 'characterLabStage',
+        'characterLabRandom', 'characterLabClear', 'characterLabMore', 'characterLabPrevious',
+        'characterLabFull', 'characterLabCommonRadicals', 'characterLabCharacters', 'characterLabSearch'] as const) {
+        expect(i18n.t(key, language).trim().length, `${language}.${key}`).toBeGreaterThan(0)
+      }
+      expect(i18n.t('pageTitleCharacterLab', language)).toContain(i18n.t('appName', language))
+      expect(i18n.tf('characterLabDrop', language, '木')).toContain('木')
+      expect(i18n.tf('characterLabPiece', language, '明')).toContain('明')
+      const count = new Intl.NumberFormat(language).format(12)
+      expect(i18n.tf('characterLabCount', language, count)).toContain(count)
+      const merged = i18n.tf('characterLabMerged', language, '日', '月', '明')
+      for (const value of ['日', '月', '明']) expect(merged).toContain(value)
+      const ingredients = new Intl.ListFormat(language).format(['口', '口', '犬'])
+      const group = i18n.tf('characterLabGroupMerged', language, ingredients, '哭')
+      expect(group).toContain(ingredients)
+      expect(group).toContain('哭')
+      const parts = new Intl.ListFormat(language).format(['日', '月'])
+      const split = i18n.tf('characterLabSplit', language, '明', parts)
+      for (const value of ['明', parts]) expect(split).toContain(value)
+    }
+  })
+
+  it('identifies full radicals and their combining forms in every language', () => {
+    for (const language of langKeys) {
+      expect(i18n.t('characterLabCommonRadicals', language)).not.toBe(i18n.t('characterLabCharacters', language))
+      const forms = new Intl.ListFormat(language, { style: 'short', type: 'conjunction' }).format(['忄', '⺗'])
+      const label = i18n.tf('characterLabRadicalForms', language, '心', forms)
+      expect(label).toContain('心')
+      expect(label).toContain(forms)
+      expect(label).not.toContain('undefined')
+      expect(i18n.tf('characterLabDrop', language, label)).toContain(label)
+    }
+    expect(i18n.tf('characterLabRadicalForms', 'en', '心', '忄')).toBe('心 · combining forms: 忄')
+    expect(i18n.tf('characterLabRadicalForms', 'zh', '心', '忄')).toBe('心（偏旁形式：忄）')
+  })
+
+  it('localizes Chinese categories, group labels and pages within each group', () => {
+    const categoryKeys = Object.keys(i18n.translations.en).filter(key => key.startsWith('chineseHandwritingCategory')) as i18n.StringKey[]
+    expect(categoryKeys).toHaveLength(22)
+    for (const language of langKeys) {
+      for (const key of [...categoryKeys, 'chineseHandwritingGroup'] as const) {
+        expect(i18n.t(key, language).trim().length).toBeGreaterThan(0)
+      }
+      const numbers = new Intl.NumberFormat(language)
+      const index = numbers.format(2)
+      const total = numbers.format(5)
+      const preview = '山水火'
+      const label = i18n.tf('chineseHandwritingGroupLabel', language, index, total, preview)
+      for (const value of [index, total, preview]) expect(label).toContain(value)
+      const page = i18n.tf('chineseHandwritingChoicePage', language, index, total)
+      for (const value of [index, total]) expect(page).toContain(value)
+      expect(page).not.toBe(`${index}/${total}`)
+      expect(i18n.translations[language]).not.toHaveProperty('chineseHandwritingPreviousGroup')
+      expect(i18n.translations[language]).not.toHaveProperty('chineseHandwritingNextGroup')
+      expect(i18n.tf('chineseHandwritingByStrokes', language, numbers.format(8))).toContain(numbers.format(8))
+    }
+    expect(i18n.tf('chineseHandwritingByStrokes', 'en', '1')).toBe('1 stroke')
+    expect(i18n.tf('chineseHandwritingByStrokes', 'fr', '1')).toBe('1 trait')
+    expect(i18n.tf('chineseHandwritingByStrokes', 'de', '1')).toBe('1 Strich')
+    expect(i18n.tf('chineseHandwritingChoicePage', 'en', '2', '5')).toBe('Page 2 of 5')
+    expect(i18n.tf('chineseHandwritingChoicePage', 'zh', '2', '5')).toBe('第2页，共5页')
+    expect(i18n.tf('chineseHandwritingChoicePage', 'ja', '2', '5')).toBe('5ページ中2ページ')
+  })
+
+  it('localizes the category sections and Chinese radical labels', () => {
+    const headings = ['chineseHandwritingThemes', 'chineseHandwritingComponents', 'chineseHandwritingStrokeCounts'] as const
+    for (const language of langKeys) {
+      const labels = headings.map(key => i18n.t(key, language))
+      expect(labels.every(label => label.trim().length > 0)).toBe(true)
+      expect(new Set(labels).size).toBe(headings.length)
+      for (const component of ['水', '亻', '艹']) {
+        expect(i18n.tf('chineseHandwritingByComponent', language, component)).toContain(component)
+      }
+    }
+    expect(headings.map(key => i18n.t(key, 'en'))).toEqual(['Everyday categories', 'Character families', 'By stroke count'])
+    expect(i18n.tf('chineseHandwritingByComponent', 'en', '水')).toBe('水 radical')
+    expect(i18n.tf('chineseHandwritingByComponent', 'zh', '水')).toBe('水部')
+    expect(i18n.tf('chineseHandwritingByComponent', 'zh-HK', '水')).toBe('水部')
+    expect(i18n.tf('chineseHandwritingByComponent', 'ja', '水')).toBe('水の部首')
+    expect(i18n.tf('chineseHandwritingByComponent', 'xx', '水')).toBe('水 radical')
+  })
+
+  it('names the special Biang section without needing its uncommon font glyph', () => {
+    const keys = ['chineseHandwritingSpecial', 'chineseHandwritingBiang', 'chineseHandwritingBiangLabel'] as const
+    for (const language of langKeys) for (const key of keys) {
+      const label = i18n.t(key, language)
+      expect(label.trim().length, `${language}.${key}`).toBeGreaterThan(0)
+      expect(label).not.toMatch(/[𰻝𰻞]/u)
+    }
+    expect(i18n.t('chineseHandwritingSpecial', 'en')).toBe('Special characters')
+    expect(i18n.t('chineseHandwritingBiangLabel', 'en')).toBe('Biáng')
+    expect(i18n.t('chineseHandwritingBiang', 'zh')).toContain('面')
+    expect(i18n.t('chineseHandwritingBiang', 'zh-HK')).toContain('麵')
+  })
+
   it('normalizes supported and unsupported language codes', () => {
     expect(i18n.normalizeLanguage('ja')).toBe('ja')
     expect(i18n.normalizeLanguage('xx')).toBe('en')

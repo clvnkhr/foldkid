@@ -1,0 +1,2 @@
+/* Motion is used only by the optional counter tilt feature. */
+"NSMotionUsageDescription" = "FoldKid از حسگر حرکت استفاده می‌کند تا با کج کردن دستگاه، بلوک‌های شمارنده حرکت کنند.";

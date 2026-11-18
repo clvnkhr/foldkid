@@ -101,6 +101,23 @@ const cssRule = (selector: string): string => {
 }
 
 describe('styles.css invariants', () => {
+  it('keeps Character Lab touch input scoped and hash colors readable in both themes', () => {
+    expect(cssRule('.character-lab-stage')).toContain('touch-action: none')
+    expect(styles.match(/(?:^|\n)\.character-lab-piece\s*\{([^}]*)\}/)?.[1]).toContain('touch-action: none')
+    expect(cssRule('.character-lab-drop')).toContain('touch-action: manipulation')
+    expect(cssRule('.character-lab-palette')).toContain('flex-direction: column')
+    expect(cssRule('.character-lab-toolbar, .character-lab-actions, .character-lab-radicals, .character-lab-characters')).toContain('flex-wrap: wrap')
+    expect(cssRule('.character-lab-forms')).toContain('pointer-events: none')
+    expect(cssRule('.character-lab-forms')).toContain('position: absolute')
+    expect(cssRule('.character-lab-search')).toContain('font-size: 1rem')
+    expect(cssRule('.character-lab-search')).toContain('touch-action: manipulation')
+    expect(cssRule('.character-lab-drop, .character-lab-piece')).toContain('var(--char-light-ink)')
+    expect(cssRule('.dark .character-lab-drop, .dark .character-lab-piece')).toContain('var(--char-dark-ink)')
+    expect(cssRule('.character-lab-glyph')).toContain('pointer-events: none')
+    expect(cssRule('.character-lab-page')).toContain('safe-area-inset-top')
+    expect(styles).toContain('.character-lab-piece:focus-visible')
+    expect(styles).toContain('.character-lab-piece { animation: none; }')
+  })
   it('keeps the root stylesheet as an import manifest', () => {
     expect(stylesEntry.trim().split('\n').every(line => line.startsWith('@import '))).toBe(true)
   })
@@ -204,6 +221,35 @@ describe('styles.css invariants', () => {
     expect(dragHandle).toContain('touch-action: none')
   })
 
+  it('keeps shared navigation and settings controls inside iOS safe areas', () => {
+    const nav = cssRule('.nav-bar')
+    const settings = cssRule('.settings-panel')
+
+    expect(cssRule(':root')).toContain('--safe-top: env(safe-area-inset-top, 0px)')
+    expect(cssRule(':root')).toContain('--safe-bottom: env(safe-area-inset-bottom, 0px)')
+    expect(nav).toContain('calc(1rem + var(--safe-top))')
+    expect(nav).toContain('max(2rem, env(safe-area-inset-right, 0px))')
+    expect(nav).toContain('max(2rem, env(safe-area-inset-left, 0px))')
+    expect(settings).toContain('calc(1.5rem + var(--safe-top))')
+    expect(settings).toContain('max(1.5rem, env(safe-area-inset-right, 0px))')
+    expect(settings).toContain('calc(1.5rem + var(--safe-bottom))')
+    expect(settings).toContain('max-height: 100dvh')
+  })
+
+  it('keeps fixed game pages below the native navigation without stretching full-height boards', () => {
+    const fullPage = cssRule(':is(.counter-page,.talking-keyboard-page)')
+    const fullCard = cssRule(':is(.counter-card,.talking-keyboard-card)')
+    expect(fullPage).toContain('calc(var(--page-top) + var(--safe-top))')
+    expect(fullPage).toContain('max(var(--page-bottom), var(--safe-bottom))')
+    expect(fullCard).toContain('100dvh - var(--page-top) - var(--safe-top) - max(var(--page-bottom), var(--safe-bottom))')
+    expect(cssRule(':is(.shape-workshop-page,.growing-numbers-page)')).toContain('calc(4.5rem + var(--safe-top))')
+    for (const page of ['.magnetic-blocks-page', '.phoneme-page', '.talking-clock-page', '.draw-page']) {
+      expect(cssRule(page), page).toContain('var(--safe-top)')
+    }
+    expect(styles).toContain('--page-top:3.75rem;--page-bottom:.3rem;padding-inline:.3rem')
+    expect(styles).toMatch(/\.draw-score\{[^}]*top:calc\(4\.5rem \+ var\(--safe-top\)\)/)
+  })
+
   it('lets the 3D play area fill the viewport around its controls', () => {
     const app = cssRule('.app--bubbles3d')
     const nav = cssRule('.app--bubbles3d .nav-bar')
@@ -293,7 +339,7 @@ describe('styles.css invariants', () => {
   it('keeps handwriting tracing scoped to the board with reachable native controls', () => {
     const board = cssRule('.handwriting-board')
     const choices = cssRule('.handwriting-choices')
-    const choice = cssRule('.handwriting-choice')
+    const choice = cssRule('.handwriting-choice, .handwriting-more')
     const controls = cssRule('.handwriting-mode, .handwriting-case')
     const page = cssRule('.handwriting-page')
 
@@ -303,13 +349,42 @@ describe('styles.css invariants', () => {
     expect(controls).toContain('touch-action: manipulation')
     expect(controls).toContain('min-height: 44px')
     expect(choice).toContain('min-height: 44px')
-    expect(choices).toContain('overflow-x: auto')
-    expect(choices).toContain('touch-action: pan-x pan-y')
-    expect(choices).toContain('-webkit-overflow-scrolling: touch')
+    expect(choices).toContain('flex-wrap: wrap')
+    expect(choices).not.toContain('overflow-x')
+    expect(choices).toContain('touch-action: manipulation')
     expect(page).toContain('4.75rem')
     expect(page).toContain('safe-area-inset-bottom')
     expect(styles).toContain('.handwriting-board:focus-visible')
     expect(styles).toContain('.handwriting-actions button:focus-visible')
+  })
+
+  it('keeps Chinese tracing square with wrapped character choices and a clear active stroke', () => {
+    const board = cssRule('.chinese-handwriting-board')
+    const picker = cssRule('.chinese-handwriting-picker')
+    expect(board).toContain('aspect-ratio: 1')
+    expect(board).toContain('width: min(100%, 480px, 47dvh)')
+    expect(picker).toContain('flex-wrap: wrap')
+    expect(picker).toContain('touch-action: pan-y')
+    expect(picker).not.toContain('overflow-x')
+    expect(cssRule('.chinese-handwriting-selectors, .chinese-handwriting-pagination')).toContain('flex-wrap: wrap')
+    expect(cssRule('.chinese-handwriting-select-label select')).toContain('min-height: 44px')
+    expect(cssRule('.chinese-handwriting-select-label select')).toContain('min-width: 0')
+    expect(cssRule('.chinese-handwriting-guide[data-active="true"]')).toContain('opacity: 1')
+  })
+
+  it('keeps the vector Biang glyph pointerless and its dense tracing strokes distinct', () => {
+    const glyph = cssRule('.chinese-handwriting-biang-glyph')
+    expect(glyph).toContain('width: 2em')
+    expect(glyph).toContain('height: 2em')
+    expect(glyph).toContain('fill: currentColor')
+    expect(glyph).toContain('stroke: none')
+    expect(glyph).toContain('pointer-events: none')
+    expect(glyph).not.toContain('font-family')
+    expect(cssRule('.chinese-handwriting-choice--biang')).toContain('flex-basis: 5rem')
+    expect(cssRule('.chinese-handwriting-board[data-special="biang"] .chinese-handwriting-guide')).toContain('stroke-width: 1.4')
+    expect(cssRule('.chinese-handwriting-target .chinese-handwriting-biang-glyph')).toContain('width: 2.5em')
+    expect(cssRule('.chinese-handwriting-board[data-special="biang"] .chinese-handwriting-ink')).toContain('stroke-width: 2.6')
+    expect(cssRule('.chinese-handwriting-board[data-special="biang"] .handwriting-ink-highlight')).toContain('stroke-width: .45')
   })
 
   it('keeps handwriting themes, translated controls, and reduced-motion completion readable', () => {
