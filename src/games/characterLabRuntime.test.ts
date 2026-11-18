@@ -107,6 +107,39 @@ describe('Character Lab physics runtime', () => {
     expect(Audio.warmAudio).not.toHaveBeenCalled()
   })
 
+  it('animates and handles the 120th piece while leaving overflow pieces outside the runtime', () => {
+    const { pieces, handlers, cleanup } = fixture(Array.from({ length: 121 }, (_, id) => ({
+      id, character: '明', x: (id % 12 + .5) / 12, y: (Math.floor(id / 12) + .5) / 11, delay: 5000,
+    })), [2000, 2000], true)
+    for (let id = 0; id < 120; id++) expect(pieces.get(id)!.style.left).toBe('0px')
+    const last = pieces.get(119)!
+    const overflow = pieces.get(120)!
+    expect(overflow.style.left).not.toBe('0px')
+    const initial = pose(last)
+    runFrames(1)
+    expect(pose(last).y).toBeGreaterThan(initial.y)
+    expect(pose(last).angle).toBeGreaterThan(initial.angle)
+    const current = pose(last)
+    pointer(last, 'pointerdown', 1, current.x + 10, current.y + 20, 'pen', 100)
+    pointer(document, 'pointermove', 1, current.x - 90, current.y - 80, 'pen', 120)
+    expect(pose(last).x).toBeCloseTo(current.x - 100)
+    expect(pose(last).y).toBeCloseTo(current.y - 100)
+    pointer(document, 'pointercancel', 1, current.x - 90, current.y - 80, 'pen', 125)
+    last.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0 }))
+    expect(handlers.tapped).toHaveBeenCalledOnce()
+    expect(handlers.tapped.mock.calls[0]![0]).toBe(119)
+    handlers.tapped.mockClear()
+    const fallback = vi.fn()
+    overflow.addEventListener('click', fallback)
+    overflow.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0 }))
+    expect(handlers.tapped).not.toHaveBeenCalled()
+    expect(fallback).toHaveBeenCalledOnce()
+    cleanup()
+    expect(last.style.left).not.toBe('0px')
+    expect(last.style.transform).toBe('translate(-50%,-50%)')
+    expect(frames.size).toBe(0)
+  })
+
   it.each(['mouse', 'pen', 'touch'])('emits one current-pose tap on a qualifying %s release and suppresses its click', type => {
     const { pieces, handlers } = fixture()
     const piece = pieces.get(0)!

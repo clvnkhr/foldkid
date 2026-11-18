@@ -1,5 +1,5 @@
 import { warmAudio } from '../audio'
-import { canonicalCharacter, mergeCharacters, multiJoinPatterns } from './characterLabDomain'
+import { canonicalCharacter, mergeCharacters, multiJoinPatterns, type CharacterJoinPattern } from './characterLabDomain'
 import { CHARACTER_LAB_FIXED_STEP, CHARACTER_LAB_MAX_SPEED, constrainCharacterLabBody, stepCharacterLabPhysics, type CharacterLabBody } from './characterLabPhysics'
 
 export interface CharacterLabRuntimeHandlers {
@@ -45,7 +45,7 @@ const numberAttribute = (element: Element, key: string, fallback: number): numbe
   return Number.isFinite(value) ? value : fallback
 }
 const bounded = (value: number, minimum: number, maximum: number): number => Math.max(minimum, Math.min(maximum, value))
-const MAX_BODIES = 60
+const MAX_BODIES = 120
 
 /** Owns transient physics and gestures; entity membership remains in the game model. */
 export const createCharacterLabRuntime = (stage: HTMLElement, handlers: CharacterLabRuntimeHandlers): (() => void) => {
@@ -73,6 +73,7 @@ export const createCharacterLabRuntime = (stage: HTMLElement, handlers: Characte
   let mutationObserver: MutationObserver | undefined
   let resizeObserver: ResizeObserver | undefined
   let contactGraph: ContactGraph | undefined
+  const patternCounts = new WeakMap<CharacterJoinPattern, ReadonlyMap<string, number>>()
 
   const releaseCapture = (contact: Contact): void => {
     const pointerId = contact.captureId
@@ -226,9 +227,17 @@ export const createCharacterLabRuntime = (stage: HTMLElement, handlers: Characte
     }
     for (const pattern of patterns) {
       if (pattern.parts.length > nearby.length) continue
-      const required = new Map<string, number>()
-      for (const part of pattern.parts) required.set(part, (required.get(part) ?? 0) + 1)
-      if ([...required].some(([part, count]) => (counts.get(part) ?? 0) < count)) continue
+      let requiredCounts = patternCounts.get(pattern)
+      if (!requiredCounts) {
+        const frequencies = new Map<string, number>()
+        for (const part of pattern.parts) frequencies.set(part, (frequencies.get(part) ?? 0) + 1)
+        requiredCounts = frequencies
+        patternCounts.set(pattern, requiredCounts)
+      }
+      let matches = true
+      for (const [part, count] of requiredCounts) if ((counts.get(part) ?? 0) < count) { matches = false; break }
+      if (!matches) continue
+      const required = new Map(requiredCounts)
       const selected = [a, b]
       const ids = new Set([a.id, b.id])
       for (const body of selected) {
@@ -276,7 +285,7 @@ export const createCharacterLabRuntime = (stage: HTMLElement, handlers: Characte
       const t = length === 0 ? 0 : bounded(((other.x - fromX) * dx + (other.y - fromY) * dy) / length, 0, 1)
       const x = fromX + t * dx
       const y = fromY + t * dy
-      if (Math.hypot(other.x - x, other.y - y) <= body.r + other.r) hits.push({ body: other, t, x, y })
+      if ((other.x - x) ** 2 + (other.y - y) ** 2 <= (body.r + other.r) ** 2) hits.push({ body: other, t, x, y })
     }
     hits.sort((a, b) => a.t - b.t)
     for (const hit of hits) if (merged(body, hit.body, hit.x, hit.y)) break

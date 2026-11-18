@@ -1,5 +1,6 @@
 import catalogue from './characterLabCatalogue.json'
-import { radicals as dictionaryRadicals } from './chineseHandwritingRadicals.json'
+import scripts from './characterLabScripts.json'
+import { characters as radicalCharacters, radicals as dictionaryRadicals } from './chineseHandwritingRadicals.json'
 
 export interface CharacterDecomposition {
   readonly character: string
@@ -11,16 +12,15 @@ export interface CharacterRecipe extends CharacterDecomposition {
 }
 type SourceRecipe = readonly [character: string, ids: string, parts: readonly [string, string]]
 type SourceDecomposition = readonly [character: string, ids: string, parts: ReadonlyArray<string>]
-const additionalDecompositions = catalogue.decompositions as unknown as ReadonlyArray<SourceDecomposition>
-export const CHARACTER_LAB_RECIPES: ReadonlyArray<CharacterRecipe> = Object.freeze(
-  (catalogue.recipes as unknown as ReadonlyArray<SourceRecipe>).map(([character, ids, parts]) => Object.freeze({
-    character, ids, parts: Object.freeze([...parts]) as readonly [string, string],
-  })),
-)
-/** Includes multi-part source structures that can split even without a two-piece crafting recipe. */
-export const CHARACTER_LAB_DECOMPOSITIONS: ReadonlyArray<CharacterDecomposition> = Object.freeze([
-  ...CHARACTER_LAB_RECIPES,
-  ...additionalDecompositions.map(([character, ids, parts]) => Object.freeze({ character, ids, parts: Object.freeze([...parts]) })),
+const sourceRecipes = catalogue.recipes as unknown as ReadonlyArray<SourceRecipe>
+const sourceAdditional = catalogue.decompositions as unknown as ReadonlyArray<SourceDecomposition>
+const excludedForms = new Set([
+  ...scripts.traditionalOnly.map(([character]) => character as string),
+  ...scripts.modernGlyphAliases.map(([character]) => character as string),
+])
+const scriptAliases = new Map<string, string>([
+  ...scripts.ingredientAliases.map(([original, simplified]) => [original!, simplified!] as const),
+  ...scripts.modernGlyphAliases.map(([original, modern]) => [original!, modern!] as const),
 ])
 // Positional/simplified combining forms, not arbitrary visual lookalikes. See SOURCES.md.
 const standaloneForms: Readonly<Record<string, string>> = Object.freeze({
@@ -31,17 +31,70 @@ const standaloneForms: Readonly<Record<string, string>> = Object.freeze({
   // The game deliberately treats the two mouth/enclosure tile shapes as one piece.
   '囗': '口',
 })
-export const canonicalCharacter = (character: string): string => Object.hasOwn(standaloneForms, character) ? standaloneForms[character]! : character
+/** Explicit script and positional aliases only; ambiguous traditional forms have no invented replacement. */
+export const canonicalCharacter = (character: string): string => {
+  if (!scriptAliases.has(character) && !Object.hasOwn(standaloneForms, character)) return character
+  let current = character
+  const visited = new Set<string>()
+  while (!visited.has(current)) {
+    visited.add(current)
+    const next = scriptAliases.get(current) ?? (Object.hasOwn(standaloneForms, current) ? standaloneForms[current] : undefined)
+    if (!next || next === current) return current
+    current = next
+  }
+  return character
+}
+export const isTraditionalCharacterLabForm = (character: string): boolean => excludedForms.has(character)
 const noForms: ReadonlyArray<string> = Object.freeze([])
 const variants = new Map<string, ReadonlyArray<string>>()
 for (const original of new Set(Object.values(standaloneForms))) {
-  variants.set(original, Object.freeze(Object.keys(standaloneForms).filter(form => form !== '囗' && standaloneForms[form] === original)))
+  variants.set(original, Object.freeze(Object.keys(standaloneForms).filter(form =>
+    form !== '囗' && !excludedForms.has(form) && standaloneForms[form] === original)))
 }
 export const radicalForms = (character: string): ReadonlyArray<string> => variants.get(canonicalCharacter(character)) ?? noForms
 
-export const CHARACTER_LAB_BASES: ReadonlyArray<string> = Object.freeze([...new Set([...catalogue.bases, ...Object.keys(standaloneForms), ...Object.values(standaloneForms)])])
+// Keep raw source IDS in the pinned catalogue; modernize only playable ingredients,
+// e.g. the simplified 宫 source uses 呂, which becomes the loose piece 吕.
+const sourceDecompositions: ReadonlyArray<CharacterDecomposition> = [...sourceRecipes, ...sourceAdditional]
+  .filter(([character]) => !excludedForms.has(character))
+  .map(([character, ids, parts]) => Object.freeze({ character, ids, parts: Object.freeze(parts.map(canonicalCharacter)) }))
+const possibleDecompositions = new Map(sourceDecompositions.map(decomposition => [decomposition.character, decomposition]))
+// Unicode counterparts can supply genuine modern components absent from the selected
+// dictionary graph: 昜→𠃓 keeps 杨/汤/肠 available, and 習→习 keeps 褶/熠 available.
+const modernIngredientBases = sourceDecompositions.flatMap(decomposition => decomposition.parts)
+  .filter(character => !possibleDecompositions.has(character))
+// Standard simplified counterparts such as 书 remain available even when their
+// source describes no reliable inner structure; do not invent a split for them.
+// Optional supplementary-plane additions need local glyph data first. Required
+// source ingredients such as 𠃓 are retained separately above and rendered as SVG.
+const standardModernBases = scripts.standardModernTargets.map(canonicalCharacter)
+  .filter(character => !possibleDecompositions.has(character) && character.codePointAt(0)! <= 0xffff)
+export const CHARACTER_LAB_BASES: ReadonlyArray<string> = Object.freeze([...new Set([
+  ...catalogue.bases, ...Object.keys(standaloneForms), ...Object.values(standaloneForms), ...modernIngredientBases, ...standardModernBases,
+])].filter(character => !excludedForms.has(character)))
 const baseSet = new Set(CHARACTER_LAB_BASES)
-const decompositions = new Map(CHARACTER_LAB_DECOMPOSITIONS.map(recipe => [recipe.character, recipe]))
+const complete = new Map<string, boolean>()
+const hasCompleteIngredients = (character: string, trail: ReadonlySet<string> = new Set()): boolean => {
+  if (baseSet.has(character)) return true
+  const cached = complete.get(character)
+  if (cached !== undefined) return cached
+  const decomposition = possibleDecompositions.get(character)
+  if (!decomposition || trail.has(character)) return false
+  const next = new Set([...trail, character])
+  const result = decomposition.parts.length > 1 && decomposition.parts.every(part => hasCompleteIngredients(part, next))
+  complete.set(character, result)
+  return result
+}
+/** Traditional-only targets and unresolved ingredient chains never become playable tiles or outputs. */
+export const CHARACTER_LAB_DECOMPOSITIONS: ReadonlyArray<CharacterDecomposition> = Object.freeze(
+  sourceDecompositions.filter(decomposition => hasCompleteIngredients(decomposition.character)),
+)
+const activeDecompositions = new Map(CHARACTER_LAB_DECOMPOSITIONS.map(decomposition => [decomposition.character, decomposition]))
+export const CHARACTER_LAB_RECIPES: ReadonlyArray<CharacterRecipe> = Object.freeze(sourceRecipes.flatMap(([character]) => {
+  const decomposition = activeDecompositions.get(character)
+  return decomposition && decomposition.parts.length === 2 ? [decomposition as CharacterRecipe] : []
+}))
+const decompositions = activeDecompositions
 const pairKey = (a: string, b: string): string => [a, b].sort().join('\u0000')
 
 export const CHARACTER_LAB_CHARACTERS: ReadonlyArray<string> = Object.freeze([
@@ -50,39 +103,14 @@ export const CHARACTER_LAB_CHARACTERS: ReadonlyArray<string> = Object.freeze([
 const known = new Set(CHARACTER_LAB_CHARACTERS)
 export const isCharacterLabCharacter = (character: string): boolean => known.has(character)
 
-const familiarRadicals = [...'木口人水手心言火土日女子艸宀门金']
-const familiarSet = new Set(familiarRadicals)
-const ingredientFrequency = new Map<string, number>()
-for (const decomposition of CHARACTER_LAB_DECOMPOSITIONS) for (const ingredient of decomposition.parts) {
-  const character = canonicalCharacter(ingredient)
-  ingredientFrequency.set(character, (ingredientFrequency.get(character) ?? 0) + 1)
-}
-const unicodeRadicals = dictionaryRadicals as unknown as ReadonlyArray<readonly [number, string]>
-/** All loose base pieces plus supported dictionary radicals, including decomposable combiners such as 疒 and 广. */
-export const CHARACTER_LAB_COMMON_RADICALS: ReadonlyArray<string> = Object.freeze([
-  ...familiarRadicals,
-  ...[...new Set([
-    ...CHARACTER_LAB_BASES.map(canonicalCharacter),
-    ...unicodeRadicals.map(([, character]) => canonicalCharacter(character)),
-  ])].filter(character => known.has(character) && !familiarSet.has(character)).sort((first, second) =>
-    (ingredientFrequency.get(second) ?? 0) - (ingredientFrequency.get(first) ?? 0) || first.codePointAt(0)! - second.codePointAt(0)!),
-])
-const common = new Set(CHARACTER_LAB_COMMON_RADICALS)
-export const CHARACTER_LAB_PALETTE: ReadonlyArray<string> = Object.freeze([...new Set([
-  ...'青明林森好休清字家',
-  ...'木日月人亻女子口火水氵土心忄扌讠艹宀门马石田力目一十寸又也大小白王玉山钅雨虫米禾',
-  ...'刀犬示爪糸食辵',
-  ...CHARACTER_LAB_CHARACTERS,
-].map(canonicalCharacter))].filter(character => !common.has(character)))
-
 /** Every valid source output for either combining forms or their full originals. */
 export const mergeCandidates = (a: string, b: string): ReadonlyArray<string> => mergeGroupCandidates([a, b])
 
 /** A deterministic representative for contact detection; gameplay samples mergeCandidates. */
 export const mergeCharacters = (a: string, b: string): string | undefined => mergeCandidates(a, b)[0]
 
-/** Exact immediate source components, including their positional combining forms. */
-export const splitCharacter = (character: string): ReadonlyArray<string> => decompositions.get(character)?.parts ?? []
+/** Immediate playable components, normalized from the unchanged source IDS. */
+export const splitCharacter = (character: string): ReadonlyArray<string> => decompositions.get(canonicalCharacter(character))?.parts ?? []
 
 const leaves = new Map<string, ReadonlyArray<string>>()
 export const MAX_CHARACTER_LAB_COMPONENTS = 60
@@ -109,11 +137,48 @@ const collectBases = (character: string, visited: ReadonlySet<string>): Readonly
 
 /** Tap-to-pop uses base radicals: 森 becomes three 木 pieces, even when it was dropped directly. */
 export const baseComponents = (character: string): ReadonlyArray<string> => {
-  return leaves.get(character) ?? collectBases(character, new Set())
+  const canonical = canonicalCharacter(character)
+  return leaves.get(canonical) ?? collectBases(canonical, new Set())
 }
 
 /** Cached counts keep capacity checks independent of decomposition depth. */
 export const characterComponentCount = (character: string): number => baseComponents(character).length
+
+// Concrete everyday pieces first; ordering is a teaching choice, not a lexical frequency claim.
+const everydayPriority = [...'一人口大小日月木水火土女之子手心目耳山石田禾米艸竹言金门宀犬虫鸟马鱼牛羊衣食足车十力刀又']
+const unicodeRadicals = dictionaryRadicals as unknown as ReadonlyArray<readonly [number, string]>
+const allCombiners = new Set([
+  ...CHARACTER_LAB_BASES.map(canonicalCharacter),
+  ...unicodeRadicals.flatMap(([, label]) => label.split(/\s*\/\s*/u).map(canonicalCharacter)),
+].filter(character => known.has(character)))
+const familiarRadicals = [...new Set(everydayPriority.map(canonicalCharacter))].filter(character => allCombiners.has(character))
+const familiarSet = new Set(familiarRadicals)
+// The handwriting importer writes all 3,500 first-level TGH characters first,
+// ordered by table index. Reuse its small metadata, not the stroke geometry.
+const commonTargets = new Set(radicalCharacters.slice(0, 3500).map(([character]) => character as string))
+const ingredientFrequency = new Map<string, number>()
+const score = (character: string, weight: number): void => {
+  const ingredient = canonicalCharacter(character)
+  ingredientFrequency.set(ingredient, (ingredientFrequency.get(ingredient) ?? 0) + weight)
+}
+for (const decomposition of CHARACTER_LAB_DECOMPOSITIONS) {
+  if (!commonTargets.has(decomposition.character)) continue
+  decomposition.parts.forEach(ingredient => score(ingredient, 2))
+  baseComponents(decomposition.character).forEach(ingredient => score(ingredient, 1))
+}
+/** Every basic combiner, with everyday pieces and common-character ingredients ahead of rare structures. */
+export const CHARACTER_LAB_COMMON_RADICALS: ReadonlyArray<string> = Object.freeze([
+  ...familiarRadicals,
+  ...[...allCombiners].filter(character => !familiarSet.has(character)).sort((first, second) =>
+    (ingredientFrequency.get(second) ?? 0) - (ingredientFrequency.get(first) ?? 0) || first.codePointAt(0)! - second.codePointAt(0)!),
+])
+const common = new Set(CHARACTER_LAB_COMMON_RADICALS)
+export const CHARACTER_LAB_PALETTE: ReadonlyArray<string> = Object.freeze([...new Set([
+  ...'青明林森好休清字家',
+  ...'木日月人亻女子口火水氵土心忄扌讠艹宀门马石田力目一十寸又也大小白王玉山钅雨虫米禾',
+  ...'刀犬示爪糸食辵',
+  ...CHARACTER_LAB_CHARACTERS,
+].map(canonicalCharacter))].filter(character => known.has(character) && !common.has(character)))
 
 export interface CharacterJoinPattern { readonly parts: ReadonlyArray<string> }
 interface JoinIndex {
@@ -161,7 +226,7 @@ const getJoinIndex = (): JoinIndex => {
 
 /** Multisets preserve repeated ingredients: 品 needs three 口, not one nearby 口. */
 export const mergeGroupCandidates = (parts: ReadonlyArray<string>): ReadonlyArray<string> => {
-  if (parts.length < 2 || parts.length > MAX_CHARACTER_LAB_COMPONENTS || parts.some(part => !known.has(part))) return noForms
+  if (parts.length < 2 || parts.length > MAX_CHARACTER_LAB_COMPONENTS || parts.some(part => !known.has(canonicalCharacter(part)))) return noForms
   const index = getJoinIndex()
   const literal = index.outputs.get(groupKey(parts))
   if (literal) return literal
@@ -174,7 +239,7 @@ export const mergeGroupCandidates = (parts: ReadonlyArray<string>): ReadonlyArra
 }
 
 /** Pair-indexed multi-piece recipes keep the collision runtime independent of catalogue size. */
-export const multiJoinPatterns = (a: string, b: string): ReadonlyArray<CharacterJoinPattern> => known.has(a) && known.has(b)
+export const multiJoinPatterns = (a: string, b: string): ReadonlyArray<CharacterJoinPattern> => known.has(canonicalCharacter(a)) && known.has(canonicalCharacter(b))
   ? getJoinIndex().patterns.get(pairKey(canonicalCharacter(a), canonicalCharacter(b))) ?? noPatterns : noPatterns
 
 const componentCounts = new Map<string, ReadonlyMap<string, number>>()
@@ -217,7 +282,22 @@ const characterSelector = (choices: ReadonlyArray<string>) => {
 /** Find actual characters or all compounds containing the entered base components. */
 export const selectCharacterPalette = characterSelector(CHARACTER_LAB_PALETTE)
 /** Search the fixed combiner bank too, so moving a basic piece upward never hides it. */
-export const selectCharacterCombiners = characterSelector(CHARACTER_LAB_COMMON_RADICALS)
+const matchingCombiners = characterSelector(CHARACTER_LAB_COMMON_RADICALS)
+let previousCombinerQuery = ''
+let previousCombiners = CHARACTER_LAB_COMMON_RADICALS
+export const selectCharacterCombiners = (query: string): ReadonlyArray<string> => {
+  if (query === previousCombinerQuery) return previousCombiners
+  const matches = matchingCombiners(query)
+  const characters = [...query.normalize('NFC')].filter(character => !/\s/u.test(character)).map(canonicalCharacter)
+  let selection = matches
+  if (matches.length === 0 && characters.length > 0 && characters.length <= MAX_CHARACTER_LAB_COMPONENTS && characters.every(character => known.has(character))) {
+    const ingredients = new Set(characters.flatMap(baseComponents))
+    selection = Object.freeze(CHARACTER_LAB_COMMON_RADICALS.filter(character => ingredients.has(character)))
+  }
+  previousCombinerQuery = query
+  previousCombiners = selection
+  return selection
+}
 
 export const characterHash = (character: string): number => {
   let value = 0x811c9dc5

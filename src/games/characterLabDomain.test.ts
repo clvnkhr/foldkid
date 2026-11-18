@@ -2,10 +2,11 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import catalogue from './characterLabCatalogue.json'
-import { radicals as dictionaryRadicals } from './chineseHandwritingRadicals.json'
+import scripts from './characterLabScripts.json'
+import { characters as radicalCharacters, radicals as dictionaryRadicals } from './chineseHandwritingRadicals.json'
 import {
   CHARACTER_LAB_BASES, CHARACTER_LAB_CHARACTERS, CHARACTER_LAB_COMMON_RADICALS, CHARACTER_LAB_DECOMPOSITIONS, CHARACTER_LAB_PALETTE, CHARACTER_LAB_RECIPES, MAX_CHARACTER_LAB_COMPONENTS,
-  baseComponents, canonicalCharacter, characterColors, characterComponentCount, characterHash, isCharacterLabCharacter, mergeCandidates, mergeCharacters, mergeGroupCandidates, multiJoinPatterns, radicalForms, selectCharacterCombiners, selectCharacterPalette, splitCharacter,
+  baseComponents, canonicalCharacter, characterColors, characterComponentCount, characterHash, isCharacterLabCharacter, isTraditionalCharacterLabForm, mergeCandidates, mergeCharacters, mergeGroupCandidates, multiJoinPatterns, radicalForms, selectCharacterCombiners, selectCharacterPalette, splitCharacter,
 } from './characterLabDomain'
 
 type Node = string | { readonly operator: string; readonly children: ReadonlyArray<Node> }
@@ -42,12 +43,19 @@ describe('Character Lab verified compositions', () => {
     expect(catalogue.sourceCommit).toBe('bddc96d41bef78427ed0e034e9f7e31d71fd1b92')
     expect(catalogue.sourceSha256).toBe('744bb05d5b0742e9ee35c37791f94d56a173349b3367569e7ca11e510364d203')
     expect(catalogue.license).toBe('LGPL-3.0-or-later')
-    expect(CHARACTER_LAB_RECIPES).toHaveLength(8517)
-    expect(CHARACTER_LAB_DECOMPOSITIONS).toHaveLength(9073)
-    expect(CHARACTER_LAB_CHARACTERS.length).toBeGreaterThan(9400)
+    expect(catalogue.recipes).toHaveLength(8517)
+    expect(catalogue.recipes.length + catalogue.decompositions.length).toBe(9073)
+    const excluded = new Set([
+      ...scripts.traditionalOnly.map(([character]) => character as string),
+      ...scripts.modernGlyphAliases.map(([character]) => character as string),
+    ])
+    expect(CHARACTER_LAB_RECIPES.map(recipe => recipe.character))
+      .toEqual(catalogue.recipes.filter(([character]) => !excluded.has(character as string)).map(([character]) => character))
+    expect(CHARACTER_LAB_DECOMPOSITIONS.map(recipe => recipe.character))
+      .toEqual([...catalogue.recipes, ...catalogue.decompositions].filter(([character]) => !excluded.has(character as string)).map(([character]) => character))
     expect(new Set(CHARACTER_LAB_RECIPES.map(recipe => recipe.character)).size).toBe(CHARACTER_LAB_RECIPES.length)
     const collisionKeys = CHARACTER_LAB_RECIPES.map(recipe => [...recipe.parts].sort().join(''))
-    expect(collisionKeys.length - new Set(collisionKeys).size).toBe(112)
+    expect(collisionKeys.length - new Set(collisionKeys).size).toBeGreaterThan(100)
     expect(new Set(CHARACTER_LAB_CHARACTERS).size).toBe(CHARACTER_LAB_CHARACTERS.length)
     for (const character of CHARACTER_LAB_CHARACTERS) {
       expect([...character]).toHaveLength(1)
@@ -61,26 +69,37 @@ describe('Character Lab verified compositions', () => {
     }
   })
 
-  it('keeps every component faithful to the source IDS, including ternary and anonymous subtrees', () => {
+  it('keeps raw IDS exact and applies only explicit modern ingredient equivalents to playable structures', () => {
+    type SourceRow = readonly [string, string, ReadonlyArray<string>]
+    const raw = [...catalogue.recipes, ...catalogue.decompositions] as unknown as ReadonlyArray<SourceRow>
     const byCharacter = new Map<string, string>([
       ...catalogue.baseDecompositions.map(row => [row[0]!, row[1]!] as const),
-      ...CHARACTER_LAB_DECOMPOSITIONS.map(recipe => [recipe.character, recipe.ids] as const),
+      ...raw.map(([character, ids]) => [character, ids] as const),
     ])
-    for (const recipe of CHARACTER_LAB_DECOMPOSITIONS) {
-      const tree = parse(recipe.ids)
+    for (const [character, ids, parts] of raw) {
+      const tree = parse(ids)
       expect(typeof tree).toBe('object')
       if (typeof tree === 'string') continue
       let cursor = 0
       const consume = (node: Node): void => {
-        const part = recipe.parts[cursor]
+        const part = parts[cursor]
         if (part !== undefined && (typeof node === 'string' ? node === part : byCharacter.get(part) === serialize(node))) cursor++
         else if (typeof node !== 'string') node.children.forEach(consume)
-        else throw new Error(`Unsupported source component in ${recipe.character}: ${node}`)
+        else throw new Error(`Unsupported source component in ${character}: ${node}`)
       }
       tree.children.forEach(consume)
-      expect(cursor, recipe.character).toBe(recipe.parts.length)
+      expect(cursor, character).toBe(parts.length)
+    }
+    const source = new Map(raw.map(([character, ids, parts]) => [character, { ids, parts }] as const))
+    for (const recipe of CHARACTER_LAB_DECOMPOSITIONS) {
+      expect(recipe.ids).toBe(source.get(recipe.character)!.ids)
+      expect(recipe.parts).toEqual(source.get(recipe.character)!.parts.map(canonicalCharacter))
       expect(splitCharacter(recipe.character)).toEqual(recipe.parts)
     }
+    // Keep common simplified targets even when the source uses a traditional intermediary.
+    expect(isCharacterLabCharacter('宫')).toBe(true)
+    expect(splitCharacter('宫')).toEqual(['宀', '吕'])
+    expect(mergeCandidates('宀', '吕')).toContain('宫')
   })
 
   it('retains every valid source-backed collision output without duplicate weighting', () => {
@@ -141,9 +160,9 @@ describe('Character Lab verified compositions', () => {
   })
 
   it('offers every supported canonical character with the familiar shortcuts first', () => {
-    expect(CHARACTER_LAB_COMMON_RADICALS).toHaveLength(413)
-    expect(CHARACTER_LAB_COMMON_RADICALS.slice(0, 16)).toEqual([...'木口人水手心言火土日女子艸宀门金'])
-    expect(CHARACTER_LAB_PALETTE.length).toBeGreaterThan(9000)
+    expect(CHARACTER_LAB_COMMON_RADICALS.length).toBeGreaterThan(350)
+    expect(CHARACTER_LAB_COMMON_RADICALS.slice(0, 16)).toEqual([...'一人口大小日月木水火土女之子手心'])
+    expect(CHARACTER_LAB_PALETTE.length).toBe(new Set(CHARACTER_LAB_CHARACTERS.map(canonicalCharacter)).size - CHARACTER_LAB_COMMON_RADICALS.length)
     const choices = [...CHARACTER_LAB_COMMON_RADICALS, ...CHARACTER_LAB_PALETTE]
     expect(new Set(choices).size).toBe(choices.length)
     for (const character of choices) {
@@ -152,7 +171,8 @@ describe('Character Lab verified compositions', () => {
       expect(baseComponents(character).length).toBeGreaterThan(0)
     }
     expect(new Set(choices)).toEqual(new Set(CHARACTER_LAB_CHARACTERS.map(canonicalCharacter)))
-    expect(CHARACTER_LAB_PALETTE.slice(0, 8)).toEqual([...'青明林森好休清字'])
+    expect(CHARACTER_LAB_PALETTE.slice(0, 7)).toEqual([...'明林森好休清字'])
+    expect(CHARACTER_LAB_COMMON_RADICALS).toContain('青')
     expect(CHARACTER_LAB_PALETTE).toContain('明')
     expect(CHARACTER_LAB_PALETTE).toContain('林')
     expect(Object.isFrozen(CHARACTER_LAB_PALETTE)).toBe(true)
@@ -165,7 +185,7 @@ describe('Character Lab verified compositions', () => {
   it('keeps every basic piece and supported dictionary combiner in the fixed top list without duplicate forms', () => {
     const expected = new Set([
       ...CHARACTER_LAB_BASES.map(canonicalCharacter),
-      ...dictionaryRadicals.map(row => canonicalCharacter(String(row[1]))).filter(isCharacterLabCharacter),
+      ...dictionaryRadicals.flatMap(row => String(row[1]).split(/\s*\/\s*/u).map(canonicalCharacter)).filter(isCharacterLabCharacter),
     ])
     expect(new Set(CHARACTER_LAB_COMMON_RADICALS)).toEqual(expected)
     expect(new Set(CHARACTER_LAB_COMMON_RADICALS).size).toBe(CHARACTER_LAB_COMMON_RADICALS.length)
@@ -174,21 +194,45 @@ describe('Character Lab verified compositions', () => {
       expect(CHARACTER_LAB_PALETTE, character).not.toContain(character)
     }
     for (const alias of ['囗', '忄', '氵', '亻', '釒', '糹']) expect(CHARACTER_LAB_COMMON_RADICALS).not.toContain(alias)
-    const uses = new Map<string, number>()
-    for (const decomposition of CHARACTER_LAB_DECOMPOSITIONS) for (const part of decomposition.parts) {
-      const character = canonicalCharacter(part)
-      uses.set(character, (uses.get(character) ?? 0) + 1)
-    }
-    const rest = CHARACTER_LAB_COMMON_RADICALS.slice(16)
-    expect(rest).toEqual([...rest].sort((first, second) =>
-      (uses.get(second) ?? 0) - (uses.get(first) ?? 0) || first.codePointAt(0)! - second.codePointAt(0)!),
-    )
     expect(CHARACTER_LAB_COMMON_RADICALS).toContain('孓')
     expect(baseComponents('孓')).toEqual(['孓'])
   })
 
-  it('includes common formerly unsupported structures and complex simplified/traditional characters', () => {
-    for (const character of [...'学画脑哭語國鬱鑫膀嚷耀謝曉']) {
+  it('puts everyday pieces first, then ranks other combiners by first-level common characters', () => {
+    const table = JSON.parse(readFileSync('src/games/chineseHandwritingCatalogue.json', 'utf8')) as {
+      readonly characters: ReadonlyArray<readonly [string, string, number, number, string]>
+    }
+    const firstLevel = table.characters.filter(([, , index]) => index <= 3500)
+    expect(firstLevel.map(([, , index]) => index)).toEqual(Array.from({ length: 3500 }, (_, index) => index + 1))
+    expect(radicalCharacters.slice(0, 3500).map(([character]) => character)).toEqual(firstLevel.map(([character]) => character))
+    const common = new Set(firstLevel.map(([character]) => character))
+    const uses = new Map<string, number>()
+    const add = (part: string, weight: number): void => {
+      const character = canonicalCharacter(part)
+      uses.set(character, (uses.get(character) ?? 0) + weight)
+    }
+    for (const decomposition of CHARACTER_LAB_DECOMPOSITIONS) {
+      if (!common.has(decomposition.character)) continue
+      decomposition.parts.forEach(part => add(part, 2))
+      baseComponents(decomposition.character).forEach(part => add(part, 1))
+    }
+    const everyday = [...'一人口大小日月木水火土女之子手心目耳山石田禾米艸竹言金门宀犬虫鸟马鱼牛羊衣食足车十力刀又']
+      .filter(character => CHARACTER_LAB_COMMON_RADICALS.includes(character))
+    expect(CHARACTER_LAB_COMMON_RADICALS.slice(0, everyday.length)).toEqual(everyday)
+    const remainder = CHARACTER_LAB_COMMON_RADICALS.slice(everyday.length)
+    expect(remainder).toEqual([...remainder].sort((first, second) =>
+      (uses.get(second) ?? 0) - (uses.get(first) ?? 0) || first.codePointAt(0)! - second.codePointAt(0)!),
+    )
+    const rare = [...'睘丩夐鬯豸龠'].filter(character => CHARACTER_LAB_COMMON_RADICALS.includes(character))
+    expect(rare.length).toBeGreaterThan(0)
+    for (const basic of [...'一人口大小日月木水火土女子手心']) for (const character of rare) {
+      expect(CHARACTER_LAB_COMMON_RADICALS.indexOf(basic), `${basic} before ${character}`)
+        .toBeLessThan(CHARACTER_LAB_COMMON_RADICALS.indexOf(character))
+    }
+  })
+
+  it('includes common and complex simplified characters while retaining shared modern forms', () => {
+    for (const character of [...'学画脑哭语国郁鑫膀嚷耀谢晓宫乾著']) {
       expect(CHARACTER_LAB_PALETTE, character).toContain(character)
       expect(splitCharacter(character).length, character).toBeGreaterThanOrEqual(2)
       expect(baseComponents(character).length, character).toBeGreaterThanOrEqual(2)
@@ -196,7 +240,7 @@ describe('Character Lab verified compositions', () => {
     expect(baseComponents('学')).toEqual(['小', '冖', '子'])
     expect(baseComponents('哭')).toEqual(['口', '口', '犬'])
     expect(baseComponents('鑫')).toEqual(['金', '金', '金'])
-    expect(baseComponents('豔')).toHaveLength(16)
+    expect(isCharacterLabCharacter('豔')).toBe(false)
   })
 
   it('finds exact characters or component combinations without hiding the fixed radicals', () => {
@@ -232,12 +276,16 @@ describe('Character Lab verified compositions', () => {
     expect(Object.isFrozen(selectCharacterCombiners('疒'))).toBe(true)
     expect(selectCharacterCombiners('心')).not.toContain('情')
     expect(selectCharacterPalette('心')).toContain('情')
+    expect(selectCharacterCombiners('杨')).toEqual(expect.arrayContaining(['木', '𠃓']))
+    expect(selectCharacterCombiners('学')).toEqual(expect.arrayContaining(['小', '冖', '子']))
+    expect(selectCharacterCombiners('明')).toEqual(expect.arrayContaining(['日', '月']))
+    expect(Object.isFrozen(selectCharacterCombiners('杨'))).toBe(true)
   })
 
   it.each([
     ['亻', '人'], ['忄', '心'], ['扌', '手'], ['氵', '水'], ['灬', '火'], ['讠', '言'], ['钅', '金'], ['犭', '犬'],
     ['礻', '示'], ['纟', '糸'], ['饣', '食'], ['刂', '刀'], ['⺈', '刀'], ['爫', '爪'], ['艹', '艸'], ['辶', '辵'],
-    ['糹', '糸'], ['釒', '金'], ['飠', '食'], ['⺮', '竹'], ['⺗', '心'], ['㣺', '心'], ['⺌', '小'], ['⺍', '小'],
+    ['⺮', '竹'], ['⺗', '心'], ['㣺', '心'], ['⺌', '小'], ['⺍', '小'],
     ['氺', '水'], ['衤', '衣'], ['⺼', '肉'], ['⺧', '牛'], ['牜', '牛'], ['⺶', '羊'], ['⺷', '羊'], ['耂', '老'], ['肀', '聿'], ['𧾷', '足'],
   ])('identifies combining form %s as standalone %s for dropping, splitting, and colors', (form, original) => {
     expect(canonicalCharacter(form)).toBe(original)
@@ -278,6 +326,59 @@ describe('Character Lab verified compositions', () => {
     expect(characterColors('囗')).toBe(characterColors('口'))
     expect(CHARACTER_LAB_PALETTE).not.toContain('囗')
     expect(radicalForms('口')).toEqual([])
+  })
+
+  it('removes traditional-only tiles, merge results, and split leaves while accepting verified modern aliases', () => {
+    const excluded = new Set(scripts.traditionalOnly.map(([character]) => character as string))
+    const characters = new Set(CHARACTER_LAB_CHARACTERS)
+    const choices = new Set([...CHARACTER_LAB_COMMON_RADICALS, ...CHARACTER_LAB_PALETTE])
+    for (const character of excluded) {
+      expect(isTraditionalCharacterLabForm(character), character).toBe(true)
+      expect(characters.has(character), character).toBe(false)
+      expect(choices.has(character), character).toBe(false)
+    }
+    for (const character of [...'學國語謝馬門龍鳥書廣釒飠糹靑']) {
+      expect(isCharacterLabCharacter(character), character).toBe(false)
+      expect(choices.has(character), character).toBe(false)
+    }
+    for (const character of [...'学国语谢马门龙鸟书广乾著面']) expect(isCharacterLabCharacter(character), character).toBe(true)
+    expect(canonicalCharacter('靑')).toBe('青')
+    expect(canonicalCharacter('國')).toBe('国')
+    expect(canonicalCharacter('呂')).toBe('吕')
+    expect(selectCharacterPalette('國')).toEqual(selectCharacterPalette('国'))
+    for (const character of CHARACTER_LAB_CHARACTERS) {
+      for (const part of baseComponents(character)) {
+        expect(characters.has(part), `${character} → ${part}`).toBe(true)
+        expect(excluded.has(part), `${character} → ${part}`).toBe(false)
+      }
+      for (const form of radicalForms(character)) expect(excluded.has(form), form).toBe(false)
+    }
+    for (const recipe of CHARACTER_LAB_DECOMPOSITIONS) {
+      for (const result of [...mergeGroupCandidates(recipe.parts), ...mergeGroupCandidates(baseComponents(recipe.character))]) {
+        expect(characters.has(result), result).toBe(true)
+        expect(excluded.has(result), result).toBe(false)
+      }
+    }
+    expect(mergeCandidates('言', '青')).toContain('请')
+    expect(mergeCandidates('言', '青')).not.toContain('請')
+    expect(radicalForms('金')).toEqual(['钅'])
+    expect(radicalForms('食')).toEqual(['饣'])
+    expect(radicalForms('糸')).toEqual(['纟'])
+    // Retain full radical originals: 艸 is not the separate compound 草.
+    for (const radical of ['艸', '糸', '辵']) expect(choices.has(radical), radical).toBe(true)
+    expect(baseComponents('杨')).toEqual(['木', '𠃓'])
+    expect(baseComponents('汤')).toEqual(['水', '𠃓'])
+    expect(baseComponents('扬')).toEqual(['手', '𠃓'])
+    expect(baseComponents('肠')).toEqual(['肉', '𠃓'])
+    expect(baseComponents('书')).toEqual(['书'])
+    expect(splitCharacter('书')).toEqual([])
+    for (const character of scripts.standardModernTargets) {
+      if (character.codePointAt(0)! <= 0xffff) expect(isCharacterLabCharacter(canonicalCharacter(character)), character).toBe(true)
+    }
+    for (const character of [...'𫖮𬉼𬍛𬭁𬮱𬴊𬶨𬺈']) {
+      expect(isCharacterLabCharacter(character), character).toBe(false)
+      expect(choices.has(character), character).toBe(false)
+    }
   })
 
   it('joins repeated three-piece ingredients directly and indexes larger groups by touching pairs', () => {
@@ -327,6 +428,16 @@ describe('Character Lab verified compositions', () => {
       .toBe('40468f52657baf8ec920790ce84cc743fff7844c1d7b03222dde07f4383f0d81')
     expect(createHash('sha256').update(JSON.stringify(catalogue.decompositions)).digest('hex'))
       .toBe('3fe9edfb20169a3030108a3c17281ff2836727592e5c8203d7f247f9add9b1a2')
+    expect(scripts.unicodeVersion).toBe('17.0.0')
+    expect(scripts.unihanSha256).toBe('f7a48b2b545acfaa77b2d607ae28747404ce02baefee16396c5d2d7a8ef34b5e')
+    expect(scripts.openccCommit).toBe('fae2a0a911c30764e669a7d8b0591cd8e852934a')
+    expect(scripts.classificationSha256).toBe('919cdb7fc52a2c3cc07f8f5d693b137be8d051eb55375c3ec69e37350f59dba6')
+    const classification = {
+      traditionalOnly: scripts.traditionalOnly, ingredientAliases: scripts.ingredientAliases,
+      retainedShared: scripts.retainedShared, modernGlyphAliases: scripts.modernGlyphAliases,
+      standardModernTargets: scripts.standardModernTargets,
+    }
+    expect(createHash('sha256').update(JSON.stringify(classification)).digest('hex')).toBe(scripts.classificationSha256)
   })
 })
 

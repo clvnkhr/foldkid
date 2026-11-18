@@ -1,14 +1,15 @@
 import { Effect, Match as M, Queue, Schema as S, Stream } from 'effect'
 import { Command, Render } from 'foldkit'
-import { html } from 'foldkit/html'
+import { html, type Html } from 'foldkit/html'
 import { m } from 'foldkit/message'
 import { chime, click, pop } from '../audio'
 import { normalizeLanguage, t, tf } from '../i18n'
 import { speakNow, type SpeechOptions } from '../speech'
 import { baseComponents, canonicalCharacter, CHARACTER_LAB_COMMON_RADICALS, CHARACTER_LAB_PALETTE, characterColors, characterComponentCount, characterHash, isCharacterLabCharacter, mergeGroupCandidates, radicalForms, selectCharacterCombiners, selectCharacterPalette } from './characterLabDomain'
 import { createCharacterLabRuntime } from './characterLabRuntime'
+import { getCharacterLabGlyph } from './characterLabGlyphs'
 
-export const MAX_CHARACTER_LAB_PIECES = 60
+export const MAX_CHARACTER_LAB_PIECES = 120
 export const CHARACTER_LAB_PALETTE_PAGE_SIZE = 8
 const dropChoices = [...CHARACTER_LAB_COMMON_RADICALS, ...CHARACTER_LAB_PALETTE]
 const dropChoiceSet = new Set(dropChoices)
@@ -54,11 +55,14 @@ const validId = (id: number): boolean => Number.isSafeInteger(id) && id >= 0
 const validPose = (pose: { x: number; y: number; vx: number; vy: number; angle: number }): boolean =>
   [pose.x, pose.y, pose.vx, pose.vy, pose.angle].every(Number.isFinite) && pose.x >= 0 && pose.x <= 1 && pose.y >= 0 && pose.y <= 1 &&
   Math.abs(pose.vx) <= 6000 && Math.abs(pose.vy) <= 6000 && Math.abs(pose.angle) < 100000
+const narrate = (character: string, muted: boolean, speech: SpeechOptions): ReadonlyArray<Command.Command<Message>> => muted ? [] : [
+  { name: 'CharacterLabSpeakCharacter', effect: Effect.sync(() => { speakNow(character, { ...speech, lang: 'zh-CN' }); return CharacterSpoken() })
+    .pipe(Effect.catchCause(() => Effect.succeed(CharacterSpoken()))) },
+]
 const feedback = (kind: 'Drop' | 'Merge' | 'Split', character: string, muted: boolean, speech: SpeechOptions): ReadonlyArray<Command.Command<Message>> => muted ? [] : [
   { name: `CharacterLabPlay${kind}Sound`, effect: (kind === 'Merge' ? chime(SoundPlayed()) : kind === 'Split' ? pop(SoundPlayed()) : click(SoundPlayed())).effect
     .pipe(Effect.catchCause(() => Effect.succeed(SoundPlayed()))) },
-  { name: 'CharacterLabSpeakCharacter', effect: Effect.sync(() => { speakNow(character, { ...speech, lang: 'zh-CN' }); return CharacterSpoken() })
-    .pipe(Effect.catchCause(() => Effect.succeed(CharacterSpoken()))) },
+  ...narrate(character, muted, speech),
 ]
 const drop = (model: Model, input: string, muted: boolean, speech: SpeechOptions): readonly [Model, ReadonlyArray<Command.Command<Message>>] => {
   const character = canonicalCharacter(input)
@@ -148,7 +152,8 @@ export const update = (model: Model, message: Message, _language: string, muted:
       if (msg.revision !== model.revision || !validId(msg.id) || !validPose(msg)) return [model, []]
       if (model.joining.some(join => join.ids.includes(msg.id))) return [model, []]
       const piece = model.pieces.find(piece => piece.id === msg.id)
-      if (!piece || piece.atoms.length < 2) return [model, []]
+      if (!piece) return [model, []]
+      if (piece.atoms.length < 2) return [model, narrate(canonicalCharacter(piece.character), muted, speech)]
       const parts = piece.atoms.map(canonicalCharacter)
       const count = parts.length
       const children = parts.map((character, index): Piece => {
@@ -191,6 +196,12 @@ export const view = (model: Model, language: string, _muted: boolean) => {
   const canPage = palette.length > CHARACTER_LAB_PALETTE_PAGE_SIZE
   const remaining = MAX_CHARACTER_LAB_PIECES - materialCount(model)
   const available = remaining > 0 && dropChoices.some(character => characterComponentCount(character) <= remaining)
+  const glyph = (character: string): Html | string => {
+    const vector = getCharacterLabGlyph(character)
+    return vector ? h.svg([h.Class('character-lab-vector'), h.ViewBox(vector.viewBox), h.AriaHidden(true), h.Attribute('focusable', 'false')], [
+      h.path([h.D(vector.path), h.Attribute('transform', vector.transform), h.Fill('currentColor'), h.Stroke('none')], []),
+    ]) : character
+  }
   const dropButton = (character: string) => {
     const forms = radicalForms(character)
     const relationship = forms.length > 0 ? tf('characterLabRadicalForms', language, character,
@@ -199,7 +210,7 @@ export const view = (model: Model, language: string, _muted: boolean) => {
       h.Class('character-lab-drop'), h.Key(`character-lab-drop-${character}`), h.Attribute('type', 'button'), h.Attribute('lang', 'zh-CN'),
       h.Attribute('aria-label', tf('characterLabDrop', language, character)), h.Attribute('aria-description', relationship), h.Attribute('title', relationship),
       h.Disabled(!fits(model, character)), h.Style(colorVariables(character)), h.OnClick(DroppedCharacter({ character })),
-    ], [h.span([h.Class('character-lab-drop-glyph'), h.AriaHidden(true)], [character]),
+    ], [h.span([h.Class('character-lab-drop-glyph'), h.AriaHidden(true)], [glyph(character)]),
       ...(forms.length > 0 ? [h.span([h.Class('character-lab-forms'), h.AriaHidden(true), h.Attribute('dir', 'ltr')], [forms[0]!])] : []),
     ])
   }
@@ -209,11 +220,18 @@ export const view = (model: Model, language: string, _muted: boolean) => {
     : tf('characterLabMerged', language, event.first, event.second, event.result)) : event?.kind === 'split'
     ? tf('characterLabSplit', language, event.first, new Intl.ListFormat(normalizeLanguage(language), { style: 'short', type: 'conjunction' }).format([...event.parts]))
     : materialCount(model) >= MAX_CHARACTER_LAB_PIECES ? t('characterLabFull', language) : tf('characterLabCount', language, number.format(model.pieces.length))
+  const feedbackParts: Array<Html | string> = []
+  description.split('𠃓').forEach((part, index) => {
+    if (index > 0) feedbackParts.push(glyph('𠃓'))
+    feedbackParts.push(part)
+  })
   return h.div([h.Class('page character-lab-page'), h.Attribute('data-multitouch-scroll', 'true')], [h.div([h.Class('card character-lab-card')], [
     h.div([h.Class('character-lab-toolbar')], [
       h.h1([h.Class('title')], [t('characterLabTitle', language)]),
       h.div([h.Class('character-lab-actions')], [
-        h.button([h.Class('btn btn-secondary'), h.Attribute('type', 'button'), h.Disabled(!available), h.OnClick(RequestedRandom())], [t('characterLabRandom', language)]),
+        h.button([h.Class('btn btn-primary character-lab-random'), h.Attribute('type', 'button'), h.Attribute('aria-label', t('characterLabRandom', language)), h.Disabled(!available), h.OnClick(RequestedRandom())], [
+          h.span([h.AriaHidden(true)], ['🎲']), t('characterLabRandom', language),
+        ]),
         h.button([h.Class('btn btn-secondary'), h.Attribute('type', 'button'), h.Disabled(model.pieces.length === 0), h.OnClick(Cleared())], [t('characterLabClear', language)]),
       ]),
     ]),
@@ -221,6 +239,7 @@ export const view = (model: Model, language: string, _muted: boolean) => {
       h.div([h.Class('character-lab-palette-group'), h.Attribute('role', 'group'), h.Attribute('aria-label', t('characterLabCommonRadicals', language))], [
         h.div([h.Class('character-lab-radicals'), h.Attribute('data-multitouch-scroll', 'true')], selectCharacterCombiners(model.query).map(dropButton)),
       ]),
+      h.hr([h.Class('character-lab-divider')]),
       h.div([h.Class('character-lab-palette-group'), h.Attribute('role', 'group'), h.Attribute('aria-label', t('characterLabCharacters', language))], [
         h.div([h.Class('character-lab-characters')], [
           ...palette.slice(start, start + CHARACTER_LAB_PALETTE_PAGE_SIZE).map(dropButton),
@@ -247,9 +266,9 @@ export const view = (model: Model, language: string, _muted: boolean) => {
         h.Attribute('data-merge-delay', String(piece.delay)),
         h.Style({ ...colorVariables(character), left: `${piece.x * 100}%`, top: `${piece.y * 100}%`, transform: `translate(-50%,-50%) rotate(${piece.angle}rad)` }),
         h.OnClick(TappedPiece({ id: piece.id, x: piece.x, y: piece.y, vx: piece.vx, vy: piece.vy, angle: piece.angle, revision: model.revision })),
-      ], [h.span([h.Class('character-lab-glyph'), h.AriaHidden(true)], [character])])
+      ], [h.span([h.Class('character-lab-glyph'), h.AriaHidden(true)], [glyph(character)])])
       }),
     ]),
-    h.p([h.Class('character-lab-feedback'), h.Attribute('role', 'status'), h.Attribute('aria-live', 'polite'), h.Attribute('aria-atomic', 'true')], [description]),
+    h.p([h.Class('character-lab-feedback'), h.Attribute('role', 'status'), h.Attribute('aria-live', 'polite'), h.Attribute('aria-atomic', 'true'), h.Attribute('aria-label', description)], feedbackParts),
   ])])
 }

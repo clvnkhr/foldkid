@@ -25,7 +25,7 @@ export const constrainCharacterLabBody = (body: CharacterLabBody, width: number,
   body.y = Math.max(radiusY, Math.min(Math.max(radiusY, height - radiusY), body.y))
 }
 
-const walls = (body: CharacterLabBody, width: number, height: number, dt: number): void => {
+const walls = (body: CharacterLabBody, width: number, height: number, floorDrag: number, floorSpinDrag: number): void => {
   const minX = Math.min(body.r, width / 2)
   const minY = Math.min(body.r, height / 2)
   const maxX = Math.max(minX, width - minX)
@@ -41,8 +41,8 @@ const walls = (body: CharacterLabBody, width: number, height: number, dt: number
     body.y = direction === 1 ? minY : maxY
     if (body.vy * direction < 0) body.vy = Math.abs(body.vy) < FLOOR_SLEEP_SPEED ? 0 : -body.vy * RESTITUTION
     if (direction === -1) {
-      body.vx *= Math.exp(-7 * dt)
-      body.spin *= Math.exp(-8 * dt)
+      body.vx *= floorDrag
+      body.spin *= floorSpinDrag
       if (Math.abs(body.vx) < .25) body.vx = 0
       if (Math.abs(body.spin) < .025) body.spin = 0
     }
@@ -55,25 +55,31 @@ export const stepCharacterLabPhysics = (
   contacted: (a: CharacterLabBody, b: CharacterLabBody) => void = () => {},
 ): void => {
   if (![width, height, dt].every(Number.isFinite) || width <= 0 || height <= 0 || dt <= 0 || dt > .05) return
+  const dragX = Math.exp(-.55 * dt)
+  const dragY = Math.exp(-.25 * dt)
+  const spinDrag = Math.exp(-1.1 * dt)
+  const floorDrag = Math.exp(-7 * dt)
+  const floorSpinDrag = Math.exp(-8 * dt)
   for (const body of bodies) {
     if (body.held) continue
-    body.vx *= Math.exp(-.55 * dt)
-    body.vy = Math.min(CHARACTER_LAB_MAX_SPEED, (body.vy + GRAVITY * dt) * Math.exp(-.25 * dt))
-    body.spin *= Math.exp(-1.1 * dt)
+    body.vx *= dragX
+    body.vy = Math.min(CHARACTER_LAB_MAX_SPEED, (body.vy + GRAVITY * dt) * dragY)
+    body.spin *= spinDrag
     body.x += body.vx * dt
     body.y += body.vy * dt
     body.angle = (body.angle + body.spin * dt) % (Math.PI * 2)
-    walls(body, width, height, dt)
+    walls(body, width, height, floorDrag, floorSpinDrag)
   }
-  // Sixty pieces at most: a compact all-pairs pass avoids grid allocations.
+  // At most 120 pieces: reject distant pairs before computing contact normals.
   for (let iteration = 0; iteration < 4; iteration++) for (let i = 0; i < bodies.length; i++) for (let j = i + 1; j < bodies.length; j++) {
     const a = bodies[i]!
     const b = bodies[j]!
     let dx = b.x - a.x
     let dy = b.y - a.y
     const minimum = a.r + b.r
-    let distance = Math.hypot(dx, dy)
-    if (distance > minimum + .1) continue
+    const distanceSquared = dx * dx + dy * dy
+    if (distanceSquared > (minimum + .1) ** 2) continue
+    let distance = Math.sqrt(distanceSquared)
     if (iteration === 0) contacted(a, b)
     if (distance < .00001) {
       const direction = ((a.id * 73856093 + b.id * 19349663) % 360) * Math.PI / 180

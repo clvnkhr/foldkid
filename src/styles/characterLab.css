@@ -1,17 +1,24 @@
+body:has(.character-lab-page), .app:has(.character-lab-page) {
+  height: 100dvh; min-height: 0; overflow: hidden; overscroll-behavior: none;
+}
+.app:has(.character-lab-page) .nav-bar {
+  padding-inline: max(.5rem, env(safe-area-inset-left, 0px)) max(.5rem, env(safe-area-inset-right, 0px));
+}
 .character-lab-page {
-  justify-content: flex-start; min-height: 100dvh;
-  padding: calc(4.75rem + env(safe-area-inset-top, 0px)) .6rem max(.6rem, env(safe-area-inset-bottom, 0px));
+  justify-content: flex-start; height: 100%; min-height: 0; overflow: hidden;
+  padding: calc(4.75rem + env(safe-area-inset-top, 0px)) .35rem max(.35rem, env(safe-area-inset-bottom, 0px));
 }
 .character-lab-card {
-  display: grid; grid-template-rows: auto auto minmax(220px, 1fr) auto; align-items: stretch;
-  min-height: calc(100dvh - 4.75rem - env(safe-area-inset-top, 0px) - max(.6rem, env(safe-area-inset-bottom, 0px)));
-  width: 100%; max-width: 1100px; min-width: 0; gap: .35rem; padding: .65rem;
+  display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; align-items: stretch;
+  height: 100%; min-height: 0; overflow: hidden;
+  width: 100%; max-width: none; min-width: 0; gap: .35rem; padding: .65rem;
   color: var(--text-primary); background: var(--card-bg);
 }
 .character-lab-toolbar, .character-lab-actions, .character-lab-characters {
   display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: .2rem; width: 100%; min-width: 0;
 }
 .character-lab-palette { display: flex; flex-direction: column; gap: .3rem; width: 100%; min-width: 0; }
+.character-lab-divider { width: 100%; flex: none; border: 0; border-top: 1px solid var(--text-muted); margin: .15rem 0; }
 .character-lab-palette-group { display: flex; flex-direction: column; align-items: center; gap: .25rem; width: 100%; min-width: 0; }
 .character-lab-radicals {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); align-content: start; justify-items: center;
@@ -26,6 +33,13 @@
   min-height: 40px; padding: .35rem .55rem; font: inherit; font-size: .85rem; overflow-wrap: anywhere;
   touch-action: manipulation;
 }
+.character-lab-actions .character-lab-random {
+  display: inline-flex; align-items: center; justify-content: center; gap: .4rem;
+  min-height: 44px; padding: .4rem .85rem; font-size: 1rem; font-weight: 800;
+  color: white; background: linear-gradient(135deg, #4f46e5, #7c3aed);
+  box-shadow: 0 3px 8px var(--shadow-color); border: 1px solid #ffffff50;
+}
+.character-lab-random span { font-size: 1.25em; }
 .character-lab-pager {
   color: var(--text-primary); background: var(--cell-bg); border: 0; border-radius: .8rem; cursor: pointer;
 }
@@ -54,10 +68,10 @@
 .character-lab-drop:disabled, .character-lab-actions button:disabled { opacity: .45; cursor: default; }
 .character-lab-feedback {
   margin: 0; min-height: 1.4em; color: var(--text-secondary); font-size: .9rem;
-  overflow-wrap: anywhere; text-align: center;
+  min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-align: center;
 }
 .character-lab-stage {
-  position: relative; width: 100%; min-width: 0; height: 100%; min-height: 220px; overflow: hidden; isolation: isolate;
+  position: relative; width: 100%; min-width: 0; height: 100%; min-height: 0; overflow: hidden; isolation: isolate;
   border: 1px solid var(--btn-secondary-bg); border-radius: 1.2rem;
   background: radial-gradient(ellipse at 50% 0, var(--cell-hover-bg), transparent 75%), var(--settings-bg);
   box-shadow: inset 0 -8px 22px var(--cell-bg); touch-action: none; overscroll-behavior: contain;
@@ -71,6 +85,7 @@
 }
 .character-lab-piece--dragging { cursor: grabbing; z-index: 2; box-shadow: 0 0 0 4px var(--number-color); }
 .character-lab-glyph { pointer-events: none; line-height: 1; }
+.character-lab-vector { display: inline-block; width: .75em; height: 1.1em; vertical-align: -.14em; pointer-events: none; }
 .character-lab-drop:focus-visible, .character-lab-pager:focus-visible, .character-lab-piece:focus-visible,
 .character-lab-search:focus-visible, .character-lab-actions button:focus-visible { outline: 3px solid var(--text-primary); outline-offset: 3px; }
 @keyframes character-lab-arrive { from { filter: brightness(1.6); } to { filter: brightness(1); } }
@@ -78,5 +93,16 @@
   .character-lab-card { padding: .55rem; gap: .4rem; }
   .character-lab-toolbar { justify-content: center; }
   .character-lab-piece { width: 54px; height: 54px; font-size: 1.9rem; }
+}
+@media (max-height: 600px) {
+  .app:has(.character-lab-page) .nav-bar { padding-block: calc(.35rem + env(safe-area-inset-top, 0px)) .35rem; }
+  .character-lab-page { padding-top: calc(3rem + env(safe-area-inset-top, 0px)); }
+  .character-lab-card { gap: .2rem; padding: .4rem; }
+  .character-lab-toolbar .title { font-size: 1.2rem; }
+  .character-lab-drop { width: 36px; height: 36px; font-size: 1.2rem; }
+  .character-lab-radicals { height: 78px; grid-template-columns: repeat(auto-fill, minmax(36px, 1fr)); }
+  .character-lab-actions button, .character-lab-pager { min-height: 36px; font-size: .8rem; padding: .3rem .45rem; }
+  .character-lab-search { width: 6.5rem; min-height: 36px; padding-block: .2rem; }
+  .character-lab-actions .character-lab-random { min-height: 40px; padding: .3rem .55rem; font-size: .9rem; }
 }
 @media (prefers-reduced-motion: reduce) { .character-lab-piece { animation: none; } }

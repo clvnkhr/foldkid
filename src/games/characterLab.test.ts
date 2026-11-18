@@ -213,6 +213,7 @@ describe('Character Lab composition and material conservation', () => {
   })
 
   it('reserves enough capacity for every piece to split even when the board is full', () => {
+    expect(Lab.MAX_CHARACTER_LAB_PIECES).toBe(120)
     let model = add(Lab.init(), '森')
     for (let index = 3; index < Lab.MAX_CHARACTER_LAB_PIECES; index++) model = add(model, '木')
     expect(Lab.materialCount(model)).toBe(Lab.MAX_CHARACTER_LAB_PIECES)
@@ -280,6 +281,29 @@ describe('Character Lab commands and accessible controls', () => {
     expect(split.pieces.map(piece => piece.character)).toEqual(['木', '木'])
   })
 
+  it.each([false, true])('speaks an unsplittable piece on tap with mute=%s without changing it', async muted => {
+    const model = add(Lab.init(), '心')
+    const speech = vi.spyOn(Speech, 'speakNow').mockImplementation(() => {})
+    const [tapped, commands] = Lab.update(model, tap(model, 0), 'fr', muted, { rate: .7, pitch: 1.25, lang: 'fr' })
+    expect(tapped).toBe(model)
+    expect(tapped.pieces).toBe(model.pieces)
+    expect(commands.map(command => command.name)).toEqual(muted ? [] : ['CharacterLabSpeakCharacter'])
+    if (!muted) {
+      expect(await Effect.runPromise(commands[0]!.effect)).toEqual(Lab.CharacterSpoken())
+      expect(speech).toHaveBeenCalledExactlyOnceWith('心', { rate: .7, pitch: 1.25, lang: 'zh-CN' })
+    } else expect(speech).not.toHaveBeenCalled()
+  })
+
+  it('finishes primitive-tap narration even if speech is unavailable', async () => {
+    vi.spyOn(Speech, 'speakNow').mockImplementation(() => { throw new Error('unavailable') })
+    const model = add(Lab.init(), '木')
+    Story.story((state: Lab.Model, message: Lab.Message) => Lab.update(state, message, 'en', false, {}), Story.with(model),
+      Story.message(tap(model, 0)), Story.Command.resolveAll(spoken), Story.model(state => expect(state).toBe(model)), Story.Command.expectNone(),
+    )
+    const [, commands] = Lab.update(model, tap(model, 0), 'en', false, {})
+    expect(await Effect.runPromise(commands[0]!.effect)).toEqual(Lab.CharacterSpoken())
+  })
+
   it('acknowledges rejected audio/speech APIs and defines stable command names', async () => {
     vi.spyOn(Audio, 'chime').mockReturnValue({ name: 'PlayChime', effect: Effect.die(new Error('missing audio')) })
     vi.spyOn(Speech, 'speakNow').mockImplementation(() => { throw new Error('missing speech') })
@@ -300,6 +324,8 @@ describe('Character Lab commands and accessible controls', () => {
       Scene.Mount.resolveAll(mounted),
       Scene.expect(Scene.role('button', { name: t('characterLabClear', 'en') })).toBeDisabled(),
       Scene.expect(Scene.selector('.character-lab-page')).toHaveAttr('data-multitouch-scroll', 'true'),
+      Scene.expect(Scene.selector('hr.character-lab-divider')).toBeVisible(),
+      Scene.expect(Scene.selector('.character-lab-random')).toHaveAttr('aria-label', t('characterLabRandom', 'en')),
       Scene.expectAll(Scene.all.selector('.character-lab-palette-label')).toHaveCount(0),
       Scene.expectAll(Scene.all.selector('.character-lab-hint')).toHaveCount(0),
       Scene.expectAll(Scene.all.selector('.character-lab-empty')).toHaveCount(0),
@@ -390,6 +416,20 @@ describe('Character Lab commands and accessible controls', () => {
       Scene.expectAll(Scene.all.role('button', { name: tf('characterLabDrop', 'en', '疒') })).toHaveCount(1),
       Scene.click(Scene.role('button', { name: tf('characterLabDrop', 'en', '疒') })),
       Scene.expect(Scene.role('button', { name: tf('characterLabPiece', 'en', '疒') })).toBeVisible(),
+      Scene.Command.expectNone(),
+    )
+  })
+
+  it('draws the simplified 杨 component without relying on platform font coverage', () => {
+    const initial = add(Lab.init(), '杨')
+    const split = update(initial, tap(initial, 0))[0]
+    Scene.scene({ update, view }, Scene.with(split),
+      Scene.Mount.resolveAll(mounted),
+      Scene.expect(Scene.role('button', { name: tf('characterLabPiece', 'en', '𠃓') })).toBeVisible(),
+      Scene.expect(Scene.selector('.character-lab-piece .character-lab-vector')).toHaveAttr('focusable', 'false'),
+      Scene.expect(Scene.selector('.character-lab-piece .character-lab-vector')).toHaveAttr('viewBox', '414 -775 550 822'),
+      Scene.expect(Scene.selector('.character-lab-feedback .character-lab-vector')).toHaveAttr('aria-hidden', 'true'),
+      Scene.expect(Scene.selector('.character-lab-feedback')).toHaveAttr('aria-label', tf('characterLabSplit', 'en', '杨', new Intl.ListFormat('en', { style: 'short', type: 'conjunction' }).format(['木', '𠃓']))),
       Scene.Command.expectNone(),
     )
   })

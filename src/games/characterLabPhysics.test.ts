@@ -64,6 +64,26 @@ describe('Character Lab fixed-step physics', () => {
     }
   })
 
+  it('keeps all 120 pieces finite and within the board under crowded contacts', () => {
+    const pieces = Array.from({ length: 120 }, (_, id) => body({ id,
+      x: 40 + id % 10 * 42, y: 40 + Math.floor(id / 10) * 40,
+      vx: id % 2 === 0 ? 300 : -300, spin: id % 5 - 2,
+    }))
+    const contacted = new Set<number>()
+    for (let tick = 0; tick < 180; tick++) stepCharacterLabPhysics(pieces, 480, 620, dt, (a, b) => {
+      contacted.add(a.id); contacted.add(b.id)
+    })
+    expect(contacted.size).toBe(120)
+    for (const piece of pieces) {
+      expect([piece.x, piece.y, piece.vx, piece.vy, piece.angle, piece.spin].every(Number.isFinite)).toBe(true)
+      expect(piece.x).toBeGreaterThanOrEqual(piece.r)
+      expect(piece.x).toBeLessThanOrEqual(480 - piece.r)
+      expect(piece.y).toBeGreaterThanOrEqual(piece.r)
+      expect(piece.y).toBeLessThanOrEqual(620 - piece.r)
+      expect(Math.hypot(piece.vx, piece.vy)).toBeLessThanOrEqual(CHARACTER_LAB_MAX_SPEED + .001)
+    }
+  })
+
   it('clamps into tiny boards and ignores invalid dimensions or frame intervals', () => {
     const piece = body({ x: -10, y: 1000 })
     constrainCharacterLabBody(piece, 20, 30)
